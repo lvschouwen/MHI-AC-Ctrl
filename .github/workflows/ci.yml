@@ -1,0 +1,80 @@
+name: CI
+
+# The safety net for a project that runs on two air conditioners with no spare
+# board. Everything here is compile- and host-level only; nothing touches
+# hardware.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-native-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-native-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Run tests
+        run: pio test -e native
+
+  build:
+    name: Build ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One entry per build configuration. The ci-* environments exist
+        # purely to prove the #ifdef matrix still compiles; the flash-size
+        # assertion in scripts/check_flash_size.py runs for each of them.
+        environment:
+          - d1_mini
+          - ci-extended-frame
+          - ci-enhanced-resolution
+          - ci-ds18x20-sensor
+          - ci-ds18x20-troom
+          - ci-poweron-when-changing-mode
+          - ci-continue-without-mqtt
+          - ci-all-options
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-esp8266-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-esp8266-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build
+        run: pio run -e ${{ matrix.environment }}

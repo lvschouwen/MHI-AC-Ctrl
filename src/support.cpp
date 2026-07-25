@@ -1,6 +1,8 @@
 #include "support.h"
 #include <Arduino.h>
 
+#include "mhi_temp.h"
+
 WiFiClient espClient;
 PubSubClient MQTTclient(espClient);
 int WIFI_lost = 0;
@@ -245,7 +247,7 @@ byte getDs18x20Temperature(int temp_hysterese) {
       return DS18X20_NOT_CONNECTED;
     }
     tempR += ROOM_TEMP_DS18X20_OFFSET*128;
-    if (tempR > (48*128) || tempR < (-10*128)) {    // skip onrealistic values
+    if (!mhi_ds18x20_raw_plausible(tempR)) {    // skip onrealistic values
       tempR = tempR_old;    // use previous value
     }
     int16_t tempR_diff = tempR - tempR_old; // avoid using other functions inside the brackets of abs, see https://www.arduino.cc/reference/en/language/functions/math/abs/
@@ -259,10 +261,8 @@ byte getDs18x20Temperature(int temp_hysterese) {
     DS1820Millis = millis();
     sensors.requestTemperatures();
   }
-  //Serial.printf_P(PSTR("temp DS18x20 tempR_old=%i %i\n"), tempR_old, (byte)(tempR_old/32 + 61));
-  if(tempR_old < 0)
-    return 0;
-  return tempR_old/32 + 61;
+  //Serial.printf_P(PSTR("temp DS18x20 tempR_old=%i %i\n"), tempR_old, mhi_troom_from_ds18x20_raw(tempR_old));
+  return mhi_troom_from_ds18x20_raw(tempR_old);
 }
 
 void printAddress(DeviceAddress deviceAddress) {

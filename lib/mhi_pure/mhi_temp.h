@@ -1,0 +1,35 @@
+// Room-temperature conversions for the MHI protocol.
+//
+// The AC carries Troom as a single byte in 0.25 degC steps offset by 61, so
+// byte 61 is 0 degC and byte 145 is 21 degC. The same arithmetic was inlined
+// in three places across main.cpp and support.cpp; it lives here now so it can
+// be tested on the build machine.
+//
+// Pure logic: no Arduino, no hardware.
+
+#pragma once
+
+#include <stdint.h>
+
+// Encode degC as the MHI Troom byte. Truncates rather than rounds, matching
+// the original (byte)(celsius * 4 + 61). Only meaningful for temperatures
+// inside mhi_troom_celsius_plausible(); out-of-range input is clamped so the
+// conversion stays defined.
+uint8_t mhi_troom_from_celsius(float celsius);
+
+// Decode an MHI Troom byte back to degC.
+float mhi_celsius_from_troom(int troom);
+
+// Accept a room temperature supplied over MQTT. The window is exclusive at
+// both ends, matching the original (f > -10) & (f < 48).
+bool mhi_troom_celsius_plausible(float celsius);
+
+// Accept a raw DS18x20 reading, in 1/128 degC units. The window is inclusive
+// at both ends, unlike mhi_troom_celsius_plausible(). The two have always
+// disagreed on the boundary; that is preserved here rather than quietly
+// changed, and the difference is only ever visible at exactly -10 or 48 degC.
+bool mhi_ds18x20_raw_plausible(int16_t raw);
+
+// Convert a raw DS18x20 reading, in 1/128 degC units, to the MHI Troom byte.
+// Sub-zero readings report 0, as the original did.
+uint8_t mhi_troom_from_ds18x20_raw(int16_t raw);

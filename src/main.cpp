@@ -1,9 +1,15 @@
 // MHI-AC-Ctrl by absalom-muc
 // read + write data via SPI controlled by MQTT
 // for version see support.h
+//
+// Was MHI-AC-Ctrl.ino. As a .cpp there is no Arduino preprocessor generating
+// includes and forward declarations, so they are spelled out.
+
+#include <Arduino.h>
 
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
+#include "mhi_temp.h"
 #include "support.h"
 
 MHI_AC_Ctrl_Core mhi_ac_ctrl_core;
@@ -155,12 +161,12 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
 #ifdef ENHANCED_RESOLUTION
     f = f + mhi_ac_ctrl_core.get_troom_offset() ;  // increase Troom with current offset to compensate higher setpoint
 #endif
-    if ((f > -10) & (f < 48)) {
+    if (mhi_troom_celsius_plausible(f)) {
       room_temp_set_timeout_Millis = millis();  // reset timeout
       troom_was_set_by_MQTT=true;
-      byte tmp = f*4+61;
-      mhi_ac_ctrl_core.set_troom(f*4+61);
-      Serial.printf("ROOM_TEMP_MQTT: %f %i %i\n", f, (byte)(f*4+61), (byte)tmp);
+      byte troom = mhi_troom_from_celsius(f);
+      mhi_ac_ctrl_core.set_troom(troom);
+      Serial.printf("ROOM_TEMP_MQTT: %f %i\n", f, troom);
       publish_cmd_ok();
     }
     else
@@ -308,8 +314,11 @@ class StatusHandler : public CallbackInterface_Status {
               output_P(status, PSTR(TOPIC_VANES), strtmp);
           }
           break;
-#ifdef USE_EXTENDED_FRAME_SIZE            
+        // The case labels stay outside the #ifdef so the switch remains
+        // exhaustive over ACStatus and -Wswitch keeps catching real omissions.
+        // With the 20-byte frame the AC never reports these.
         case status_vanesLR:
+#ifdef USE_EXTENDED_FRAME_SIZE
           switch (value) {
             case vanesLR_swing:
               output_P(status, PSTR(TOPIC_VANESLR), PSTR(PAYLOAD_VANESLR_SWING));
@@ -318,8 +327,10 @@ class StatusHandler : public CallbackInterface_Status {
               itoa(value, strtmp, 10);
               output_P(status, PSTR(TOPIC_VANESLR), strtmp);
           }
+#endif
           break;
         case status_3Dauto:
+#ifdef USE_EXTENDED_FRAME_SIZE
           switch (value) {
             case Dauto_on:
               output_P(status, PSTR(TOPIC_3DAUTO), PSTR(PAYLOAD_3DAUTO_ON));
@@ -328,14 +339,14 @@ class StatusHandler : public CallbackInterface_Status {
               output_P(status, PSTR(TOPIC_3DAUTO), PSTR(PAYLOAD_3DAUTO_OFF));
               break;
           }
-          break;
 #endif
+          break;
         case status_troom:
           {
             int8_t troom_diff = value - status_troom_old; // avoid using other functions inside the brackets of abs, see https://www.arduino.cc/reference/en/language/functions/math/abs/
             if (abs(troom_diff) > TROOM_FILTER_LIMIT/0.25f) { // Room temperature delta > 0.25°C
               status_troom_old = value;
-              dtostrf((value - 61) / 4.0, 0, 2, strtmp);
+              dtostrf(mhi_celsius_from_troom(value), 0, 2, strtmp);
               output_P(status, PSTR(TOPIC_TROOM), strtmp);
             }
           }
@@ -359,7 +370,7 @@ class StatusHandler : public CallbackInterface_Status {
           break;
         case opdata_return_air:
         case erropdata_return_air:
-          dtostrf((value - 61) / 4.0, 0, 2, strtmp);
+          dtostrf(mhi_celsius_from_troom(value), 0, 2, strtmp);
           output_P(status, PSTR(TOPIC_RETURNAIR), strtmp);
           break;
         case opdata_thi_r1:
@@ -477,7 +488,9 @@ void setup() {
 
 
 void loop() {
+#ifdef ROOM_TEMP_DS18X20
   static byte ds18x20_value_old = 0;
+#endif
   static int WiFiStatus = WIFI_CONNECT_TIMEOUT;   // start connecting to WiFi
   static int MQTTStatus = MQTT_NOT_CONNECTED;
   static unsigned long previousMillis = millis();
@@ -507,7 +520,9 @@ void loop() {
         mhi_ac_ctrl_core.set_troom(0xff);  // use IU temperature sensor
         Serial.println(F("DS18X20 disconnected, use IU temperature sensor value!"));
         troom_was_set_by_DS18X20 = false;
-        ds18x20_value_old = 0;
+#ifdef ROOM_TEMP_DS18X20
+        ds18x20_value_old = 0;  // re-publish once the sensor comes back
+#endif
         Serial.println(F("Try setup DS18X20 again"));
         setup_ds18x20();  // try setup again
       }

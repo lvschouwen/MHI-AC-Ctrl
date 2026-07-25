@@ -5,43 +5,104 @@
 
 #define VERSION "2.8"
 
-#define WIFI_SSID ""
-#define WIFI_PASSWORD ""
-#define HOSTNAME "MHI-AC-Ctrl"
+// *** Configuration ***
+//
+// Every setting below is a default. There are two ways to override one without
+// editing this file, which matters because this file is tracked in git and
+// credentials must not be:
+//
+//   1. Create src/config_defaults.h with your own #defines. It is included
+//      first and it is in .gitignore, so it never lands in a commit. This is
+//      the recommended way.
+//   2. Pass -D FOO=bar in build_flags for a PlatformIO environment. This is
+//      how the ci-* environments exercise the #ifdef matrix.
+//
+// The boolean feature switches further down stay commented out on purpose:
+// they are tested with #ifdef, so defining them at all turns them on.
 
+#if defined(__has_include)
+#if __has_include("config_defaults.h")
+#include "config_defaults.h"
+#endif
+#endif
+
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD ""
+#endif
+#ifndef HOSTNAME
+#define HOSTNAME "MHI-AC-Ctrl"
+#endif
+
+#ifndef WiFI_SEARCHStrongestAP
 #define WiFI_SEARCHStrongestAP true                 // when false then the first WiFi access point with matching SSID found is used.
                                                     // when true then the strongest WiFi access point with matching SSID found is used, it doesn't work with hidden SSID
-                                                    
-#define WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL 12    // WiFi network re-scan interval in minutes with alternate to +5dB stronger signal if detected
+#endif
 
+#ifndef WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL
+#define WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL 12    // WiFi network re-scan interval in minutes with alternate to +5dB stronger signal if detected
+#endif
+
+#ifndef MQTT_SERVER
 #define MQTT_SERVER "192.168.178.111"               // broker name or IP address of the broker
+#endif
+#ifndef MQTT_PORT
 #define MQTT_PORT 1883                              // port number used by the broker
+#endif
+#ifndef MQTT_USER
 #define MQTT_USER ""                                // if authentication is not used, leave it empty
+#endif
+#ifndef MQTT_PASSWORD
 #define MQTT_PASSWORD ""                            // if authentication is not used, leave it empty
+#endif
+#ifndef MQTT_PREFIX
 #define MQTT_PREFIX HOSTNAME "/"                    // basic prefix used for publishing AC data (e.g. for status),
                                                     // replace "/" by e.g. "/Living-Room/" when you have multiple ACs
+#endif
+#ifndef MQTT_SET_PREFIX
 #define MQTT_SET_PREFIX MQTT_PREFIX "set/"          // prefix for subscribing set commands, must end with a "/"
+#endif
+#ifndef MQTT_OP_PREFIX
 #define MQTT_OP_PREFIX MQTT_PREFIX "OpData/"        // prefix for publishing operating data, must end with a "/"
+#endif
+#ifndef MQTT_ERR_OP_PREFIX
 #define MQTT_ERR_OP_PREFIX MQTT_PREFIX "ErrOpData/" // prefix for publishing operating data from last error, must end with a "/"
+#endif
 
+#ifndef OTA_HOSTNAME
 #define OTA_HOSTNAME HOSTNAME                       // default for the OTA_HOSTNAME is the HOSTNAME
+#endif
+#ifndef OTA_PASSWORD
 #define OTA_PASSWORD ""                             // Enter an OTA password if required
+#endif
 
+#ifndef TEMP_MEASURE_PERIOD
 #define TEMP_MEASURE_PERIOD 0                       // period in seconds for temperature measurement with the external DS18x20 temperature sensor
-                                                    // enter 0 if you don't use the DS18x20 
+                                                    // enter 0 if you don't use the DS18x20
+#endif
+#ifndef ONE_WIRE_BUS
 #define ONE_WIRE_BUS 4                              // D2, PIN for connecting temperature sensor DS18x20 DQ pin
+#endif
+#ifndef ROOM_TEMP_DS18X20_OFFSET
 #define ROOM_TEMP_DS18X20_OFFSET 0.0                // Temperature offset for DS18x20 sensor, can be positive or negative (examples: 0.0, -1.0, 1.5)
+#endif
 
 //#define ROOM_TEMP_DS18X20                           // use room temperature from DS18x20
 
+#ifndef ROOM_TEMP_MQTT_SET_TIMEOUT
 #define ROOM_TEMP_MQTT_SET_TIMEOUT  40              // time in seconds, after this time w/o receiving a valid room temperature
                                                     // via MQTT fallback to IU temperature sensor value
+#endif
 
 //#define POWERON_WHEN_CHANGING_MODE true           // uncomment it to switch on the AC when the mode (heat, cool, dry etc.) is changed
                                                     // used e.g. for home assistant support
 
+#ifndef TROOM_FILTER_LIMIT
 #define TROOM_FILTER_LIMIT 0.25                     // Defines from which Troom delta value a new Troom value is pubslised. Resolution 0.25°C.
                                                     // With a smaller resolution, Troom could toggle more. So deactivate the filter use 0.
+#endif
 //#define ENHANCED_RESOLUTION true                    // when using Tsetpoint with x.5 degrees, airco will use (x+1).0 setpoint
                                                     // uncomment this to compensatie (offset) Troom for this.
                                                     // this will simulate .x degrees resolution

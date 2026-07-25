@@ -3,19 +3,8 @@
 
 #include "MHI-AC-Ctrl-core.h"
 
-uint16_t calc_checksum(byte* frame) {
-  uint16_t checksum = 0;
-  for (int i = 0; i < CBH; i++)
-    checksum += frame[i];
-  return checksum;
-}
-
-uint16_t calc_checksumFrame33(byte* frame) {
-  uint16_t checksum = 0;
-  for (int i = 0; i < CBL2; i++)
-    checksum += frame[i];
-  return checksum;
-}
+// The checksum helpers moved to lib/mhi_pure/mhi_frame.cpp, where they can be
+// tested on the build machine.
 
 void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection to broker is lost, to re-output data
   // old status
@@ -220,7 +209,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
 
   MISO_frame[DB3] = new_Troom;  // from MQTT or DS18x20
 
-  uint16_t checksum = calc_checksum(MISO_frame);
+  uint16_t checksum = mhi_calc_checksum(MISO_frame);
   MISO_frame[CBH] = highByte(checksum);
   MISO_frame[CBL] = lowByte(checksum);
 
@@ -234,7 +223,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     new_VanesLR0 = 0;
     new_VanesLR1 = 0;
 
-    checksum = calc_checksumFrame33(MISO_frame);
+    checksum = mhi_calc_checksum_frame33(MISO_frame);
     MISO_frame[CBL2] = lowByte(checksum);
   }
   //Serial.println();
@@ -265,14 +254,14 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     }
   }
 
-  checksum = calc_checksum(MOSI_frame);
+  checksum = mhi_calc_checksum(MOSI_frame);
   if (((MOSI_frame[SB0] & 0xfe) != 0x6c) | (MOSI_frame[SB1] != 0x80) | (MOSI_frame[SB2] != 0x04))
     return err_msg_invalid_signature;
   if ((MOSI_frame[CBH] << 8 | MOSI_frame[CBL]) != checksum)
     return err_msg_invalid_checksum;
 
   if (frameSize == 33) { // Only for framesize 33 (WF-RAC)
-    checksum = calc_checksumFrame33(MOSI_frame);
+    checksum = mhi_calc_checksum_frame33(MOSI_frame);
     if (MOSI_frame[CBL2] != lowByte(checksum)) 
       return err_msg_invalid_checksum;
   }

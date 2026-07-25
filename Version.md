@@ -3,6 +3,10 @@ MHI-AC-Ctrl by absalom-muc
 **Adaptions since version 2.8** (not released)
 - [Move from unmaintained knolleary/pubsubclient to hmueller01/pubsubclient3](https://github.com/absalom-muc/MHI-AC-Ctrl/pull/212)
 - [Introduce a passive mode to allow RC timer](https://github.com/absalom-muc/MHI-AC-Ctrl/pull/220)
+- converted to a PlatformIO project with pinned dependencies; `MHI-AC-Ctrl.ino` is now `src/main.cpp` and the Arduino IDE is no longer supported
+- configuration can be supplied in the gitignored `src/config_defaults.h` instead of editing `support.h`, so credentials stay out of commits
+- frame checksums and the room temperature conversions moved to `lib/mhi_pure`, covered by host tests that run without hardware
+- GitHub Actions builds the whole `#ifdef` matrix on every push, runs the host tests and asserts the firmware still fits its flash budget
 
 **v2.8** (September 2023)
 - when ds18x20 used and get disconnected, fallback to  IU temperature sensor by [glsf91](https://github.com/glsf91)

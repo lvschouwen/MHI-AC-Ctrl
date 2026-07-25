@@ -59,10 +59,37 @@ and optionally you need for the use of an external temperature sensor DS18x20 th
  - [OneWire](https://www.pjrc.com/teensy/td_libs_OneWire.html)
  - [DallasTemperature](https://github.com/milesburton/Arduino-Temperature-Control-Library)
 
-Please check the GitHub pages to see how to install them (usually via tools -> libraries).
+### Building
 
-Create a sub-directory "MHI-AC-Ctrl" and copy the files from the latest [release](https://github.com/absalom-muc/MHI-AC-Ctrl/releases) src directory in your MHI-AC-Ctrl sub-directory. You could also use the recently updated version in the [src folder](src) but with the risk that it is more unstable. The stability of the program is better when you compile it for a CPU frequency of 160MHz.
-The configuration options are described in [SW-Configuration.md](SW-Configuration.md).
+This fork is a [PlatformIO](https://platformio.org/) project. The exact library
+versions are pinned in [platformio.ini](platformio.ini), so you do not install
+them by hand and everyone builds against the same code. The CPU frequency is
+set to 160 MHz there as well, which the AC's SPI timing is happier with.
+
+```sh
+pio run                 # build the firmware for a Wemos D1 mini
+pio run -t upload       # flash over USB
+pio run -t upload -e d1_mini --upload-port <device>.local   # flash over OTA
+pio test -e native      # run the host tests, no hardware needed
+```
+
+Your WiFi and MQTT settings go in `src/config_defaults.h`, which is in
+`.gitignore` and so never ends up in a commit. Anything you do not set there
+falls back to the defaults in [support.h](src/support.h). All configuration
+options are described in [SW-Configuration.md](SW-Configuration.md).
+
+```c
+// src/config_defaults.h
+#define WIFI_SSID     "your-ssid"
+#define WIFI_PASSWORD "your-password"
+#define MQTT_SERVER   "192.168.1.10"
+#define HOSTNAME      "MHI-AC-Ctrl-livingroom"
+```
+
+The Arduino IDE is no longer supported: it needs the `.ino` sketch layout, and
+that layout is what prevented the project from being built in CI. Every push
+now compiles the whole `#ifdef` matrix and runs the host tests
+(see [.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 In a previous version (see [here](https://github.com/absalom-muc/MHI-AC-SPY)) I used the Hardware-SPI of the ESP8266. But since the SPI documentation of ESP8266 is poor, I decided to switch to a Software based SPI.
 This Software based SPI is reliable and the performance of the ESP8266 is sufficient for this use case.

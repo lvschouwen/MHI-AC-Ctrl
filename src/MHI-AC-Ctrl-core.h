@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include "mhi_frame.h"  // frame layout + checksums, host-testable
+
 // comment out the data you are not interested, but at least leave one row !
 const byte opdata[][2] PROGMEM = {
   { 0xc0, 0x02},  //  1 "MODE"
@@ -36,36 +38,7 @@ const byte opdata[][2] PROGMEM = {
 #define MOSI_PIN 13
 #define MISO_PIN 12
 
-// constants for the frame
-#define SB0 0
-#define SB1 SB0 + 1
-#define SB2 SB0 + 2
-#define DB0 SB2 + 1
-#define DB1 SB2 + 2
-#define DB2 SB2 + 3
-#define DB3 SB2 + 4
-#define DB4 SB2 + 5
-#define DB6 SB2 + 7
-#define DB9 SB2 + 10
-#define DB10 SB2 + 11
-#define DB11 SB2 + 12
-#define DB12 SB2 + 13
-#define DB14 SB2 + 15
-#define CBH DB14 + 1
-#define CBL DB14 + 2
-#define DB15 CBL + 1
-#define DB16 CBL + 2
-#define DB17 CBL + 3
-#define DB18 CBL + 4
-#define DB19 CBL + 5
-#define DB20 CBL + 6
-#define DB21 CBL + 7
-#define DB22 CBL + 8
-#define DB23 CBL + 9
-#define DB24 CBL + 10
-#define DB25 CBL + 11
-#define DB26 CBL + 12
-#define CBL2 DB26 + 1
+// constants for the frame moved to lib/mhi_pure/mhi_frame.h
 
 enum ErrMsg {   // Error message enum
   err_msg_valid_frame = 0, err_msg_invalid_signature = -1, err_msg_invalid_checksum = -2, err_msg_timeout_SCK_low = -3, err_msg_timeout_SCK_high = -4
