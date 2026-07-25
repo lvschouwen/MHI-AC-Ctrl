@@ -136,7 +136,8 @@ class MHI_AC_Ctrl_Core {
     byte new_VanesLR1 = 0;
     byte new_3Dauto = 0;
     byte frameSize = 20;
-    
+    uint call_counter = 0;                // counts how often loop() was called
+
     CallbackInterface_Status *m_cbiStatus;
 
   public:
@@ -147,7 +148,8 @@ class MHI_AC_Ctrl_Core {
 
     void init();                          // initialization called once after boot
     void reset_old_values();              // resets the 'old' variables ensuring that all status information are resend
-    int loop(uint max_time_ms);            // receive / transmit a frame of 20 bytes
+    int loop(uint max_time_ms);           // receive / transmit a frame of 20 bytes; returns an ErrMsg
+    uint get_call_counter();              // how often loop() has run since boot
     void set_power(boolean power);        // power on/off the AC
     void set_mode(ACMode mode);           // change AC mode (e.g. heat, dry, cool etc.)
     void set_tsetpoint(uint tsetpoint);   // set the target temperature of the AC)

@@ -85,11 +85,41 @@ static void test_ds18x20_agrees_with_the_celsius_encoding(void) {
   }
 }
 
-static void test_negative_ds18x20_readings_report_zero(void) {
-  // Preserved from the original: below freezing the sensor path gives up
-  // rather than encoding a negative Troom.
-  TEST_ASSERT_EQUAL_UINT8(0, mhi_troom_from_ds18x20_raw(-1));
-  TEST_ASSERT_EQUAL_UINT8(0, mhi_troom_from_ds18x20_raw(-5 * 128));
+static void test_sub_zero_ds18x20_readings_encode_normally(void) {
+  // Previously anything below 0 degC returned 0, which the caller's plausible
+  // check then dropped: the MQTT path accepted -10 degC but a sensor in an
+  // unheated room could not report frost. Now both paths agree.
+  TEST_ASSERT_EQUAL_UINT8(41, mhi_troom_from_ds18x20_raw(-5 * 128));
+  TEST_ASSERT_EQUAL_UINT8(21, mhi_troom_from_ds18x20_raw(-10 * 128));
+}
+
+static void test_sub_zero_ds18x20_agrees_with_the_celsius_encoding(void) {
+  for (int step = -39; step < 0; step++) {  // -9.75 degC .. -0.25 degC
+    const float celsius = step * 0.25f;
+    TEST_ASSERT_EQUAL_UINT8(mhi_troom_from_celsius(celsius),
+                            mhi_troom_from_ds18x20_raw((int16_t)(step * 32)));
+  }
+}
+
+static void test_ds18x20_encoding_truncates_the_same_way_below_zero(void) {
+  // -9.9921875 degC. Truncating the raw value first would give 22; the float
+  // path gives 21, and the two must not disagree.
+  TEST_ASSERT_EQUAL_UINT8(21, mhi_troom_from_ds18x20_raw(-1279));
+}
+
+// --- the third copy of the plausible window, in byte form ------------------
+
+static void test_troom_byte_window_matches_the_celsius_window(void) {
+  TEST_ASSERT_FALSE(mhi_troom_byte_plausible(21));   // exactly -10 degC
+  TEST_ASSERT_TRUE(mhi_troom_byte_plausible(22));
+  TEST_ASSERT_TRUE(mhi_troom_byte_plausible(252));
+  TEST_ASSERT_FALSE(mhi_troom_byte_plausible(253));  // exactly 48 degC
+
+  for (int troom = 0; troom <= 255; troom++) {
+    const float celsius = mhi_celsius_from_troom(troom);
+    TEST_ASSERT_EQUAL_INT(mhi_troom_celsius_plausible(celsius),
+                          mhi_troom_byte_plausible((uint8_t)troom));
+  }
 }
 
 int main(void) {
@@ -103,6 +133,9 @@ int main(void) {
   RUN_TEST(test_ds18x20_power_on_reset_value_is_rejected);
   RUN_TEST(test_converts_ds18x20_raw_to_the_troom_byte);
   RUN_TEST(test_ds18x20_agrees_with_the_celsius_encoding);
-  RUN_TEST(test_negative_ds18x20_readings_report_zero);
+  RUN_TEST(test_sub_zero_ds18x20_readings_encode_normally);
+  RUN_TEST(test_sub_zero_ds18x20_agrees_with_the_celsius_encoding);
+  RUN_TEST(test_ds18x20_encoding_truncates_the_same_way_below_zero);
+  RUN_TEST(test_troom_byte_window_matches_the_celsius_window);
   return UNITY_END();
 }

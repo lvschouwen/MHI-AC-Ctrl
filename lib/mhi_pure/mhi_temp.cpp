@@ -26,13 +26,22 @@ bool mhi_troom_celsius_plausible(float celsius) {
   return celsius > -10.0f && celsius < 48.0f;
 }
 
+bool mhi_troom_byte_plausible(uint8_t troom) {
+  return mhi_troom_celsius_plausible(mhi_celsius_from_troom(troom));
+}
+
 bool mhi_ds18x20_raw_plausible(int16_t raw) {
   return raw <= kDs18x20RawMax && raw >= kDs18x20RawMin;
 }
 
 uint8_t mhi_troom_from_ds18x20_raw(int16_t raw) {
-  if (raw < 0) return 0;
-  const int encoded = raw / kDs18x20RawPerTroomStep + kTroomOffset;
+  // Bias by the offset before dividing so the truncation lands on the final
+  // value, the way (int)(celsius * 4 + 61) does. Dividing first and adding
+  // afterwards would round sub-zero readings the other way and put the two
+  // encodings one step apart.
+  const int biased = raw + kTroomOffset * kDs18x20RawPerTroomStep;
+  if (biased < 0) return 0;
+  const int encoded = biased / kDs18x20RawPerTroomStep;
   if (encoded > 255) return 255;
   return (uint8_t)encoded;
 }

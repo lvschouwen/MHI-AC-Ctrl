@@ -9,6 +9,7 @@
 
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
+#include "mhi_mqtt.h"
 #include "mhi_temp.h"
 #include "support.h"
 
@@ -20,16 +21,24 @@ unsigned long room_temp_set_timeout_Millis = millis();
 bool troom_was_set_by_MQTT = false;
 bool troom_was_set_by_DS18X20 = false;
 
+// Longest payload we ever parse is a temperature; anything longer is not a
+// command we understand.
+#define MQTT_PAYLOAD_MAX 32
+
 void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int length) {
-  payload[length] = 0;  // we need a string
-  Serial.printf_P(PSTR("MQTT_subscribe_callback, topic=%s payload=%s payload_length=%i\n"), topic, (char*)payload, length);
+  // Copy out rather than terminating in place. `payload` points into
+  // pubsubclient3's receive buffer, so payload[length] is _buffer[length] -
+  // one byte past the end when a message fills the buffer.
+  char payload_str[MQTT_PAYLOAD_MAX];
+  mhi_copy_payload(payload_str, sizeof(payload_str), payload, length);
+  Serial.printf_P(PSTR("MQTT_subscribe_callback, topic=%s payload=%s payload_length=%i\n"), topic, payload_str, length);
 #ifndef POWERON_WHEN_CHANGING_MODE
   if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_POWER)) == 0) {
-    if (strcmp_P((char*)payload, PSTR(PAYLOAD_POWER_ON)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_POWER_ON)) == 0) {
       mhi_ac_ctrl_core.set_power(power_on);
       publish_cmd_ok();
     }
-    else if (strcmp_P((char*)payload, PSTR(PAYLOAD_POWER_OFF)) == 0) {
+    else if (strcmp_P(payload_str, PSTR(PAYLOAD_POWER_OFF)) == 0) {
       mhi_ac_ctrl_core.set_power(power_off);
       publish_cmd_ok();
     }
@@ -40,40 +49,40 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
 #endif
   if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_MODE)) == 0) {
 #ifdef POWERON_WHEN_CHANGING_MODE
-    if (strcmp_P((char*)payload, PSTR(PAYLOAD_POWER_OFF)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_POWER_OFF)) == 0) {
       mhi_ac_ctrl_core.set_power(power_off);
       publish_cmd_ok();
     } else
 #endif
-      if (strcmp_P((char*)payload, PSTR(PAYLOAD_MODE_AUTO)) == 0) {
+      if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_AUTO)) == 0) {
         mhi_ac_ctrl_core.set_mode(mode_auto);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
-      else if (strcmp_P((char*)payload, PSTR(PAYLOAD_MODE_DRY)) == 0) {
+      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_DRY)) == 0) {
         mhi_ac_ctrl_core.set_mode(mode_dry);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
-      else if (strcmp_P((char*)payload, PSTR(PAYLOAD_MODE_COOL)) == 0) {
+      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_COOL)) == 0) {
         mhi_ac_ctrl_core.set_mode(mode_cool);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
-      else if (strcmp_P((char*)payload, PSTR(PAYLOAD_MODE_FAN)) == 0) {
+      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_FAN)) == 0) {
         mhi_ac_ctrl_core.set_mode(mode_fan);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
-      else if (strcmp_P((char*)payload, PSTR(PAYLOAD_MODE_HEAT)) == 0) {
+      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_HEAT)) == 0) {
         mhi_ac_ctrl_core.set_mode(mode_heat);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
@@ -84,30 +93,30 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
         publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TSETPOINT)) == 0) {
-    float f=atof((char*)payload);
+    float f=atof(payload_str);
     if((f >= 18) & (f <= 30))
       mhi_ac_ctrl_core.set_tsetpoint((byte)(2 * f));
     else
       publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_FAN)) == 0) {
-    if (strcmp_P((char*)payload, PAYLOAD_FAN_AUTO) == 0){
+    if (strcmp_P(payload_str, PAYLOAD_FAN_AUTO) == 0){
       mhi_ac_ctrl_core.set_fan(7);
       publish_cmd_ok();
     }
-    else if (strcmp_P((char*)payload, "1") == 0){
+    else if (strcmp_P(payload_str, "1") == 0){
       mhi_ac_ctrl_core.set_fan(0);
       publish_cmd_ok();
     }
-    else if (strcmp_P((char*)payload, "2") == 0){
+    else if (strcmp_P(payload_str, "2") == 0){
       mhi_ac_ctrl_core.set_fan(1);
       publish_cmd_ok();
     }
-    else if (strcmp_P((char*)payload, "3") == 0){
+    else if (strcmp_P(payload_str, "3") == 0){
       mhi_ac_ctrl_core.set_fan(2);
       publish_cmd_ok();
     }
-    else if (strcmp_P((char*)payload, "4") == 0){
+    else if (strcmp_P(payload_str, "4") == 0){
       mhi_ac_ctrl_core.set_fan(6);
       publish_cmd_ok();
     }
@@ -115,13 +124,13 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_VANES)) == 0) {
-    if (strcmp_P((char*)payload, PSTR(PAYLOAD_VANES_SWING)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_VANES_SWING)) == 0) {
       mhi_ac_ctrl_core.set_vanes(vanes_swing);
       publish_cmd_ok();
     }
     else {
-      if ((atoi((char*)payload) >= 1) & (atoi((char*)payload) <= 5)) {
-        mhi_ac_ctrl_core.set_vanes(atoi((char*)payload));
+      if ((atoi(payload_str) >= 1) & (atoi(payload_str) <= 5)) {
+        mhi_ac_ctrl_core.set_vanes(atoi(payload_str));
         publish_cmd_ok();
       }
       else
@@ -130,13 +139,13 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
 #ifdef USE_EXTENDED_FRAME_SIZE  
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_VANESLR)) == 0) {
-    if (strcmp_P((char*)payload, PSTR(PAYLOAD_VANESLR_SWING)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_VANESLR_SWING)) == 0) {
       mhi_ac_ctrl_core.set_vanesLR(vanesLR_swing);
       publish_cmd_ok();
     }
     else {
-      if ((atoi((char*)payload) >= 1) & (atoi((char*)payload) <= 7)) {
-        mhi_ac_ctrl_core.set_vanesLR(atoi((char*)payload));
+      if ((atoi(payload_str) >= 1) & (atoi(payload_str) <= 7)) {
+        mhi_ac_ctrl_core.set_vanesLR(atoi(payload_str));
         publish_cmd_ok();
       }
       else
@@ -144,11 +153,11 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     }
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_3DAUTO)) == 0) {
-    if (strcmp_P((char*)payload, PSTR(PAYLOAD_3DAUTO_ON)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_3DAUTO_ON)) == 0) {
       mhi_ac_ctrl_core.set_3Dauto(Dauto_on);
       publish_cmd_ok();
     }
-    else if (strcmp_P((char*)payload, PSTR(PAYLOAD_3DAUTO_OFF)) == 0) {
+    else if (strcmp_P(payload_str, PSTR(PAYLOAD_3DAUTO_OFF)) == 0) {
       mhi_ac_ctrl_core.set_3Dauto(Dauto_off);
       publish_cmd_ok();
     }
@@ -157,7 +166,7 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
 #endif
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TROOM)) == 0) {
-    float f=atof((char*)payload);
+    float f=atof(payload_str);
 #ifdef ENHANCED_RESOLUTION
     f = f + mhi_ac_ctrl_core.get_troom_offset() ;  // increase Troom with current offset to compensate higher setpoint
 #endif
@@ -177,7 +186,7 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     publish_cmd_ok();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_RESET)) == 0) {
-    if (strcmp_P((char*)payload, PSTR(PAYLOAD_REQUEST_RESET)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET)) == 0) {
       publish_cmd_ok();
       delay(500);
       ESP.restart();
@@ -186,7 +195,7 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_PASSIVEMODE)) == 0) {
-    if (strcmp_P((char*)payload, PSTR(PAYLOAD_REQUEST_PASSIVEMODE_ON)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_PASSIVEMODE_ON)) == 0) {
       mhi_ac_ctrl_core.set_passive_mode(true);
     }
     else {
@@ -528,14 +537,19 @@ void loop() {
       }
     }
 #ifdef ENHANCED_RESOLUTION
+    // offset is -0.5..+0.5, so offset*4 is -2..+2. Converting a negative float
+    // straight to byte is undefined behaviour; it only produced the right
+    // answer here by way of modular arithmetic on xtensa-gcc.
     float offset = mhi_ac_ctrl_core.get_troom_offset();
-    byte tmp = offset*4;
-    ds18x20_value = ds18x20_value + tmp;   // add offset
+    int adjusted = (int)ds18x20_value + (int)(offset * 4.0f);
+    if (adjusted < 0) adjusted = 0;
+    if (adjusted > 255) adjusted = 255;
+    ds18x20_value = (byte)adjusted;
 #endif
 
 #ifdef ROOM_TEMP_DS18X20
     if(ds18x20_value != ds18x20_value_old) {
-      if ((ds18x20_value > 21) & (ds18x20_value < 253)) {  // use only values -10°C < T < 48°C
+      if (mhi_troom_byte_plausible(ds18x20_value)) {  // use only values -10°C < T < 48°C
         mhi_ac_ctrl_core.set_troom(ds18x20_value);
         troom_was_set_by_DS18X20 = true;
         ds18x20_value_old = ds18x20_value;

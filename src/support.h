@@ -133,6 +133,12 @@
 
 extern PubSubClient MQTTclient;
 
+// Result of the boot-time wiring check: 0 when all three pins looked right,
+// otherwise a bitmask of MhiWiringFault. A fault does not stop the program -
+// it is published to the diagnostics topic and the unit stays reachable over
+// OTA, which is the only way to fix a board that is already inside an AC.
+extern uint8_t wiring_faults;
+
 void MeasureFrequency();                                      // measures the frequency of the SPI pins
 void initWiFi();                                              // basic WiFi initialization
 void setupWiFi(int& WiFiStatus);                              // setup WIFi connection to AP

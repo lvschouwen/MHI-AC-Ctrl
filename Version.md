@@ -7,6 +7,12 @@ MHI-AC-Ctrl by absalom-muc
 - configuration can be supplied in the gitignored `src/config_defaults.h` instead of editing `support.h`, so credentials stay out of commits
 - frame checksums and the room temperature conversions moved to `lib/mhi_pure`, covered by host tests that run without hardware
 - GitHub Actions builds the whole `#ifdef` matrix on every push, runs the host tests and asserts the firmware still fits its flash budget
+- a failed boot-time wiring check no longer halts in `while (1)`. It is published to the new `Wiring` topic and the unit keeps running, so it stays reachable over OTA
+- the SPI read loop now times out waiting for a rising clock edge, as it already did for a falling one
+- MQTT payloads are copied into a bounded buffer instead of being NUL-terminated inside the client's receive buffer
+- `output_P()` no longer builds the topic with an off-by-one `strncat_P`, and refuses to publish rather than using an uninitialised topic for an unknown status type
+- `mhi_ac_ctrl_core.loop()` returns an error code rather than a call counter that goes negative after ~3.4 years
+- a DS18x20 can now report temperatures below 0 °C, and DallasTemperature 4.x fault codes are recognised explicitly instead of being caught by the sanity clamp
 
 **v2.8** (September 2023)
 - when ds18x20 used and get disconnected, fallback to  IU temperature sensor by [glsf91](https://github.com/glsf91)

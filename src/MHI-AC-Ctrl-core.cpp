@@ -128,7 +128,6 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   //                            sb0   sb1   sb2   db0   db1   db2   db3   db4   db5   db6   db7   db8   db9  db10  db11  db12  db13  db14  chkH  chkL  db15  db16  db17  db18  db19  db20  db21  db22  db23  db24  db25  db26  chk2L
   static byte MISO_frame[] = { 0xA9, 0x00, 0x07, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x22 };
 
-  static uint call_counter = 0;           // counts how often this loop was called
   static unsigned long lastTroomInternalMillis = 0; // remember when Troom internal has changed
   
   if (frameSize == 33)
@@ -243,7 +242,10 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
         digitalWrite(MISO_PIN, 1);
       else
         digitalWrite(MISO_PIN, 0);
-      while (!digitalRead(SCK_PIN)) {} // wait for rising edge
+      while (!digitalRead(SCK_PIN)) { // wait for rising edge
+        if (millis() - startMillis > max_time_ms)
+          return err_msg_timeout_SCK_low;        // SCK stuck@ low error detection
+      }
       if (digitalRead(MOSI_PIN))
         MOSI_byte += bit_mask;
       bit_mask = bit_mask << 1;
@@ -589,5 +591,13 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
         Serial.printf("Unknown operating data, MOSI_frame[DB9]=%i MOSI_frame[D10]=%i\n", MOSI_frame[DB9], MOSI_frame[DB10]);
     }
   }
+  // Used to return call_counter, which at ~20 frames/sec goes negative after
+  // about 3.4 years and then makes the caller's `ret < 0` test log a phantom
+  // error on every frame, forever. The counter is available via
+  // get_call_counter().
+  return err_msg_valid_frame;
+}
+
+uint MHI_AC_Ctrl_Core::get_call_counter() {
   return call_counter;
 }

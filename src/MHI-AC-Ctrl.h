@@ -14,6 +14,7 @@
 #define TOPIC_FSCK "fSCK"
 #define TOPIC_FMOSI "fMOSI"
 #define TOPIC_FMISO "fMISO"
+#define TOPIC_WIRING "Wiring"
 
 #define TOPIC_POWER "Power"
 #define TOPIC_MODE "Mode"

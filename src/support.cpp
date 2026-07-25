@@ -1,6 +1,7 @@
 #include "support.h"
 #include <Arduino.h>
 
+#include "mhi_diag.h"
 #include "mhi_temp.h"
 
 WiFiClient espClient;
@@ -26,6 +27,8 @@ IRAM_ATTR void handleInterrupt_MISO() {
   rising_edge_cnt.MISO++;
 }
 
+uint8_t wiring_faults = 0;
+
 void MeasureFrequency() {  // measure the frequency on the pins
   pinMode(SCK_PIN, INPUT);
   pinMode(MOSI_PIN, INPUT);
@@ -35,30 +38,29 @@ void MeasureFrequency() {  // measure the frequency on the pins
   attachInterrupt(digitalPinToInterrupt(MOSI_PIN), handleInterrupt_MOSI, RISING);
   attachInterrupt(digitalPinToInterrupt(MISO_PIN), handleInterrupt_MISO, RISING);
   unsigned long starttimeMicros = micros();
-  while (micros() - starttimeMicros < 1000000);
+  while (micros() - starttimeMicros < 1000000)
+    yield();  // one second is a long time to hold off the SDK
   detachInterrupt(SCK_PIN);
   detachInterrupt(MOSI_PIN);
   detachInterrupt(MISO_PIN);
 
-  Serial.printf_P(PSTR("SCK frequency=%iHz (expected: >3000Hz) "), rising_edge_cnt.SCK);
-  if (rising_edge_cnt.SCK > 3000)
-    Serial.println(F("o.k."));
-  else
-    Serial.println(F("out of range!"));
+  wiring_faults = mhi_wiring_faults(rising_edge_cnt.SCK, rising_edge_cnt.MOSI, rising_edge_cnt.MISO);
 
-  Serial.printf("MOSI frequency=%iHz (expected: <SCK frequency) ", rising_edge_cnt.MOSI);
-  if ((rising_edge_cnt.MOSI > 30) & (rising_edge_cnt.MOSI < rising_edge_cnt.SCK))
-    Serial.println(F("o.k."));
-  else
-    Serial.println(F("out of range!"));
+  Serial.printf_P(PSTR("SCK frequency=%iHz (expected: >3000Hz) %s\n"), rising_edge_cnt.SCK,
+                  (wiring_faults & MHI_WIRING_FAULT_SCK) ? "out of range!" : "o.k.");
+  Serial.printf_P(PSTR("MOSI frequency=%iHz (expected: <SCK frequency) %s\n"), rising_edge_cnt.MOSI,
+                  (wiring_faults & MHI_WIRING_FAULT_MOSI) ? "out of range!" : "o.k.");
+  Serial.printf_P(PSTR("MISO frequency=%iHz (expected: ~0Hz) %s\n"), rising_edge_cnt.MISO,
+                  (wiring_faults & MHI_WIRING_FAULT_MISO) ? "out of range!" : "o.k.");
 
-  Serial.printf("MISO frequency=%iHz (expected: ~0Hz) ", rising_edge_cnt.MISO);
-  if (rising_edge_cnt.MISO <= 10) {
-    Serial.println(F("o.k."));
-  }
-  else {
-    Serial.println(F("out of range!"));
-    while (1);
+  if (wiring_faults != 0) {
+    // Deliberately not fatal. This used to be `while (1);` on a bad MISO
+    // reading, which meant the hardware watchdog rebooted into the same check
+    // forever - before setupOTA() had run, so the only fix was a screwdriver.
+    char faults[32];
+    mhi_wiring_fault_text(wiring_faults, faults, sizeof(faults));
+    Serial.printf_P(PSTR("Wiring check failed for: %s\n"), faults);
+    Serial.println(F("Continuing in degraded mode so the unit stays reachable over OTA."));
   }
 }
 
@@ -188,7 +190,10 @@ int MQTTreconnect() {
       output_P((ACStatus)type_status, PSTR(TOPIC_FMOSI), strtmp);
       itoa(rising_edge_cnt.MISO, strtmp, 10);
       output_P((ACStatus)type_status, PSTR(TOPIC_FMISO), strtmp);
-      
+      mhi_wiring_fault_text(wiring_faults, strtmp, sizeof(strtmp));
+      output_P((ACStatus)type_status, PSTR(TOPIC_WIRING), strtmp);
+
+
       MQTTclient.subscribe(MQTT_SET_PREFIX "#");
       return MQTT_RECONNECTED;
     }
@@ -202,7 +207,7 @@ int MQTTreconnect() {
     }
   }
   MQTTclient.loop();
-  return MQTT_CONNECTED;
+  return MQTT_CONNECT_OK;  // ours, not PubSubClient's MQTT_CONNECTED; both are 0
 }
 
 void publish_cmd_ok() {
@@ -221,13 +226,31 @@ void output_P(const ACStatus status, PGM_P topic, PGM_P payload) {
   
   Serial.printf_P(PSTR("status=%i topic=%s payload=%s\n"), status, topic, payload);
   
+  PGM_P prefix;
   if ((status & 0xc0) == type_status)
-    strncpy_P(mqtt_topic, PSTR(MQTT_PREFIX), mqtt_topic_size);
+    prefix = PSTR(MQTT_PREFIX);
   else if ((status & 0xc0) == type_opdata)
-    strncpy_P(mqtt_topic, PSTR(MQTT_OP_PREFIX), mqtt_topic_size);
+    prefix = PSTR(MQTT_OP_PREFIX);
   else if ((status & 0xc0) == type_erropdata)
-    strncpy_P(mqtt_topic, PSTR(MQTT_ERR_OP_PREFIX), mqtt_topic_size);
-  strncat_P(mqtt_topic, topic, mqtt_topic_size - strlen(mqtt_topic));
+    prefix = PSTR(MQTT_ERR_OP_PREFIX);
+  else {
+    // Previously mqtt_topic was left uninitialised here and then appended to.
+    Serial.printf_P(PSTR("output_P: status 0x%02x has no known type, not publishing\n"), status);
+    return;
+  }
+
+  strncpy_P(mqtt_topic, prefix, mqtt_topic_size - 1);
+  mqtt_topic[mqtt_topic_size - 1] = '\0';  // strncpy does not terminate on overflow
+  const size_t prefix_len = strlen(mqtt_topic);
+  // strncat appends n characters *plus* a NUL, so the limit is one below the
+  // remaining space. Passing the remaining space, as this used to, writes one
+  // byte past the buffer.
+  strncat_P(mqtt_topic, topic, mqtt_topic_size - prefix_len - 1);
+
+  if (strlen(mqtt_topic) != prefix_len + strlen_P(topic)) {
+    Serial.printf_P(PSTR("output_P: topic does not fit in %i bytes, not publishing\n"), mqtt_topic_size);
+    return;
+  }
   MQTTclient.publish_P(mqtt_topic, payload, true);
 }
 
@@ -236,32 +259,60 @@ OneWire oneWire(ONE_WIRE_BUS);       // Setup a oneWire instance to communicate 
 DallasTemperature sensors(&oneWire); // Pass our oneWire reference to Dallas Temperature.
 DeviceAddress insideThermometer;     // arrays to hold device address
 
+// DallasTemperature 4.x reports these instead of a temperature. The 85 degC
+// power-on-reset value in particular used to reach us as a plausible-looking
+// reading and was only rejected by the > 48 degC sanity clamp further down.
+static bool ds18x20_reading_is_fault(int16_t raw) {
+  return raw == DEVICE_DISCONNECTED_RAW
+      || raw == DEVICE_FAULT_OPEN_RAW
+      || raw == DEVICE_FAULT_SHORTGND_RAW
+      || raw == DEVICE_FAULT_SHORTVDD_RAW
+      || raw == DEVICE_POWER_ON_RESET_RAW
+      || raw == DEVICE_INSUFFICIENT_POWER_RAW;
+}
+
 byte getDs18x20Temperature(int temp_hysterese) {
   static unsigned long DS1820Millis = millis();
-  static int16_t tempR_old = 0xffff;
+  static int16_t tempR_old = 0;
+  // "No reading yet" used to be encoded as tempR_old = 0xffff, which worked
+  // only because the conversion below returned 0 for anything negative and the
+  // caller then dropped the 0. Now that sub-zero temperatures encode properly,
+  // the absence of a reading has to be tracked explicitly.
+  static bool have_reading = false;
 
   if (millis() - DS1820Millis > TEMP_MEASURE_PERIOD * 1000) {
     int16_t tempR = sensors.getTemp(insideThermometer);
-    if (tempR == DEVICE_DISCONNECTED_RAW) {
-      tempR_old = tempR;
+    DS1820Millis = millis();
+
+    if (ds18x20_reading_is_fault(tempR)) {
+      Serial.printf_P(PSTR("DS18x20 fault, raw=%i\n"), tempR);
+      have_reading = false;
+      sensors.requestTemperatures();
       return DS18X20_NOT_CONNECTED;
     }
+
     tempR += ROOM_TEMP_DS18X20_OFFSET*128;
     if (!mhi_ds18x20_raw_plausible(tempR)) {    // skip onrealistic values
+      if (!have_reading) {                      // nothing sane to fall back to
+        sensors.requestTemperatures();
+        return DS18X20_NOT_CONNECTED;
+      }
       tempR = tempR_old;    // use previous value
     }
+
     int16_t tempR_diff = tempR - tempR_old; // avoid using other functions inside the brackets of abs, see https://www.arduino.cc/reference/en/language/functions/math/abs/
-    if (abs(tempR_diff) > temp_hysterese) {
+    if (!have_reading || abs(tempR_diff) > temp_hysterese) {
       tempR_old = tempR;
+      have_reading = true;
       char strtmp[10];
       dtostrf(sensors.rawToCelsius(tempR), 0, 2, strtmp);
       //Serial.printf_P(PSTR("new DS18x20 temperature=%s°C\n"), strtmp);
       output_P((ACStatus)type_status, PSTR(TOPIC_TDS1820), strtmp);
     }
-    DS1820Millis = millis();
     sensors.requestTemperatures();
   }
   //Serial.printf_P(PSTR("temp DS18x20 tempR_old=%i %i\n"), tempR_old, mhi_troom_from_ds18x20_raw(tempR_old));
+  if (!have_reading) return DS18X20_NOT_CONNECTED;
   return mhi_troom_from_ds18x20_raw(tempR_old);
 }
 
@@ -279,8 +330,11 @@ void setup_ds18x20() {
   Serial.printf_P(PSTR("Found %i DS18xxx family devices.\n"), sensors.getDS18Count());
   if (!sensors.getAddress(insideThermometer, 0))
     Serial.println(F("Unable to find address for Device 0"));
-  else
-    Serial.printf_P(PSTR("Device 0 Address: 0x%02x\n"), insideThermometer);
+  else {
+    Serial.print(F("Device 0 Address: 0x"));
+    printAddress(insideThermometer);  // %02x on the array printed the pointer
+    Serial.println();
+  }
   sensors.setResolution(insideThermometer, 9); // set the resolution to 9 bit
   sensors.setWaitForConversion(false);
   sensors.requestTemperatures(); // Send the command to get temperatures
@@ -308,7 +362,7 @@ void setupOTA() {
     Serial.printf_P(PSTR("Progress: %u%%\n"), (progress / (total / 100)));
   });
   ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf_P(PSTR("Error[%u]: %i\n"), error);
+    Serial.printf_P(PSTR("Error[%u]\n"), error);
     if (error == OTA_AUTH_ERROR)
       Serial.println(F("Auth Failed"));
     else if (error == OTA_BEGIN_ERROR)

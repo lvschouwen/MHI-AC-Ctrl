@@ -24,6 +24,10 @@ float mhi_celsius_from_troom(int troom);
 // both ends, matching the original (f > -10) & (f < 48).
 bool mhi_troom_celsius_plausible(float celsius);
 
+// The same window applied to an already-encoded Troom byte, so the MQTT path,
+// the sensor path and the write path cannot drift apart.
+bool mhi_troom_byte_plausible(uint8_t troom);
+
 // Accept a raw DS18x20 reading, in 1/128 degC units. The window is inclusive
 // at both ends, unlike mhi_troom_celsius_plausible(). The two have always
 // disagreed on the boundary; that is preserved here rather than quietly
@@ -31,5 +35,7 @@ bool mhi_troom_celsius_plausible(float celsius);
 bool mhi_ds18x20_raw_plausible(int16_t raw);
 
 // Convert a raw DS18x20 reading, in 1/128 degC units, to the MHI Troom byte.
-// Sub-zero readings report 0, as the original did.
+// Sub-zero readings encode normally. They used to return 0, which the caller's
+// plausible check then dropped, so a DS18x20 could not report anything below
+// freezing even though the MQTT path accepted down to -10 degC.
 uint8_t mhi_troom_from_ds18x20_raw(int16_t raw);
