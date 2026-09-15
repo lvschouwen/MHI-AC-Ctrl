@@ -258,15 +258,21 @@ The AC does not power off when active mode is enabled.
 # Advanced settings
 
 ## Topic and payload text ([MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h))
-All topic and payload text is included in defines, e.g. change
-```cpp
-#define PAYLOAD_POWER_ON "On"
-```
-to
+All topic and payload text is included in defines. To change one, define it in `src/config_defaults.h` rather than editing the header, e.g.
 ```cpp
 #define PAYLOAD_POWER_ON "on"
 ```
 if your framework prefers lower case. These topics and payloads are used for MQTT topics and payloads.
+
+Home Assistant's MQTT climate only accepts its own mode names, so a build for it with `POWERON_WHEN_CHANGING_MODE` also needs
+```cpp
+#define PAYLOAD_POWER_OFF "off"
+#define PAYLOAD_MODE_AUTO "auto"
+#define PAYLOAD_MODE_DRY "dry"
+#define PAYLOAD_MODE_COOL "cool"
+#define PAYLOAD_MODE_FAN "fan_only"
+#define PAYLOAD_MODE_HEAT "heat"
+```
 
 ## Operating data ([MHI-AC-Ctrl-core.h](src/MHI-AC-Ctrl-core.h))
 Currently the following operating data in double quotes are supported

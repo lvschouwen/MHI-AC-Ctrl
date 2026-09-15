@@ -56,6 +56,7 @@ jobs:
           - ci-ds18x20-troom
           - ci-poweron-when-changing-mode
           - ci-continue-without-mqtt
+          - ci-custom-payloads
           - ci-all-options
     steps:
       - uses: actions/checkout@v4
