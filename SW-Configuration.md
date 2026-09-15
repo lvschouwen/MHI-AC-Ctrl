@@ -216,6 +216,7 @@ For example: when setpoint is 20.5. When `Troom` 19.5 is received (from MQTT or 
 ## Behaviour when changing AC mode ([support.h](src/support.h))
 Per default the power on/off state is not changed, when you change the AC mode (e.g. heat, dry, cold etc.).
 But when you uncomment the following line, then the AC is switched on, once you change the AC mode and switched off if you publish `Off` to `Mode` (instead of `Power`). This beahviour is requested for use with [Home Assistant](https://www.home-assistant.io/).
+With this option `Mode` also reports the power state: it shows `Off` while the AC is off, and the operating mode only while the AC is on. A mode changed while the AC is off is reported once it switches on.
 ```cpp
 //#define POWERON_WHEN_CHANGING_MODE true           // uncomment it to switch on the AC when the mode (heat, cool, dry etc.) is changed
 ```

@@ -10,6 +10,7 @@
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
 #include "mhi_mqtt.h"
+#include "mhi_status.h"
 #include "mhi_temp.h"
 #include "support.h"
 
@@ -212,7 +213,7 @@ class StatusHandler : public CallbackInterface_Status {
     void cbiStatusFunction(ACStatus status, int value) {
       char strtmp[10];
 #ifdef POWERON_WHEN_CHANGING_MODE
-      static int mode_tmp = 0xff;
+      static MhiModeTopic mode_topic = {MHI_STATUS_UNKNOWN, MHI_STATUS_UNKNOWN};
 #endif
 #ifdef ENHANCED_RESOLUTION      
       float offset = mhi_ac_ctrl_core.get_troom_offset();
@@ -239,22 +240,24 @@ class StatusHandler : public CallbackInterface_Status {
           if (value == power_on){
             output_P(status, (TOPIC_POWER), PSTR(PAYLOAD_POWER_ON));
             power_status = on;
-#ifdef POWERON_WHEN_CHANGING_MODE
-            cbiStatusFunction(status_mode, mode_tmp);
-#endif
           }
           else {
             output_P(status, (TOPIC_POWER), (PAYLOAD_POWER_OFF));
             power_status = off;
-#ifdef POWERON_WHEN_CHANGING_MODE
-            output_P(status, PSTR(TOPIC_MODE), PSTR(PAYLOAD_MODE_OFF));
-#endif
           }
+#ifdef POWERON_WHEN_CHANGING_MODE
+          // Mode stands in for power in this build, see mhi_status.h.
+          if (mhi_mode_topic_on_power(&mode_topic, value) == MHI_MODE_TOPIC_OFF)
+            output_P(status, PSTR(TOPIC_MODE), PSTR(PAYLOAD_MODE_OFF));
+          else
+            cbiStatusFunction(status_mode, mode_topic.mode);
+#endif
           break;
         case status_mode:
-#ifdef POWERON_WHEN_CHANGING_MODE        
-          mode_tmp = value;
-#endif          
+#ifdef POWERON_WHEN_CHANGING_MODE
+          if (!mhi_mode_topic_on_mode(&mode_topic, value))
+            break;  // held until the unit is on
+#endif
         case opdata_mode:
         case erropdata_mode:
           switch (value) {

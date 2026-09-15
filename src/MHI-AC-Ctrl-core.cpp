@@ -2,6 +2,7 @@
 // implements the core functions (read & write SPI)
 
 #include "MHI-AC-Ctrl-core.h"
+#include "mhi_status.h"
 
 // The checksum helpers moved to lib/mhi_pure/mhi_frame.cpp, where they can be
 // tested on the build machine.
@@ -286,16 +287,11 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
         m_cbiStatus->cbiStatusFunction(status_3Dauto, status_3Dauto_old);
       }
     }
-    // evaluate status
-    if ((MOSI_frame[DB0] & 0x1c) != status_mode_old) { // Mode
-      status_mode_old = MOSI_frame[DB0] & 0x1c;
-      m_cbiStatus->cbiStatusFunction(status_mode, status_mode_old);
-    }
-
-    if ((MOSI_frame[DB0] & 0x01) != status_power_old) { // Power
-      status_power_old = MOSI_frame[DB0] & 0x01;
-      m_cbiStatus->cbiStatusFunction(status_power, status_power_old);
-    }
+    // evaluate status. Power and Mode go out in the order mhi_status.h explains.
+    MhiDb0Change db0_changes[2];
+    const size_t db0_change_count = mhi_db0_changes(MOSI_frame[DB0], &status_power_old, &status_mode_old, db0_changes);
+    for (size_t i = 0; i < db0_change_count; i++)
+      m_cbiStatus->cbiStatusFunction(db0_changes[i].field == MHI_DB0_POWER ? status_power : status_mode, db0_changes[i].value);
 
     uint fantmp = MOSI_frame[DB1] & 0x07;
     if (fantmp != status_fan_old) {
