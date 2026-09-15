@@ -13,6 +13,7 @@
 #include "mhi_mqtt.h"
 #include "mhi_status.h"
 #include "mhi_temp.h"
+#include "mhi_troom_filter.h"
 #include "support.h"
 
 MHI_AC_Ctrl_Core mhi_ac_ctrl_core;
@@ -22,6 +23,9 @@ POWER_STATUS power_status = unknown;
 unsigned long room_temp_set_timeout_Millis = millis();
 bool troom_was_set_by_MQTT = false;
 bool troom_was_set_by_DS18X20 = false;
+
+// Reset on every MQTT (re)connect, so Troom is re-sent like every other status.
+MhiTroomFilter troom_filter = {0, false};
 
 // Longest payload we ever parse is a temperature; anything longer is not a
 // command we understand.
@@ -51,7 +55,8 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
 #endif
   if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_MODE)) == 0) {
 #ifdef POWERON_WHEN_CHANGING_MODE
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_POWER_OFF)) == 0) {
+    // The same text the Mode topic publishes for an AC that is off.
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_OFF)) == 0) {
       mhi_ac_ctrl_core.set_power(power_off);
       publish_cmd_ok();
     } else
@@ -96,8 +101,10 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TSETPOINT)) == 0) {
     float f=atof(payload_str);
-    if((f >= 18) & (f <= 30))
+    if((f >= 18) & (f <= 30)) {
       mhi_ac_ctrl_core.set_tsetpoint((byte)(2 * f));
+      publish_cmd_ok();
+    }
     else
       publish_cmd_invalidparameter();
   }
@@ -199,11 +206,14 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_PASSIVEMODE)) == 0) {
     if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_PASSIVEMODE_ON)) == 0) {
       mhi_ac_ctrl_core.set_passive_mode(true);
+      publish_cmd_ok();
     }
-    else {
+    else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_PASSIVEMODE_OFF)) == 0) {
       mhi_ac_ctrl_core.set_passive_mode(false);
+      publish_cmd_ok();
     }
-    publish_cmd_ok();
+    else
+      publish_cmd_invalidparameter();
   }
   else
     publish_cmd_unknown();
@@ -220,7 +230,6 @@ class StatusHandler : public CallbackInterface_Status {
       float offset = mhi_ac_ctrl_core.get_troom_offset();
       float tmp_value;
 #endif
-      static byte status_troom_old=0xff;
       //Serial.printf_P(PSTR("status=%i value=%i\n"), status, value);
       switch (status) {
         case status_power:
@@ -355,13 +364,9 @@ class StatusHandler : public CallbackInterface_Status {
 #endif
           break;
         case status_troom:
-          {
-            int8_t troom_diff = value - status_troom_old; // avoid using other functions inside the brackets of abs, see https://www.arduino.cc/reference/en/language/functions/math/abs/
-            if (abs(troom_diff) > TROOM_FILTER_LIMIT/0.25f) { // Room temperature delta > 0.25°C
-              status_troom_old = value;
-              dtostrf(mhi_celsius_from_troom(value), 0, 2, strtmp);
-              output_P(status, PSTR(TOPIC_TROOM), strtmp);
-            }
+          if (mhi_troom_filter_pass(&troom_filter, (uint8_t)value, TROOM_FILTER_LIMIT)) {
+            dtostrf(mhi_celsius_from_troom(value), 0, 2, strtmp);
+            output_P(status, PSTR(TOPIC_TROOM), strtmp);
           }
           break;
         case status_tsetpoint:
@@ -522,49 +527,62 @@ void loop() {
   else {
     //Serial.printf("loop: WiFi.status()=%i\n", WiFi.status()); // see https://realglitch.com/2018/07/arduino-wifi-status-codes/
     MQTTStatus=MQTTreconnect();
-    if (MQTTStatus == MQTT_RECONNECTED)
+    if (MQTTStatus == MQTT_RECONNECTED) {
       mhi_ac_ctrl_core.reset_old_values();  // after a reconnect
+      mhi_troom_filter_reset(&troom_filter);
+    }
     ArduinoOTA.handle();
   }
 
 #if TEMP_MEASURE_PERIOD > 0
+  // A reading has come back since setup or since the last fault. Decides
+  // whether a fault re-enumerates the bus, independent of whether the sensor
+  // drives Troom: a build that only publishes Tds1820 needs that too.
+  static bool ds18x20_online = false;
   if (!troom_was_set_by_MQTT) {  // Only use ds18x20 if MQTT is NOT used for setting Troom
     byte ds18x20_value = getDs18x20Temperature(25);
     if (ds18x20_value == DS18X20_NOT_CONNECTED) {
-      // fallback to AC internal Troom temperature sensor
-      if(troom_was_set_by_DS18X20 ) {  // earlier DS18X20 was working
-        mhi_ac_ctrl_core.set_troom(0xff);  // use IU temperature sensor
-        Serial.println(F("DS18X20 disconnected, use IU temperature sensor value!"));
-        troom_was_set_by_DS18X20 = false;
+      if (ds18x20_online) {  // earlier DS18X20 was working
+        ds18x20_online = false;
+        if (troom_was_set_by_DS18X20) {
+          // fallback to AC internal Troom temperature sensor
+          mhi_ac_ctrl_core.set_troom(0xff);  // use IU temperature sensor
+          Serial.println(F("DS18X20 disconnected, use IU temperature sensor value!"));
+          troom_was_set_by_DS18X20 = false;
 #ifdef ROOM_TEMP_DS18X20
-        ds18x20_value_old = 0;  // re-publish once the sensor comes back
+          ds18x20_value_old = 0;  // re-publish once the sensor comes back
 #endif
+        }
         Serial.println(F("Try setup DS18X20 again"));
         setup_ds18x20();  // try setup again
       }
     }
+    else {
+      ds18x20_online = true;
 #ifdef ENHANCED_RESOLUTION
-    // offset is -0.5..+0.5, so offset*4 is -2..+2. Converting a negative float
-    // straight to byte is undefined behaviour; it only produced the right
-    // answer here by way of modular arithmetic on xtensa-gcc.
-    float offset = mhi_ac_ctrl_core.get_troom_offset();
-    int adjusted = (int)ds18x20_value + (int)(offset * 4.0f);
-    if (adjusted < 0) adjusted = 0;
-    if (adjusted > 255) adjusted = 255;
-    ds18x20_value = (byte)adjusted;
+      // Only on a real reading: applied to the DS18X20_NOT_CONNECTED sentinel
+      // this made a byte that only the plausibility window kept out.
+      // offset is -0.5..+0.5, so offset*4 is -2..+2. Converting a negative
+      // float straight to byte is undefined behaviour; it only produced the
+      // right answer here by way of modular arithmetic on xtensa-gcc.
+      float offset = mhi_ac_ctrl_core.get_troom_offset();
+      int adjusted = (int)ds18x20_value + (int)(offset * 4.0f);
+      if (adjusted < 0) adjusted = 0;
+      if (adjusted > 255) adjusted = 255;
+      ds18x20_value = (byte)adjusted;
 #endif
 
 #ifdef ROOM_TEMP_DS18X20
-    if(ds18x20_value != ds18x20_value_old) {
-      if (mhi_troom_byte_plausible(ds18x20_value)) {  // use only values -10°C < T < 48°C
-        mhi_ac_ctrl_core.set_troom(ds18x20_value);
-        troom_was_set_by_DS18X20 = true;
-        ds18x20_value_old = ds18x20_value;
-        Serial.printf("update Troom based on DS18x20 value %i\n", ds18x20_value);
+      if(ds18x20_value != ds18x20_value_old) {
+        if (mhi_troom_byte_plausible(ds18x20_value)) {  // use only values -10°C < T < 48°C
+          mhi_ac_ctrl_core.set_troom(ds18x20_value);
+          troom_was_set_by_DS18X20 = true;
+          ds18x20_value_old = ds18x20_value;
+          Serial.printf("update Troom based on DS18x20 value %i\n", ds18x20_value);
+        }
       }
+#endif
     }
-
-#endif 
   }
 #endif
 
@@ -573,6 +591,11 @@ void loop() {
     mhi_ac_ctrl_core.set_troom(0xff);  // use IU temperature sensor
     Serial.println(F("ROOM_TEMP_MQTT_SET_TIMEOUT exceeded, use IU temperature sensor value!"));
     troom_was_set_by_MQTT=false;
+#ifdef ROOM_TEMP_DS18X20
+    // Otherwise the sensor's value, unchanged since MQTT took over, would not
+    // be applied again until it moved a step; the AC stayed on its own sensor.
+    ds18x20_value_old = 0;
+#endif
   }
 
 #ifndef CONTINUE_WITHOUT_MQTT 

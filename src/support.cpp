@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "mhi_diag.h"
+#include "mhi_link.h"
 #include "mhi_temp.h"
 
 WiFiClient espClient;
@@ -76,6 +77,9 @@ void initWiFi(){
 int WiFiStatus = WIFI_CONNECT_TIMEOUT;
 uint networksFound = 0;
 unsigned long WiFiTimeoutMillis;
+unsigned long WiFiScanStartMillis;
+// A full scan takes a few seconds. Well past that, the callback is not coming.
+static const unsigned long kWiFiScanDeadlineMs = 30000;
 
 void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan result
   int max_rssi = -999;
@@ -114,13 +118,31 @@ void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan r
 
 void setupWiFi(int& WiFiStatusParam) {
 
+  // We believed we were connected and were not asked to rescan: the link dropped.
+  if (WiFiStatus == WIFI_CONNECT_OK && WiFi.status() != WL_CONNECTED)
+    WIFI_lost++;
+
   if(WiFiStatus != WIFI_CONNECT_ONGOING) {   // WIFI_CONNECT_OK or WIFI_CONNECT_TIMEOUT or WIFI_CONNECT_SCANNING or WIFI_CONNECT_SCANNING_DONE
     if (WiFiStatus == WIFI_CONNECT_OK || WiFiStatus == WIFI_CONNECT_TIMEOUT){  // Start scanning async if not in already in progress 
       WiFi.scanDelete();
       Serial.println(F("setupWiFi: Start async scanNetworks"));
       WiFi.scanNetworksAsync(handleWiFiScanResult);
       WiFiStatus = WIFI_CONNECT_SCANNING;
+      WiFiScanStartMillis = millis();
       Serial.println(F("WIFI_CONNECT_SCANNING"));
+    }
+    else if (WiFiStatus == WIFI_CONNECT_SCANNING) {
+      // scanNetworksAsync() does not report a scan the SDK refused to start,
+      // and then handleWiFiScanResult() never runs. Without this, the state
+      // machine sat here forever: no MQTT, no OTA, until a power cycle.
+      // Treat it like a connection attempt: the SDK may well be connecting,
+      // which is why it refused; if that does not come up, the usual timeout
+      // leads to a fresh scan.
+      if (mhi_scan_gave_up(WiFi.scanComplete(), millis() - WiFiScanStartMillis, kWiFiScanDeadlineMs)) {
+        Serial.println(F("setupWiFi: scan did not start or finish, waiting for a connection before rescanning"));
+        WiFiStatus = WIFI_CONNECT_ONGOING;
+        WiFiTimeoutMillis = millis();
+      }
     }
 
     if (WiFiStatus == WIFI_CONNECT_SCANNING_DONE){ // after scanning for WiFI_SEARCHStrongestAP. Should be still connected
@@ -145,7 +167,10 @@ void setupWiFi(int& WiFiStatusParam) {
 int MQTTreconnect() {
   char strtmp[50];
   static int reconnect_trials=0;
+  static bool mqtt_was_up = false;
   //Serial.printf("MQTTreconnect(): (MQTTclient.state=%i), WiFi.status()=%i networksFound=%i ...\n", MQTTclient.state(), WiFi.status(), networksFound);
+  if (mhi_link_dropped(&mqtt_was_up, MQTTclient.connected()))
+    MQTT_lost++;
   if(!MQTTclient.connected()) {
     Serial.printf("MQTTreconnect(): Attempting MQTT connection (MQTTclient.state=%i), WiFi.status()=%i ...\n", MQTTclient.state(), WiFi.status());  // state(), see https://pubsubclient.knolleary.net/api#state
     if(reconnect_trials++>9){                                                                                                                       // WiFi.status()=3=connected, see https://realglitch.com/2018/07/arduino-wifi-status-codes/

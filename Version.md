@@ -16,6 +16,7 @@ MHI-AC-Ctrl by absalom-muc
 - with `POWERON_WHEN_CHANGING_MODE`, `Mode` no longer shows the last operating mode of an AC that is off. After every MQTT reconnect or reboot, v2.8 published it just before `Off`, which Home Assistant recorded as a brief switch-on
 - topic and payload text can be set in `src/config_defaults.h` like every other option, so a build using Home Assistant's lower-case mode names no longer means editing `MHI-AC-Ctrl.h`, where a fresh checkout silently reverts the change
 - a boot-time MISO fault now leaves MISO an input instead of driving it against whatever else drives the line. The unit keeps WiFi, MQTT, OTA and status reading; the AC gets no frames and enters its error state after about 120 s, as it did during v2.8's reboot loop
+- bug sweep (#10): the Wi-Fi scan state gets a deadline instead of waiting forever for a callback the SDK never sends; `WIFI_LOST` and `MQTT_LOST` now count (they were always 0); `set/Tsetpoint` answers on `cmd_received`; `Troom` is re-sent after an MQTT reconnect like every other status; `set/PassiveMode` rejects unknown payloads; `set/Mode` compares the same "off" text the Mode topic publishes; DS18x20 handling re-applies the sensor after an MQTT Troom timeout and re-initialises a replugged sensor in `Tds1820`-only builds
 - dependencies refreshed on 2026-09-15: PubSubClient3 3.3.1 (buffer bounds checks, `setBufferSize()` fix, QoS 2 handling this firmware does not use) and the CI actions on their current majors
 
 **v2.8** (September 2023)
