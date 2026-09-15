@@ -57,6 +57,7 @@ jobs:
           - ci-poweron-when-changing-mode
           - ci-continue-without-mqtt
           - ci-custom-payloads
+          - ci-config-defaults
           - ci-all-options
     steps:
       - uses: actions/checkout@v4

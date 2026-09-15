@@ -6,6 +6,7 @@
 # Local configuration: credentials and per-unit settings live here and must
 # never be committed. support.h picks it up automatically when present.
 config_defaults.h
+!test/fixtures/config_defaults/config_defaults.h
 
 # Editors / OS
 .vscode/

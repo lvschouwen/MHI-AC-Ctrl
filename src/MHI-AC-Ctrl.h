@@ -5,9 +5,7 @@
 // Every topic and payload text below can be replaced from the gitignored
 // src/config_defaults.h, like the options in support.h. A build for Home
 // Assistant uses that for the lower-case mode names its MQTT climate expects.
-#if __has_include("config_defaults.h")
-#include "config_defaults.h"
-#endif
+#include "mhi_config.h"
 
 // MQTT topic names
 #ifndef TOPIC_CONNECTED

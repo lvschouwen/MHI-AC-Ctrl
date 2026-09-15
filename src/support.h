@@ -20,11 +20,7 @@
 // The boolean feature switches further down stay commented out on purpose:
 // they are tested with #ifdef, so defining them at all turns them on.
 
-#if defined(__has_include)
-#if __has_include("config_defaults.h")
-#include "config_defaults.h"
-#endif
-#endif
+#include "mhi_config.h"
 
 #ifndef WIFI_SSID
 #define WIFI_SSID ""
