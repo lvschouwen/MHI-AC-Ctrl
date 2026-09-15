@@ -31,12 +31,12 @@ Changing the hostname is required when multiple ACs should be supported. E.g. re
 
 Per default ESP8266 uses the first WiFi access point (AP) with matching SSID. This behaviour can be changed.
 ```cpp
-#define UseStrongestAP true             // when false then the first WiFi access point with matching SSID found is used.
+#define WiFI_SEARCHStrongestAP true     // when false then the first WiFi access point with matching SSID found is used.
                                         // when true then the strongest WiFi access point with matching SSID found is used, it doesn't work with hidden SSID
 ```
 Configure the time interval for searching a stronger AP.
 ```cpp
-#define WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL 12    // WiFi network re-scan interval in minutes with alternate to +5dB stronger signal if detected
+#define WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL 12    // WiFi network re-scan interval in minutes with alternate to a +10dB stronger signal if detected
 ```
 
 ## MQTT ([support.h](src/support.h))
@@ -77,13 +77,13 @@ When writing data, the retain flag shall be `false`!
 
 topic|r/w|value|comment
 -----|---|-----|------
-Power|r/w|"On", "Off"|
-Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected.
+Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected: `set/Power` then answers `unknown command`, switch off with `set/Mode` "Off" instead.
+Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
 Tsetpoint|r/w|18 ... 30|Target room temperature (float) in °C, resolution is 0.5°C
 Fan|r/w|1,2,3,4,"Auto"|Fan level
-Vanes|r/w|1,2,3,4,"Swing","?"|Vanes up/down position <sup>1</sup>
-Troom|r/w|0 ... 35|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
-Tds1820|r|-40 .. 85|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C <sup>3</sup>
+Vanes|r/w|1,2,3,4,"Swing","?"|Vanes up/down position; writing 5 is the same as "Swing" <sup>1</sup>
+Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
+Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C; readings outside this range are ignored <sup>3</sup>
 Errorcode|r|0 .. 255|error code (unsigned int)
 ErrOpData|w||triggers the reading of last error operating data
 VanesLR|r/w|1,2,3,4,5,6,7,"Swing"|Vanes left/right position <sup>4</sup>
@@ -106,14 +106,15 @@ fSCK     |r  |unsigned integer|frequency of the SCK pin in Hz during boot
 Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `MISO` or `SCK,MOSI`. A fault is reported and the unit keeps running so it stays reachable over OTA. After a `MISO` fault the MISO pin stays an input: the AC status is still read, but no commands reach the AC <sup>5</sup>
 reset|w|"reset"|resets the ESP8266
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm after MQTT (re-)connect
+WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
 Version  |r  |string          |Version number of MHI-AC-Ctrl
 WIFI_LOST|r  |integer         |number of lost WiFi connections since last reset
 MQTT_LOST|r  |integer         |number of lost MQTT connections since last reset
-APs      |r  |string          |Matched APs seen at scan with RSSI value
+APs      |r  |string          |Matched APs seen at scan with RSSI value, one message per AP; the topic name is fixed
 
 <sup>5</sup> The frequencies in `fSCK`, `fMOSI` and `fMISO` say what was measured; `Wiring` says whether it was acceptable. Expect SCK above 3000 Hz, MOSI between 30 Hz and the SCK frequency, and MISO at or below 10 Hz.
 
-Note: The topic and the payload text of the status data is adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h).
+Note: The topic and the payload text of the status data is adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), except `APs`.
 
 ### MQTT operating data
 MHI-AC-Ctrl can provide operating data of the indoor and outdoor unit. This data is not needed for daily use, but might be interesting in specific use cases. Operating data is only published when there is a change of the content. The retained flag is `true`.
@@ -131,7 +132,7 @@ Note: The topic and the payload text is adaptable by defines in [MHI-AC-Ctrl.h](
 When an error in the AC occurs, some operating data of this error are stored in the AC and can be read out.
 The path to the operating data topic is defined in
 ```cpp
-#define MQTT_OP_PREFIX "ErrOpData/"    // prefix for publishing operating data from last error
+#define MQTT_ERR_OP_PREFIX "ErrOpData/"    // prefix for publishing operating data from last error
 ```
 The readout of last error operating data is triggered by publishing `ErrOpData` to topic ErrOpData. Not all of the operating data from section [Operating data](#operating-data-mhi-ac-ctrl-coreh) might be available as last error operating data.
 
@@ -189,13 +190,13 @@ Usage of the room temperature sensor inside the AC is the default, but instead y
 ```cpp
 //#define ROOM_TEMP_DS18X20           // use room temperature from DS18x20
 
-#define ROOM_TEMP_MQTT_TIMEOUT  40    // time in seconds, after this time w/o receiving a valid room temperature
+#define ROOM_TEMP_MQTT_SET_TIMEOUT  40    // time in seconds, after this time w/o receiving a valid room temperature
                                       // via MQTT fallback to IU temperature sensor value
-#define TROOM_FILTER_LIMIT 0.25       // Defines from which Troom delta value a new Troom value is published. Resolution 0.25°C.
-                                      // With a smaller resolution, Troom could toggle more. To deactivate the filter use 0.
+#define TROOM_FILTER_LIMIT 0.25       // A changed Troom is published only when it differs from the last published value by MORE than this.
+                                      // With 0.25 a single 0.25°C step is held back and a 0.5°C change is published. Use 0 to publish every step.
 
 ```
-`ROOM_TEMP_MQTT_TIMEOUT` must be greater than the period of room temperature update via MQTT. E.g. when the room temperature update via MQTT is done every minute, then `ROOM_TEMP_MQTT_TIMEOUT` could be 2 minutes.
+`ROOM_TEMP_MQTT_SET_TIMEOUT` must be greater than the period of room temperature update via MQTT. E.g. when the room temperature update via MQTT is done every minute, then `ROOM_TEMP_MQTT_SET_TIMEOUT` could be 2 minutes.
 If the timeout occurs, and the system falls back to IU temperature, it will return to using the MQTT room temperature if the MQTT messages resume.
 
 ## Enhance resolution of `Tsetpoint` ([support.h](src/support.h))
@@ -300,10 +301,12 @@ Currently the following operating data in double quotes are supported
 ```
 
 Note 1: If you are not interested in these operating modes (e.g. to reduce the MQTT load) you can comment out the according lines. But at least 1 line has to stay.
-For `THI-R2`, `THO-R1` and `TDSH` the formula for calculation is not known yet.
+For `THI-R2`, `THO-R1` and `TDSH` the formula for calculation is not known yet; `THI-R1` and `THI-R3` use a rough approximation and the `COMP` formula is unconfirmed.
 You can find some hints related to the meaning of the operating data [here](https://www.hrponline.co.uk/media/pdf/41/42/ed/Beijer-Ref-Service-Support-Handbook-19cWKESQUhzVIy5.pdf#page=7). Addtional opdata information is available [here](https://github.com/absalom-muc/MHI-AC-Trace/blob/main/SPI.md#operation-data-details).
 
-Note 2: The energy-used is the energy in kWh counting from power on the AC. If you power off the AC, the value (in kWh) will keep the last value. When you power on the AC again, it will start from 0 again.
+Note 2: The MQTT topic names are the `TOPIC_*` defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), not the comment text above: `SET-TEMP` is published as `OpData/Tsetpoint`, `energy-used` as `OpData/KWH`, `OU-EEV` as `OpData/OU-EEV1`, `PROTECTION-No` as `OpData/PROTECTION-NO` and `MODE` as `OpData/Mode`. An opcode the program does not know is published on `OpData/unknown`. `OpData/TD` publishes the text `<=30` for values below 41 °C.
+
+Note 3: The energy-used is the energy in kWh counting from power on the AC. If you power off the AC, the value (in kWh) will keep the last value. When you power on the AC again, it will start from 0 again.
 
 Hint: The error operating data is usually a sub-set of the operating data above. If user requests error operating data, all available error operating data is provided independent from the list above.
 

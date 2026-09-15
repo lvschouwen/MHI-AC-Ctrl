@@ -14,10 +14,10 @@ If you open a new issue, please consider the following topics:
 - MHI-AC-Ctrl outputs some basic status information via the serial terminal. Please use it for your first analysis and upload it together with a new Issue. Check this [section](#recording-a-basic-log-file)
 
 ## Recording a basic log file
-You can use e.g. the Arduino IDE to record the serial output. Apply a baud rate of 115000 Baud and switch **on** the time stamp. In order not to overload the Issue, the log should not be copied directly into the Issue, but copied to a text file and attached to the Issue.
+You can use `pio device monitor` or any serial terminal to record the serial output. Apply a baud rate of 115200 Baud and switch **on** the time stamp. In order not to overload the Issue, the log should not be copied directly into the Issue, but copied to a text file and attached to the Issue.
 
 ## Recording a detailed log of the SPI waveforms
-This is done via the [SPI-logger](https://github.com/absalom-muc/MHI-AC-Ctrl/blob/master/testprog/SPI_logger.ino). You can use e.g. the Arduino IDE to record the serial output. Apply a baud rate of 115000 Baud and switch **off** the time stamp. In order not to overload the Issue, the log should not be copied directly into the Issue, but copied to a text file and attached to the Issue.
+This is done via the [SPI-logger](https://github.com/absalom-muc/MHI-AC-Ctrl/blob/master/testprog/SPI_logger.ino). You can use `pio device monitor` or any serial terminal to record the serial output. Apply a baud rate of 115200 Baud and switch **off** the time stamp. In order not to overload the Issue, the log should not be copied directly into the Issue, but copied to a text file and attached to the Issue.
 
 ## Known limitations
 MHI-AC-Ctrl doesn't support all functions of the infrared remote control. This is because some functions are not reflected by the SPI payload (or I'm not aware of the according SPI codes):
@@ -88,5 +88,5 @@ However, this does not appear to be critical and is usually not noticed by the u
 ## :fire: Room temperature is toggling
 This effect occurs with some AC models. The cause is unclear.
 
-## :fire: Can't see the device in in Arduino IDE 'tools -> port' for OTA
-I believe this is a general OTA problem, not related to MHI-AC-Ctrl. I made good experience using [espota.py](https://github.com/esp8266/Arduino/blob/master/tools/espota.py) instead of the Arduino IDE for OTA.
+## :fire: OTA cannot find the device
+The Arduino IDE is no longer used for this project. Flash over OTA with `pio run -t upload --upload-port <hostname>.local`, as described in the [README](README.md#building); that runs [espota.py](https://github.com/esp8266/Arduino/blob/master/tools/espota.py) underneath. If the hostname does not resolve, pass the unit's IP address instead.
