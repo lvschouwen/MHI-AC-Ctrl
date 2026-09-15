@@ -36,3 +36,7 @@ void mhi_wiring_fault_text(uint8_t faults, char* out, size_t out_size) {
   }
   out[written] = '\0';
 }
+
+bool mhi_miso_may_be_driven(uint8_t faults) {
+  return (faults & MHI_WIRING_FAULT_MISO) == 0;
+}

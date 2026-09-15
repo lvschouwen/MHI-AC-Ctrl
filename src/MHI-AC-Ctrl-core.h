@@ -146,7 +146,7 @@ class MHI_AC_Ctrl_Core {
     };
 
 
-    void init();                          // initialization called once after boot
+    void init(bool drive_miso = true);    // initialization called once after boot
     void reset_old_values();              // resets the 'old' variables ensuring that all status information are resend
     int loop(uint max_time_ms);           // receive / transmit a frame of 20 bytes; returns an ErrMsg
     uint get_call_counter();              // how often loop() has run since boot

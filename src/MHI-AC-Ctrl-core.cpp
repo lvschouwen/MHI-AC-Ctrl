@@ -42,11 +42,13 @@ void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection t
   op_ou_eev1_old = 0xffff;
 }
 
-void MHI_AC_Ctrl_Core::init() {
+void MHI_AC_Ctrl_Core::init(bool drive_miso) {
   //MeasureFrequency(m_cbiStatus);
   pinMode(SCK_PIN, INPUT);
   pinMode(MOSI_PIN, INPUT);
-  pinMode(MISO_PIN, OUTPUT);
+  // An input when something else drives MISO (see mhi_miso_may_be_driven).
+  // loop() still calls digitalWrite on it, which only sets the output latch.
+  pinMode(MISO_PIN, drive_miso ? OUTPUT : INPUT);
   MHI_AC_Ctrl_Core::reset_old_values();
 }
 

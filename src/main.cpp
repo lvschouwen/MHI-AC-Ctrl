@@ -9,6 +9,7 @@
 
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
+#include "mhi_diag.h"
 #include "mhi_mqtt.h"
 #include "mhi_status.h"
 #include "mhi_temp.h"
@@ -491,7 +492,10 @@ void setup() {
   MQTTclient.setServer(MQTT_SERVER, MQTT_PORT);
   MQTTclient.setCallback(MQTT_subscribe_callback);
   mhi_ac_ctrl_core.MHIAcCtrlStatus(&mhiStatusHandler);
-  mhi_ac_ctrl_core.init();
+  const bool drive_miso = mhi_miso_may_be_driven(wiring_faults);
+  if (!drive_miso)
+    Serial.println(F("Signal on MISO: leaving it an input, so commands will not reach the AC"));
+  mhi_ac_ctrl_core.init(drive_miso);
 #ifdef USE_EXTENDED_FRAME_SIZE    
   mhi_ac_ctrl_core.set_frame_size(33); // switch to framesize 33 (like WF-RAC). Only 20 or 33 possible
 #endif  

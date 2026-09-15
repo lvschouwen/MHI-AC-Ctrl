@@ -103,7 +103,7 @@ connected|r  |0, 1|MQTT connection status to broker
 fMISO    |r  |unsigned integer|frequency of the MISO pin in Hz during boot
 fMOSI    |r  |unsigned integer|frequency of the MOSI pin in Hz during boot
 fSCK     |r  |unsigned integer|frequency of the SCK pin in Hz during boot
-Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `MISO` or `SCK,MOSI`. A fault is reported and the unit keeps running so it stays reachable over OTA <sup>5</sup>
+Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `MISO` or `SCK,MOSI`. A fault is reported and the unit keeps running so it stays reachable over OTA. After a `MISO` fault the MISO pin stays an input: the AC status is still read, but no commands reach the AC <sup>5</sup>
 reset|w|"reset"|resets the ESP8266
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm after MQTT (re-)connect
 Version  |r  |string          |Version number of MHI-AC-Ctrl
@@ -353,7 +353,7 @@ Usually it should be not touched, only configured via [MHI-AC-Ctrl-core.h](src/M
 AC status information change will trigger the callback function `cbiStatusFunction` located in [main.cpp](src/main.cpp)
 It is controlled via the functions:
 ```cpp
-void init();                          // initialization called once after boot
+void init(bool drive_miso = true);    // initialization called once after boot
 void reset_old_values();              // resets the 'old' variables ensuring that all status information are resend
 int loop(uint max_time_ms);           // receive / transmit a frame of 20 bytes
 void set_power(boolean power);        // power on/off the AC
@@ -367,8 +367,8 @@ void request_ErrOpData();             // request that the AC provides the error 
 ```
 The following sections describe the usage of these functions.
 
-#### `void init()`
-Configures the input /output state of the SPI pins. Resets old values.
+#### `void init(bool drive_miso = true)`
+Configures the input /output state of the SPI pins. Resets old values. Pass `false` when the boot-time wiring check found a signal on MISO: the pin then stays an input, so the ESP8266 never drives against it. Frames are still received, but none are sent.
 
 ### `reset_old_values()`
 This should be called if you want to ensure that the receiver of the status data has the latest data. E.g. in case of a MQTT broker disconnect it should be called.

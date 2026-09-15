@@ -41,7 +41,7 @@ If you see other values, please re-check
 - the connection between the MHI-AC-Ctrl board and your AC
 - that there is no short between the three signals
 
-If MISO frequency>10Hz the program will stop and reboot. This prevents damage of your board or AC because there was a signal detected on the MISO pin which should be an output during normal operation.
+If MISO frequency>10Hz, something other than MHI-AC-Ctrl is driving the MISO line, which should be an output during normal operation. The fault is published on the `Wiring` topic and MISO is left as an input, so the board never drives against that signal. The unit stays on WiFi and MQTT, still reports the AC status and stays reachable over OTA. It cannot send commands, though, so after about 120 seconds the AC goes into its error state (see [below](#fire-ac-switches-power-off-sometimes)). Fix the wiring, then restart with `set/reset` or a power cycle to run the check again. Up to v2.8 the program stopped and rebooted in a loop instead, which also ruled out OTA.
 
 Typical faults seen in the past:
 - SCK frequency = 0Hz => SCK pin not connected

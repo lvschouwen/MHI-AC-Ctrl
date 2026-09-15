@@ -28,3 +28,14 @@ uint8_t mhi_wiring_faults(uint32_t sck_hz, uint32_t mosi_hz, uint32_t miso_hz);
 // diagnostics topic. Always NUL-terminates unless out_size is 0, in which case
 // it writes nothing.
 void mhi_wiring_fault_text(uint8_t faults, char* out, size_t out_size);
+
+// Whether the SPI core may switch MISO to an output. MISO is ours to drive, so
+// edges on it during the check mean something else is driving the line, and
+// driving it as well would fight that driver through the level shifter. The
+// unit then only listens: Wi-Fi, MQTT, OTA and AC status keep working.
+//
+// Only the MISO fault decides. A short from MISO to SCK or MOSI puts that
+// line's edges on MISO, so it trips the MISO fault too; a SCK or MOSI fault
+// with a quiet MISO means an input line is wrong, not that MISO is driven.
+// A short to ground or supply gives no edges and is not detected here.
+bool mhi_miso_may_be_driven(uint8_t faults);

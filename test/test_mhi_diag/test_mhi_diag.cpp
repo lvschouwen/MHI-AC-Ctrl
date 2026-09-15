@@ -88,6 +88,36 @@ static void test_text_tolerates_a_zero_length_buffer(void) {
   TEST_ASSERT_EQUAL_CHAR('x', buf[0]);  // untouched, not written past
 }
 
+// --- Whether MISO may be driven (#7) ---------------------------------------
+
+static void test_healthy_wiring_may_drive_miso(void) {
+  TEST_ASSERT_TRUE(mhi_miso_may_be_driven(mhi_wiring_faults(kGoodSck, kGoodMosi, kGoodMiso)));
+}
+
+static void test_foreign_signal_on_miso_is_not_driven(void) {
+  // 11 edges/s on a line only we should drive: something else is driving it.
+  TEST_ASSERT_FALSE(mhi_miso_may_be_driven(mhi_wiring_faults(kGoodSck, kGoodMosi, 11)));
+}
+
+static void test_input_line_faults_still_allow_driving_miso(void) {
+  // SCK and MOSI are only read, so their faults cannot cause contention on MISO.
+  TEST_ASSERT_TRUE(mhi_miso_may_be_driven(mhi_wiring_faults(0, 0, kGoodMiso)));
+}
+
+static void test_miso_fault_is_not_driven_alongside_other_faults(void) {
+  TEST_ASSERT_FALSE(mhi_miso_may_be_driven(MHI_WIRING_FAULT_SCK | MHI_WIRING_FAULT_MOSI | MHI_WIRING_FAULT_MISO));
+}
+
+static void test_miso_shorted_to_a_live_line_is_not_driven(void) {
+  // Shorted to MOSI or to SCK, MISO carries that line's edges.
+  TEST_ASSERT_FALSE(mhi_miso_may_be_driven(mhi_wiring_faults(kGoodSck, kGoodMosi, kGoodMosi)));
+  TEST_ASSERT_FALSE(mhi_miso_may_be_driven(mhi_wiring_faults(kGoodSck, kGoodMosi, kGoodSck)));
+}
+
+static void test_mosi_fault_alone_still_allows_driving_miso(void) {
+  TEST_ASSERT_TRUE(mhi_miso_may_be_driven(mhi_wiring_faults(kGoodSck, 30, kGoodMiso)));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_healthy_wiring_reports_no_fault);
@@ -101,5 +131,11 @@ int main(void) {
   RUN_TEST(test_multiple_faults_are_listed);
   RUN_TEST(test_text_never_overruns_a_short_buffer);
   RUN_TEST(test_text_tolerates_a_zero_length_buffer);
+  RUN_TEST(test_healthy_wiring_may_drive_miso);
+  RUN_TEST(test_foreign_signal_on_miso_is_not_driven);
+  RUN_TEST(test_input_line_faults_still_allow_driving_miso);
+  RUN_TEST(test_miso_fault_is_not_driven_alongside_other_faults);
+  RUN_TEST(test_miso_shorted_to_a_live_line_is_not_driven);
+  RUN_TEST(test_mosi_fault_alone_still_allows_driving_miso);
   return UNITY_END();
 }

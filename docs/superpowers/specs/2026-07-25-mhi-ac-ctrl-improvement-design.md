@@ -195,6 +195,11 @@ of range, and sits *before* `setupOTA()`. A wiring fault therefore produces an e
 hardware-WDT reboot loop with no OTA recovery — a screwdriver job. It becomes non-fatal: record the
 measured frequencies, set a `degraded` flag, return. `loop()` brings up WiFi/MQTT normally and
 publishes the fault to a diagnostics topic. The 1-second busy-wait gains a `yield()`.
+*Corrected 2026-09-15 (#7):* a MISO fault means a foreign driver on our own output line, and the
+halt existed to prevent exactly that contention. So after a MISO fault MISO is never switched to
+output; the unit listens only. The original text missed that `init()` drives MISO regardless.
+Only the MISO bit decides: a short to SCK or MOSI puts their edges on MISO, while a static short to
+ground or supply produces no edges and is not caught by this check.
 
 **Timeout symmetry.** `MHI-AC-Ctrl-core.cpp:257` — `while (!digitalRead(SCK_PIN)) {}` has no
 timeout, unlike its sibling at line 249. A clock stall mid-byte spins until the hardware WDT fires.
@@ -349,7 +354,7 @@ the same time. No speculative refactor of the core; no timidity about the periph
 | Phase | Method |
 |---|---|
 | 5.1 | CI: `#ifdef` matrix compiles; native tests pass; flash-size assertion holds |
-| 5.2 | Serial + diagnostics topic on the guinea pig; deliberate fault injection (disconnect MISO → expect reported fault and a still-reachable device, not a reboot loop) |
+| 5.2 | Serial + diagnostics topic on the guinea pig; deliberate fault injection (SCK unplugged at power-up → expect `Wiring` "SCK,MOSI" and a still-reachable device, not a reboot loop). Unplugging MISO cannot trigger a fault, because it only removes a driver; never inject a MISO fault by connecting MISO to a live signal (#7) |
 | 5.3 | Guinea pig only. Portal reachable; roaming preserved; **`config_defaults.h` seeding confirmed before the far unit is touched** |
 | 5.4 | Guinea pig + IR remote: toggle Eco/Silent/HIGH-ECO and observe topics; confirm `hvac_action` transitions on compressor start/stop; verify HA entities appear and are controllable |
 | 5.5 | Press each undocumented remote button; confirm DB9/DB10/DB11 appear on the diagnostics topic |
