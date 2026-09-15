@@ -118,8 +118,7 @@ void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan r
 
 void setupWiFi(int& WiFiStatusParam) {
 
-  // We believed we were connected and were not asked to rescan: the link dropped.
-  if (WiFiStatus == WIFI_CONNECT_OK && WiFi.status() != WL_CONNECTED)
+  if (mhi_wifi_link_lost(WiFiStatus == WIFI_CONNECT_OK, WiFi.status() == WL_CONNECTED))
     WIFI_lost++;
 
   if(WiFiStatus != WIFI_CONNECT_ONGOING) {   // WIFI_CONNECT_OK or WIFI_CONNECT_TIMEOUT or WIFI_CONNECT_SCANNING or WIFI_CONNECT_SCANNING_DONE
@@ -139,7 +138,12 @@ void setupWiFi(int& WiFiStatusParam) {
       // which is why it refused; if that does not come up, the usual timeout
       // leads to a fresh scan.
       if (mhi_scan_gave_up(WiFi.scanComplete(), millis() - WiFiScanStartMillis, kWiFiScanDeadlineMs)) {
-        Serial.println(F("setupWiFi: scan did not start or finish, waiting for a connection before rescanning"));
+        Serial.println(F("setupWiFi: scan did not start or finish, connecting without it"));
+        // A slow scan on a unit that is still connected must not be disturbed;
+        // a unit that is not connected gets the plain connect attempt that
+        // handleWiFiScanResult() also falls back to when no AP was found.
+        if (WiFi.status() != WL_CONNECTED)
+          WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         WiFiStatus = WIFI_CONNECT_ONGOING;
         WiFiTimeoutMillis = millis();
       }

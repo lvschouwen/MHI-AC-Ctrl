@@ -3,7 +3,9 @@
 // WIFI_LOST and MQTT_LOST were published on every MQTT connect but nothing
 // ever incremented them, and the Wi-Fi scan state had no way out when the
 // SDK refused to start a scan. The decisions behind both fixes are pure
-// arithmetic, so they live in lib/mhi_pure and are pinned here.
+// arithmetic, so they live in lib/mhi_pure and are pinned here. MQTT uses the
+// edge detector; Wi-Fi asks the state machine, which already knows whether it
+// believed the link was up, so a deliberate roam is not counted.
 
 #include <unity.h>
 
@@ -43,6 +45,22 @@ static void test_every_new_outage_counts_again(void) {
   TEST_ASSERT_TRUE(mhi_link_dropped(&was_up, false));
 }
 
+// --- Wi-Fi link loss, judged from the state machine -------------------------
+
+static void test_wifi_is_lost_when_it_was_believed_up_and_is_not_connected(void) {
+  TEST_ASSERT_TRUE(mhi_wifi_link_lost(true, false));
+}
+
+static void test_wifi_is_not_lost_while_still_connected(void) {
+  TEST_ASSERT_FALSE(mhi_wifi_link_lost(true, true));  // the periodic rescan
+}
+
+static void test_wifi_is_not_lost_while_connecting_or_roaming(void) {
+  // Not believed up: a boot-time connect attempt, or a roam to a stronger AP.
+  TEST_ASSERT_FALSE(mhi_wifi_link_lost(false, false));
+  TEST_ASSERT_FALSE(mhi_wifi_link_lost(false, true));
+}
+
 // --- Wi-Fi scan supervision -------------------------------------------------
 
 static void test_a_scan_the_sdk_refused_is_given_up_at_once(void) {
@@ -71,6 +89,9 @@ int main(void) {
   RUN_TEST(test_a_link_that_stays_up_has_not_dropped);
   RUN_TEST(test_an_up_to_down_edge_counts_once);
   RUN_TEST(test_every_new_outage_counts_again);
+  RUN_TEST(test_wifi_is_lost_when_it_was_believed_up_and_is_not_connected);
+  RUN_TEST(test_wifi_is_not_lost_while_still_connected);
+  RUN_TEST(test_wifi_is_not_lost_while_connecting_or_roaming);
   RUN_TEST(test_a_scan_the_sdk_refused_is_given_up_at_once);
   RUN_TEST(test_a_running_scan_is_left_alone_within_the_deadline);
   RUN_TEST(test_a_running_scan_is_given_up_after_the_deadline);

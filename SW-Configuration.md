@@ -108,8 +108,8 @@ reset|w|"reset"|resets the ESP8266
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm after MQTT (re-)connect
 WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
 Version  |r  |string          |Version number of MHI-AC-Ctrl
-WIFI_LOST|r  |integer         |number of lost WiFi connections since last reset
-MQTT_LOST|r  |integer         |number of lost MQTT connections since last reset
+WIFI_LOST|r  |integer         |number of lost WiFi connections since last reset; a deliberate change to a stronger AP is not counted
+MQTT_LOST|r  |integer         |number of lost MQTT connections since last reset; a change to a stronger AP drops the broker connection and is counted
 APs      |r  |string          |Matched APs seen at scan with RSSI value, one message per AP; the topic name is fixed
 
 <sup>5</sup> The frequencies in `fSCK`, `fMOSI` and `fMISO` say what was measured; `Wiring` says whether it was acceptable. Expect SCK above 3000 Hz, MOSI between 30 Hz and the SCK frequency, and MISO at or below 10 Hz.

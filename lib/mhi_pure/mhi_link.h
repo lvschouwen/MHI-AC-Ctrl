@@ -13,6 +13,13 @@
 // cannot drop, so a link that starts down is not counted.
 bool mhi_link_dropped(bool* was_up, bool is_up);
 
+// The Wi-Fi state machine already knows whether it believed the link was up
+// (its state is "connected" only after a successful connect, and "ongoing"
+// during a deliberate roam to a stronger AP), so it does not need an edge
+// memory: the link is lost when it was believed up and is not connected now.
+// That leaves a roam, and the connect attempts at boot, uncounted.
+bool mhi_wifi_link_lost(bool believed_up, bool connected_now);
+
 // The ESP8266 core's scanComplete() values, mirrored here so this file does
 // not depend on ESP8266WiFiType.h: a count of 0 or more means finished,
 // WIFI_SCAN_RUNNING is -1 and WIFI_SCAN_FAILED is -2.
