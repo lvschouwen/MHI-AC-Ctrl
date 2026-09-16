@@ -222,6 +222,33 @@ static void test_a_frame_longer_than_the_maximum_is_refused(void) {
   TEST_ASSERT_FALSE(d.have_last);
 }
 
+static void test_the_worst_case_extended_frame_fits_the_text_buffer(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 33);
+  char out[MHI_DIAG_TEXT_MAX];
+  uint8_t frame[33] = {0};
+  memcpy(frame, kFrame, 20);
+  frame[CBL2] = 0xab;  // the extended frame's second checksum byte; arbitrary but distinctive
+  mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));  // first, whole frame
+  for (size_t i = DB0; i <= DB5; i++) frame[i] ^= 0x01;  // six named changes
+  frame[DB7] ^= 0x01;                                    // the seventh, summarised with "+"
+  const size_t n = mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));
+  TEST_ASSERT_GREATER_THAN_size_t(0, n);
+  TEST_ASSERT_TRUE(strlen(out) < MHI_DIAG_TEXT_MAX);
+  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB3 4c>4d DB4 22>23 DB5 00>01 + |", out, 62);
+  TEST_ASSERT_EQUAL_STRING(" ab", out + strlen(out) - 3);  // ends with the frame's last byte
+}
+
+static void test_a_text_buffer_smaller_than_the_maximum_is_refused(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX] = "untouched";
+  TEST_ASSERT_EQUAL_size_t(0, mhi_diag_frame_changes(&d, kFrame, 20, mask, out, MHI_DIAG_TEXT_MAX - 1));
+  TEST_ASSERT_FALSE(d.have_last);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_request_parses_an_indoor_code);
@@ -241,5 +268,7 @@ int main(void) {
   RUN_TEST(test_more_than_six_changes_are_summarised_with_a_plus);
   RUN_TEST(test_an_extended_frame_names_its_extra_bytes);
   RUN_TEST(test_a_frame_longer_than_the_maximum_is_refused);
+  RUN_TEST(test_the_worst_case_extended_frame_fits_the_text_buffer);
+  RUN_TEST(test_a_text_buffer_smaller_than_the_maximum_is_refused);
   return UNITY_END();
 }

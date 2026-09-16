@@ -236,6 +236,8 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_DIAG)) == 0) {
     if (strcmp_P(payload_str, PSTR(PAYLOAD_DIAG_ON)) == 0) {
       diag_on = true;
+      diag_frame.have_last = false;   // the next diag/frame is a whole frame, as after a connect
+      mhi_retry_reset(&diag_pacer);
       publish_diag_state();
       publish_cmd_ok();
     }

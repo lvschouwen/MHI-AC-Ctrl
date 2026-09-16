@@ -24,7 +24,7 @@ static void byte_name(size_t i, char* out) {
   else if (i == CBH) snprintf(out, 5, "CBH");
   else if (i == CBL) snprintf(out, 5, "CBL");
   else if (i <= DB26) snprintf(out, 5, "DB%u", (unsigned)(i - (DB15) + 15));
-  else snprintf(out, 5, "CB2");
+  else snprintf(out, 5, "CBL2");
 }
 
 // Appends to out without ever writing past out_len; n stays below out_len.
