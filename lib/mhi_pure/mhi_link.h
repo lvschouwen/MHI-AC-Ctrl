@@ -32,3 +32,19 @@ bool mhi_wifi_link_lost(bool believed_up, bool connected_now);
 // that is still running past the deadline is abandoned too. A finished scan
 // belongs to its callback and is never abandoned here.
 bool mhi_scan_gave_up(int scan_state, uint32_t waited_ms, uint32_t limit_ms);
+
+// Paces reconnect attempts. MQTTreconnect() used to try on every loop() pass,
+// and it resets Wi-Fi after ten failures in a row (a workaround for
+// esp8266/Arduino#7432). A restarting broker refuses at once, so every broker
+// restart also cycled Wi-Fi. The first attempt after a reset is due at once;
+// each later one is due interval_ms after the previous one. Reset the pacer
+// while the link is up, so the first attempt after the next drop is immediate.
+struct MhiRetryPacer {
+  uint32_t last_ms;  // when the previous attempt was allowed
+  bool attempted;    // false after a reset: the next attempt is due at once
+};
+
+void mhi_retry_reset(MhiRetryPacer* pacer);
+
+// Whether an attempt may be made at now_ms. Records it when it may.
+bool mhi_retry_due(MhiRetryPacer* pacer, uint32_t now_ms, uint32_t interval_ms);

@@ -15,3 +15,17 @@ bool mhi_scan_gave_up(int scan_state, uint32_t waited_ms, uint32_t limit_ms) {
   if (scan_state == MHI_SCAN_RUNNING) return waited_ms > limit_ms;
   return false;
 }
+
+void mhi_retry_reset(MhiRetryPacer* pacer) {
+  pacer->last_ms = 0;
+  pacer->attempted = false;
+}
+
+bool mhi_retry_due(MhiRetryPacer* pacer, uint32_t now_ms, uint32_t interval_ms) {
+  // Unsigned subtraction, so the millis() wrap after 49.7 days is harmless.
+  if (pacer->attempted && now_ms - pacer->last_ms < interval_ms)
+    return false;
+  pacer->last_ms = now_ms;
+  pacer->attempted = true;
+  return true;
+}

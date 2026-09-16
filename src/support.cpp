@@ -80,6 +80,10 @@ unsigned long WiFiTimeoutMillis;
 unsigned long WiFiScanStartMillis;
 // A full scan takes a few seconds. Well past that, the callback is not coming.
 static const unsigned long kWiFiScanDeadlineMs = 30000;
+// A broker that refuses at once must not use up the ten failed attempts that
+// reset Wi-Fi within milliseconds. Paced, that reset needs about 50 s of
+// outage, and the loop is free for SPI and OTA in between.
+static const unsigned long kMqttRetryIntervalMs = 5000;
 
 void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan result
   int max_rssi = -999;
@@ -172,10 +176,13 @@ int MQTTreconnect() {
   char strtmp[50];
   static int reconnect_trials=0;
   static bool mqtt_was_up = false;
+  static MhiRetryPacer mqtt_retry = {0, false};
   //Serial.printf("MQTTreconnect(): (MQTTclient.state=%i), WiFi.status()=%i networksFound=%i ...\n", MQTTclient.state(), WiFi.status(), networksFound);
   if (mhi_link_dropped(&mqtt_was_up, MQTTclient.connected()))
     MQTT_lost++;
   if(!MQTTclient.connected()) {
+    if (!mhi_retry_due(&mqtt_retry, millis(), kMqttRetryIntervalMs))
+      return MQTT_NOT_CONNECTED;
     Serial.printf("MQTTreconnect(): Attempting MQTT connection (MQTTclient.state=%i), WiFi.status()=%i ...\n", MQTTclient.state(), WiFi.status());  // state(), see https://pubsubclient.knolleary.net/api#state
     if(reconnect_trials++>9){                                                                                                                       // WiFi.status()=3=connected, see https://realglitch.com/2018/07/arduino-wifi-status-codes/
       Serial.printf("MQTTreconnect(): reconnect_trials=%i\n", reconnect_trials);
@@ -235,6 +242,7 @@ int MQTTreconnect() {
       return MQTT_NOT_CONNECTED;
     }
   }
+  mhi_retry_reset(&mqtt_retry);
   MQTTclient.loop();
   return MQTT_CONNECT_OK;  // ours, not PubSubClient's MQTT_CONNECTED; both are 0
 }
