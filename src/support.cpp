@@ -82,7 +82,8 @@ unsigned long WiFiScanStartMillis;
 static const unsigned long kWiFiScanDeadlineMs = 30000;
 // A broker that refuses at once must not use up the ten failed attempts that
 // reset Wi-Fi within milliseconds. Paced, that reset needs about 50 s of
-// outage, and the loop is free for SPI and OTA in between.
+// outage. OTA is served in between; SPI only with CONTINUE_WITHOUT_MQTT, since
+// without it loop() skips the SPI core whenever MQTT is down.
 static const unsigned long kMqttRetryIntervalMs = 5000;
 
 void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan result
