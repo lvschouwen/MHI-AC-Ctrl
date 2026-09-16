@@ -39,6 +39,9 @@ Configure the time interval for searching a stronger AP.
 #define WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL 12    // WiFi network re-scan interval in minutes with alternate to a +10dB stronger signal if detected
 ```
 
+### WiFi PHY mode fallback
+The ESP8266 joins in its default 802.11n mode. Some routers with 802.11ax (WiFi 6) enabled on 2.4 GHz refuse that join and the ESP8266 reports a wrong password although the password is right ([#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224)); forcing 802.11g gets in. A unit that is off the network cannot be told to change, so the firmware falls back on its own: after five minutes without a link it tries 11g, after another five minutes 11n again, and so on until a join succeeds. A router reboot is shorter than that, so a normal outage keeps 11n. Once joined, the mode is kept until the link is lost; after a loss the unit tries the mode it last joined with first. A reboot starts in 11n again. The `WIFI_PHY` status topic reports the mode the unit joined with, so a fallback shows in Home Assistant.
+
 ## MQTT ([support.h](src/support.h))
 The program uses the MQTT client library [PubSubClient3](https://github.com/hmueller01/pubsubclient3) from Holger Müller (hmueller01), originally written by Nick O'Leary (knolleary).
 If you are not familiar with MQTT you find on the Internet endless numbers of descriptions and tutorials. My favorites are [here](https://www.hivemq.com/blog/how-to-get-started-with-mqtt/) and [here](https://www.heise.de/developer/artikel/Kommunikation-ueber-MQTT-3238975.html).
@@ -111,6 +114,7 @@ Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `M
 reset|w|"reset"|resets the ESP8266
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm after MQTT (re-)connect
 WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
+WIFI_PHY |r  |"11b", "11g", "11n"|802.11 mode the unit joined with, after MQTT (re-)connect. `11n` unless the [PHY mode fallback](#wifi-phy-mode-fallback) had to switch to `11g`
 Version  |r  |string          |Short git commit hash the firmware was built from, e.g. `9d8886d`; `-dirty` is appended when the build had uncommitted changes, `unknown` when built without git
 WIFI_LOST|r  |integer         |number of lost WiFi connections since last reset; a deliberate change to a stronger AP is not counted
 MQTT_LOST|r  |integer         |number of lost MQTT connections since last reset; a change to a stronger AP drops the broker connection and is counted

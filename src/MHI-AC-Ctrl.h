@@ -26,6 +26,9 @@
 #ifndef TOPIC_WIFI_BSSID
 #define TOPIC_WIFI_BSSID "WIFI_BSSID"
 #endif
+#ifndef TOPIC_WIFI_PHY
+#define TOPIC_WIFI_PHY "WIFI_PHY"
+#endif
 #ifndef TOPIC_CMD_RECEIVED
 #define TOPIC_CMD_RECEIVED "cmd_received"
 #endif

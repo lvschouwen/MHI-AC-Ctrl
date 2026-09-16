@@ -20,6 +20,7 @@ MHI-AC-Ctrl by absalom-muc
 - new status topic `Action` (#16): what the AC is doing (`off`, `idle`, `cooling`, `heating`, `drying`, `fan`), decoded from the outdoor unit state in DB13 as hberntsen/mhi-ac-ctrl-esp32 does, in Home Assistant's `hvac_action` names
 - MQTT reconnect attempts are paced to one every 5 s (#15). They used to run on every loop pass, so a broker that refused at once used up the ten failed attempts that reset Wi-Fi within milliseconds, and every broker restart also dropped Wi-Fi
 - dependencies refreshed on 2026-09-15: PubSubClient3 3.3.1 (buffer bounds checks, `setBufferSize()` fix, QoS 2 handling this firmware does not use) and the CI actions on their current majors
+- WiFi PHY mode fallback (#17): after five minutes without a link the unit tries 802.11g instead of the default 802.11n, and alternates back after another five minutes, so a router that refuses the 11n join ([#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224)) no longer strands it until a USB flash. The new `WIFI_PHY` status topic reports the mode the unit joined with
 
 **v2.8** (September 2023)
 - when ds18x20 used and get disconnected, fallback to  IU temperature sensor by [glsf91](https://github.com/glsf91)

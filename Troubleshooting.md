@@ -56,6 +56,9 @@ There was a [bug](https://github.com/knolleary/pubsubclient/issues/747) introduc
 ## :fire: MQTT connects / disconnects periodically
 The HOSTNAME specified in support.h is used as WiFi hostname, MQTT hostname and OTA hostname. In case that you use more than one MHI-AC-Ctrl, e.g. in a multi-split configuration, you have to use unique HOSTNAME to every PCB.
 
+## :fire: Unit stopped joining WiFi after a router change
+A unit that ran for years goes off WiFi after a router firmware update or channel change, and stays off; the serial log shows a wrong-password status (`WL_WRONG_PASSWORD`, 6) although the password is right, or the board looks dead. This is [#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224): a router with 802.11ax (WiFi 6) enabled on 2.4 GHz refusing the ESP8266's default 802.11n join. Since the [PHY mode fallback](SW-Configuration.md#wifi-phy-mode-fallback) the firmware tries 802.11g on its own after five minutes without a link, so give it ten minutes before reaching for a USB cable; a unit that got in that way reports `11g` on the `WIFI_PHY` topic. On older firmware, add `WiFi.setPhyMode(WIFI_PHY_MODE_11G);` to `initWiFi()` and flash over USB.
+
 ## :fire: AC switches power off sometimes
 When there is for >=120 seconds no valid MISO frame, the AC goes into an error state (MQTT topic Errorcode=1) and the AC switches off. You can leave the error state by sending a command via IR-RC or by sending a command via SPI. To switch on the AC again via SPI you have to send the Power On command. I assume this is some kind of safety function. This happens when there is >=120 seconds no WiFi or MQTT connection, because the SW loop related to SPI is not served.
 

@@ -3,6 +3,7 @@
 
 #include "mhi_diag.h"
 #include "mhi_link.h"
+#include "mhi_phy.h"
 #include "mhi_temp.h"
 
 WiFiClient espClient;
@@ -85,6 +86,21 @@ static const unsigned long kWiFiScanDeadlineMs = 30000;
 // outage. OTA is served in between; SPI only with CONTINUE_WITHOUT_MQTT, since
 // without it loop() skips the SPI core whenever MQTT is down.
 static const unsigned long kMqttRetryIntervalMs = 5000;
+// Upstream #224: a router with 802.11ax on 2.4 GHz can refuse the default 11n
+// join and look like a wrong password, and only 11g gets in. A unit that is
+// off the network cannot be told to change, so it falls back on its own after
+// this long without a link, and alternates back in case the router refuses
+// 11g. Five minutes outlasts a router reboot, so a normal outage keeps 11n.
+static const unsigned long kWiFiPhyFallbackMs = 5 * 60 * 1000;
+static MhiPhyFallback wifi_phy = {0, MHI_PHY_11N};
+
+// The SDK keeps the PHY mode in flash, so it is only written when it changes.
+static void applyPhyModeForJoin() {
+  const WiFiPhyMode_t wanted = (WiFiPhyMode_t)mhi_phy_mode_for_join(&wifi_phy, millis(), kWiFiPhyFallbackMs);
+  if (WiFi.getPhyMode() == wanted) return;
+  Serial.printf_P(PSTR("WiFi: joining in PHY mode %s\n"), mhi_phy_mode_text(wanted));
+  WiFi.setPhyMode(wanted);
+}
 
 void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan result
   int max_rssi = -999;
@@ -103,6 +119,8 @@ void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan r
   }
   Serial.printf_P(PSTR("current BSSID: %s, strongest BSSID: %s\n"), WiFi.BSSIDstr().c_str(), WiFi.BSSIDstr(strongest_AP).c_str());
   if((WiFi.status() != WL_CONNECTED) || ((max_rssi > WiFi.RSSI() + 10) && (strcmp(WiFi.BSSIDstr().c_str(), WiFi.BSSIDstr(strongest_AP).c_str()) != 0))) {
+    if (WiFi.status() != WL_CONNECTED)  // a roam keeps the mode the link has
+      applyPhyModeForJoin();
     if(strongest_AP != -1) {
       Serial.printf_P(PSTR("Connecting from bssid:%s to bssid:%s, channel:%i\n"), WiFi.BSSIDstr().c_str(), WiFi.BSSIDstr(strongest_AP).c_str(), WiFi.channel(strongest_AP));
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD, WiFi.channel(strongest_AP), WiFi.BSSID(strongest_AP), true);
@@ -125,6 +143,8 @@ void setupWiFi(int& WiFiStatusParam) {
 
   if (mhi_wifi_link_lost(WiFiStatus == WIFI_CONNECT_OK, WiFi.status() == WL_CONNECTED))
     WIFI_lost++;
+  if (WiFi.status() == WL_CONNECTED)
+    mhi_phy_link_up(&wifi_phy, WiFi.getPhyMode(), millis());
 
   if(WiFiStatus != WIFI_CONNECT_ONGOING) {   // WIFI_CONNECT_OK or WIFI_CONNECT_TIMEOUT or WIFI_CONNECT_SCANNING or WIFI_CONNECT_SCANNING_DONE
     if (WiFiStatus == WIFI_CONNECT_OK || WiFiStatus == WIFI_CONNECT_TIMEOUT){  // Start scanning async if not in already in progress 
@@ -147,8 +167,10 @@ void setupWiFi(int& WiFiStatusParam) {
         // A slow scan on a unit that is still connected must not be disturbed;
         // a unit that is not connected gets the plain connect attempt that
         // handleWiFiScanResult() also falls back to when no AP was found.
-        if (WiFi.status() != WL_CONNECTED)
+        if (WiFi.status() != WL_CONNECTED) {
+          applyPhyModeForJoin();
           WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        }
         WiFiStatus = WIFI_CONNECT_ONGOING;
         WiFiTimeoutMillis = millis();
       }
@@ -205,6 +227,7 @@ int MQTTreconnect() {
       output_P((ACStatus)type_status, PSTR(TOPIC_MQTT_LOST), strtmp);
       WiFi.BSSIDstr().toCharArray(strtmp, 20);
       output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_BSSID), strtmp);
+      output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_PHY), mhi_phy_mode_text(WiFi.getPhyMode()));
 
       // for testing publish list of access points with the expected SSID 
       Serial.printf("MQTTreconnect(): %i access points available\n", networksFound);         
