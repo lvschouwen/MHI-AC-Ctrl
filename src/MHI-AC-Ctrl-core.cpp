@@ -102,6 +102,12 @@ void MHI_AC_Ctrl_Core::request_ErrOpData() {
   request_erropData = true;
 }
 
+void MHI_AC_Ctrl_Core::request_OpData(byte prefix, byte code) {
+  request_opdata_prefix = prefix;
+  request_opdata_code = code;
+  request_opdata_pending = true;  // a second command before it is sent replaces it
+}
+
 void MHI_AC_Ctrl_Core::set_troom(byte troom) {
   //Serial.printf("MHI_AC_Ctrl_Core::set_troom %i\n", troom);
   new_Troom = troom;
@@ -162,9 +168,18 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   if (frame++ <= 2) {                       // use opdata request only for 2 subsequent frames
     if (doubleframe) {                      // start when MISO_frame[DB14] bit2 is set
       if (erropdataCnt == 0) {
-        MISO_frame[DB6] = pgm_read_word(opdata + opdataNo);
-        MISO_frame[DB9] = pgm_read_word(opdata + opdataNo) >> 8;
-        opdataNo = (opdataNo + 1) % opdataCnt;
+        if (request_opdata_pending) {
+          // The probe takes this slot instead of the next code; opdataNo is
+          // not advanced, so the cycle resumes with the code it would have sent.
+          MISO_frame[DB6] = request_opdata_prefix;
+          MISO_frame[DB9] = request_opdata_code;
+          request_opdata_pending = false;
+        }
+        else {
+          MISO_frame[DB6] = pgm_read_word(opdata + opdataNo);
+          MISO_frame[DB9] = pgm_read_word(opdata + opdataNo) >> 8;
+          opdataNo = (opdataNo + 1) % opdataCnt;
+        }
       }
 
     }

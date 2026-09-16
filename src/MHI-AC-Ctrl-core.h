@@ -136,6 +136,11 @@ class MHI_AC_Ctrl_Core {
     byte new_Vanes0 = 0;
     byte new_Vanes1 = 0;
     bool request_erropData = false;
+    // One-shot operating-data request from set/OpDataRequest (fork #4). Sent
+    // in place of the next code of the normal cycle, once, see loop().
+    bool request_opdata_pending = false;
+    byte request_opdata_prefix = 0;
+    byte request_opdata_code = 0;
     bool passiveMode = false;
     byte new_Troom = 0xff;    // writing 0xff to DB3 indicates the usage of the internal room temperature sensor
     float Troom_offset = 0.0;
@@ -165,6 +170,7 @@ class MHI_AC_Ctrl_Core {
     void set_vanes(uint vanes);           // set the vanes horizontal position (or swing)
     void set_troom(byte temperature);     // set the room temperature used by AC (0xff indicates the usage of the internal room temperature sensor)
     void request_ErrOpData();             // request that the AC provides the error data
+    void request_OpData(byte prefix, byte code);  // ask the AC once for one operating-data code (prefix 0x40/0xc0 as in the request table)
     float get_troom_offset();             // get troom offset, only usefull when ENHANCED_RESOLUTION is used
     void set_troom_offset(float offset);  // set troom offset, only usefull when ENHANCED_RESOLUTION is used
     void set_frame_size(byte framesize);  // set framesize to 20 or 33
