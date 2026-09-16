@@ -72,6 +72,9 @@
 #ifndef TOPIC_ERRORCODE
 #define TOPIC_ERRORCODE "Errorcode"
 #endif
+#ifndef TOPIC_ACTION
+#define TOPIC_ACTION "Action"
+#endif
 
 #ifndef TOPIC_UNKNOWN
 #define TOPIC_UNKNOWN "unknown"
@@ -186,6 +189,25 @@
 #endif
 #ifndef PAYLOAD_FAN_AUTO
 #define PAYLOAD_FAN_AUTO "Auto"
+#endif
+// Action carries Home Assistant's hvac_action names, so action_topic needs no template.
+#ifndef PAYLOAD_ACTION_OFF
+#define PAYLOAD_ACTION_OFF "off"
+#endif
+#ifndef PAYLOAD_ACTION_IDLE
+#define PAYLOAD_ACTION_IDLE "idle"
+#endif
+#ifndef PAYLOAD_ACTION_COOLING
+#define PAYLOAD_ACTION_COOLING "cooling"
+#endif
+#ifndef PAYLOAD_ACTION_HEATING
+#define PAYLOAD_ACTION_HEATING "heating"
+#endif
+#ifndef PAYLOAD_ACTION_DRYING
+#define PAYLOAD_ACTION_DRYING "drying"
+#endif
+#ifndef PAYLOAD_ACTION_FAN
+#define PAYLOAD_ACTION_FAN "fan"
 #endif
 #ifndef PAYLOAD_VANES_UNKNOWN
 #define PAYLOAD_VANES_UNKNOWN "?"

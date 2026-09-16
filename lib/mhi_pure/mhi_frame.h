@@ -23,6 +23,7 @@
 #define DB10 SB2 + 11
 #define DB11 SB2 + 12
 #define DB12 SB2 + 13
+#define DB13 SB2 + 14  // outdoor unit state, see mhi_action.h
 #define DB14 SB2 + 15
 #define CBH DB14 + 1
 #define CBL DB14 + 2

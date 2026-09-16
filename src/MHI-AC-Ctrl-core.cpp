@@ -2,6 +2,7 @@
 // implements the core functions (read & write SPI)
 
 #include "MHI-AC-Ctrl-core.h"
+#include "mhi_action.h"
 #include "mhi_status.h"
 
 // The checksum helpers moved to lib/mhi_pure/mhi_frame.cpp, where they can be
@@ -16,6 +17,7 @@ void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection t
   status_troom_old = 0xfe;
   status_tsetpoint_old = 0x00;
   status_errorcode_old = 0xff;
+  status_action_old = 0xff;
   status_vanesLR_old = 0xff;
   status_3Dauto_old = 0xff;
 
@@ -338,6 +340,12 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     if (MOSI_frame[DB4] != status_errorcode_old) { // error code
       status_errorcode_old = MOSI_frame[DB4];
       m_cbiStatus->cbiStatusFunction(status_errorcode, status_errorcode_old);
+    }
+
+    const byte actiontmp = mhi_hvac_action(MOSI_frame[DB0], MOSI_frame[DB13]);
+    if (actiontmp != status_action_old) { // what the AC is doing: off, idle, cooling etc.
+      status_action_old = actiontmp;
+      m_cbiStatus->cbiStatusFunction(status_action, status_action_old);
     }
 
     // Evaluate Operating Data and Error Operating Data

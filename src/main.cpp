@@ -9,6 +9,7 @@
 
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
+#include "mhi_action.h"
 #include "mhi_diag.h"
 #include "mhi_mqtt.h"
 #include "mhi_status.h"
@@ -385,6 +386,28 @@ class StatusHandler : public CallbackInterface_Status {
         case erropdata_errorcode:
           itoa(value, strtmp, 10);
           output_P(status, PSTR(TOPIC_ERRORCODE), strtmp);
+          break;
+        case status_action:
+          switch (value) {
+            case MHI_ACTION_OFF:
+              output_P(status, PSTR(TOPIC_ACTION), PSTR(PAYLOAD_ACTION_OFF));
+              break;
+            case MHI_ACTION_IDLE:
+              output_P(status, PSTR(TOPIC_ACTION), PSTR(PAYLOAD_ACTION_IDLE));
+              break;
+            case MHI_ACTION_COOLING:
+              output_P(status, PSTR(TOPIC_ACTION), PSTR(PAYLOAD_ACTION_COOLING));
+              break;
+            case MHI_ACTION_HEATING:
+              output_P(status, PSTR(TOPIC_ACTION), PSTR(PAYLOAD_ACTION_HEATING));
+              break;
+            case MHI_ACTION_DRYING:
+              output_P(status, PSTR(TOPIC_ACTION), PSTR(PAYLOAD_ACTION_DRYING));
+              break;
+            case MHI_ACTION_FAN:
+              output_P(status, PSTR(TOPIC_ACTION), PSTR(PAYLOAD_ACTION_FAN));
+              break;
+          }
           break;
         case opdata_return_air:
         case erropdata_return_air:

@@ -87,6 +87,7 @@ Vanes|r/w|1,2,3,4,"Swing","?"|Vanes up/down position; writing 5 is the same as "
 Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
 Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C; readings outside this range are ignored <sup>3</sup>
 Errorcode|r|0 .. 255|error code (unsigned int)
+Action|r|"off", "idle", "cooling", "heating", "drying", "fan"|what the AC is doing <sup>5</sup>
 ErrOpData|w||triggers the reading of last error operating data
 VanesLR|r/w|1,2,3,4,5,6,7,"Swing"|Vanes left/right position <sup>4</sup>
 3Dauto|r/w|"On", "Off"|3D auto only works for mode Auto, Cool and heat <sup>4</sup>
@@ -95,6 +96,7 @@ VanesLR|r/w|1,2,3,4,5,6,7,"Swing"|Vanes left/right position <sup>4</sup>
 <sup>2</sup> Please compare with section [Room temperature](#room-temperature) for writing.
 <sup>3</sup> Only available when a DS18x20 is connected, please see the description in [Hardware.md](Hardware.md) and in section [External Temperature Sensor Settings](#external-temperature-sensor-settings-supporth).
 <sup>4</sup> Only available if USE_EXTENDED_FRAME_SIZE is enabled in [support.h](src/support.h).
+<sup>5</sup> From the outdoor unit state in `DB13`: `idle` while the unit is on but its compressor is stopped, e.g. when the room has reached the setpoint. In auto mode, heating or cooling comes from the outdoor unit too. `fan` in fan mode, `off` while the unit is off. The payloads are Home Assistant's `hvac_action` names, so `action_topic` needs no template.
 
 Additionally, the following program status topics are available:
 
@@ -276,6 +278,7 @@ Home Assistant's MQTT climate only accepts its own mode names, so a build for it
 #define PAYLOAD_MODE_FAN "fan_only"
 #define PAYLOAD_MODE_HEAT "heat"
 ```
+The `Action` topic already uses Home Assistant's names and can be used as the climate's `action_topic` as it is.
 
 ## Operating data ([MHI-AC-Ctrl-core.h](src/MHI-AC-Ctrl-core.h))
 Currently the following operating data in double quotes are supported
