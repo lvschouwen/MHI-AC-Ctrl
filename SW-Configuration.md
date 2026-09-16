@@ -272,6 +272,24 @@ Publishing `Off` to `set/PassiveMode` enables active mode immediately.
 The RC timer is disabled and the AC can be controlled by MHI-AC-Ctrl again.
 The AC does not power off when active mode is enabled.
 
+## Finding out what a remote button does
+
+Some remote functions are not decoded (ECO, HI POWER, night setback), and which byte of the AC's status carries them differs per model. Three diagnostic topics turn that into a five-minute test: press the button, watch the topic. The state of the tool and the boot default:
+
+```cpp
+#define DIAG_DEFAULT true    // whether diag/frame is on after boot; set/Diag switches it at runtime
+```
+
+topic | r/w | value | comment
+---|---|---|---
+`diag/frame` | r | `DB5 00>10 \| 6c 80 04 …` | the bytes of the AC's status frame that changed since the last publish, old>new, then the whole frame in hex. At most once a second while `Diag` is `On`; `first \| …` after every MQTT connect. The bytes that change on their own are left out of the compare: the header, the operating-data bytes DB9-DB12 and the request-prefix bits of DB6, the checksum, the frame toggle in DB14. Not retained
+`diag/opdata` | r | `dd 80 01 00` | an operating-data answer the firmware does not decode, as DB9 DB10 DB11 DB12. `OpData/unknown` still publishes the same answer as a number. Not retained
+`Diag` | r | `On`, `Off` | whether `diag/frame` is published
+`set/Diag` | w | `On`, `Off` | switch `diag/frame` at runtime; answers on `cmd_received`
+`set/OpDataRequest` | w | four hex digits, e.g. `c021` | ask the AC once for operating-data code `0x21` with request prefix `c0` (indoor) or `40` (outdoor), the same request the built-in codes use, in place of the next code of the normal cycle. The answer arrives on `diag/opdata`, or on the code's own topic if it is a known one. `cmd_received` answers `o.k.`, or `invalid parameter` for any other prefix or length
+
+Worked example (16 Sep 2026, `airco/uitkijk/#` captured while pressing the remote): SILENT on and off each produced `OpData/unknown 32989` (`0x80DD`), so Silent is reported as `DB9 = 0xDD`, `DB10 = 0x80`, with the on/off state in `DB11`, which `diag/opdata` now shows. HI/ECO produced no operating data at all; its only trace was `Fan` and the internal setpoint changing. With `diag/frame` running, a press that flips a bit anywhere in the status frame shows up as one line naming the byte. The MQTT client buffer is 256 bytes and a worst-case `diag/frame` line is about 200, so keep the topic prefix (`MQTT_PREFIX`) under 40 characters or the longest lines are dropped silently.
+
 # Advanced settings
 
 ## Topic and payload text ([MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h))

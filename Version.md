@@ -22,6 +22,7 @@ MHI-AC-Ctrl by absalom-muc
 - dependencies refreshed on 2026-09-15: PubSubClient3 3.3.1 (buffer bounds checks, `setBufferSize()` fix, QoS 2 handling this firmware does not use) and the CI actions on their current majors
 - WiFi PHY mode fallback (#17): after five minutes without a link the unit tries 802.11g instead of the default 802.11n, and alternates back after another five minutes, so a router that refuses the 11n join ([#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224)) no longer strands it until a USB flash. The new `WIFI_PHY` status topic reports the mode the unit joined with
 - periodic telemetry (#18): `RSSI`, the new `Uptime` (seconds, counting past the `millis()` wrap) and `FreeHeap` are published at MQTT connect and every `TELEMETRY_PERIOD` seconds (default 300); the new `ResetReason` says why the ESP8266 last started. A silent watchdog reboot, which used to look like `WIFI_LOST` and `MQTT_LOST` going back to 0, is now visible
+- protocol discovery tooling (#4, batch A): `diag/frame` publishes the bytes of the AC's status frame that changed (old>new, then the whole frame), at most once a second while `Diag` is `On`; `diag/opdata` publishes unknown operating data with its value bytes (`OpData/unknown` dropped them); `set/OpDataRequest` asks the AC once for any operating-data code. Together they turn "what does this remote button do" into a five-minute test on the unit
 
 **v2.8** (September 2023)
 - when ds18x20 used and get disconnected, fallback to  IU temperature sensor by [glsf91](https://github.com/glsf91)
