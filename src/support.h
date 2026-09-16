@@ -3,7 +3,10 @@
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
 
-#define VERSION "2.8"
+// VERSION is the short git commit hash of this build, with "-dirty" appended
+// when tracked files were modified. scripts/build_version.py generates the
+// header into the build directory before every build (fork issue #13).
+#include "build_version.h"
 
 // *** Configuration ***
 //

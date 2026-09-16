@@ -1,6 +1,6 @@
 // MHI-AC-Ctrl by absalom-muc
 // read + write data via SPI controlled by MQTT
-// for version see support.h
+// VERSION (the build's git commit hash) comes from the generated build_version.h
 //
 // Was MHI-AC-Ctrl.ino. As a .cpp there is no Arduino preprocessor generating
 // includes and forward declarations, so they are spelled out.
@@ -482,7 +482,7 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   Serial.println();
-  Serial.println(F("Starting MHI-AC-Ctrl v" VERSION));
+  Serial.println(F("Starting MHI-AC-Ctrl build " VERSION));
   Serial.printf_P(PSTR("CPU frequency[Hz]=%lu\n"), F_CPU);
   Serial.printf("ESP.getCoreVersion()=%s\n", ESP.getCoreVersion().c_str());
   Serial.printf("ESP.getSdkVersion()=%s\n", ESP.getSdkVersion());

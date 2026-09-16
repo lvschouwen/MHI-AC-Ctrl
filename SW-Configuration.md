@@ -107,7 +107,7 @@ Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `M
 reset|w|"reset"|resets the ESP8266
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm after MQTT (re-)connect
 WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
-Version  |r  |string          |Version number of MHI-AC-Ctrl
+Version  |r  |string          |Short git commit hash the firmware was built from, e.g. `9d8886d`; `-dirty` is appended when the build had uncommitted changes, `unknown` when built without git
 WIFI_LOST|r  |integer         |number of lost WiFi connections since last reset; a deliberate change to a stronger AP is not counted
 MQTT_LOST|r  |integer         |number of lost MQTT connections since last reset; a change to a stronger AP drops the broker connection and is counted
 APs      |r  |string          |Matched APs seen at scan with RSSI value, one message per AP; the topic name is fixed
