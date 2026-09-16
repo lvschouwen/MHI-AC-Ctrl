@@ -233,6 +233,9 @@ class StatusHandler : public CallbackInterface_Status {
 #endif
       //Serial.printf_P(PSTR("status=%i value=%i\n"), status, value);
       switch (status) {
+        case raw_frame:      // never reaches cbiStatusFunction; delivered via cbiRawFunction (fork #4)
+        case raw_opdata:
+          break;
         case status_power:
           // After powerdown AC (230V), fan status is only showing 1, 2 or 3. 4 and Auto is not shown when changing with RC.
           // Only when setting fan to Auto one time after powerdown AC, it will show 4 and Auto.

@@ -273,6 +273,10 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
       return err_msg_invalid_checksum;
   }
 
+  // Every valid frame goes to the discovery tooling; main.cpp decides whether
+  // anything in it is worth publishing.
+  m_cbiStatus->cbiRawFunction(raw_frame, MOSI_frame, frameSize);
+
   if (new_datapacket_received) {
 
     if (frameSize == 33 ) { // Only for framesize 33 (WF-RAC)
@@ -593,6 +597,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
       case 0xff:  // default
         break;
       default:    // unknown operating data
+        m_cbiStatus->cbiRawFunction(raw_opdata, &MOSI_frame[DB9], 4);  // the value bytes, which the number below drops
         m_cbiStatus->cbiStatusFunction(opdata_unknown, MOSI_frame[DB10] << 8 | MOSI_frame[DB9]);
         Serial.printf("Unknown operating data, MOSI_frame[DB9]=%i MOSI_frame[D10]=%i\n", MOSI_frame[DB9], MOSI_frame[DB10]);
     }
