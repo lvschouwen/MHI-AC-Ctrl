@@ -66,6 +66,162 @@ static void test_opdata_text_refuses_a_buffer_that_cannot_hold_it(void) {
   TEST_ASSERT_EQUAL_size_t(0, mhi_diag_opdata_text(db9, out, sizeof(out)));
 }
 
+// --- the compare mask ------------------------------------------------------
+
+static void test_default_mask_ignores_what_changes_on_its_own(void) {
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[SB0]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[SB1]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[SB2]);
+  TEST_ASSERT_EQUAL_HEX8(0x3f, mask[DB6]);   // request-prefix bits 0xc0 cycle
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[DB9]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[DB10]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[DB11]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[DB12]);
+  TEST_ASSERT_EQUAL_HEX8(0xfb, mask[DB14]);  // bit 2 toggles every frame
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[CBH]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[CBL]);
+}
+
+static void test_default_mask_compares_the_status_bytes_in_full(void) {
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 33);
+  TEST_ASSERT_EQUAL_HEX8(0xff, mask[DB0]);
+  TEST_ASSERT_EQUAL_HEX8(0xff, mask[DB5]);   // undocumented per SPI.md, the point of the tool
+  TEST_ASSERT_EQUAL_HEX8(0xff, mask[DB13]);
+  TEST_ASSERT_EQUAL_HEX8(0xff, mask[DB15]);
+  TEST_ASSERT_EQUAL_HEX8(0xff, mask[DB26]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[CBL2]);
+}
+
+// --- the frame diff ----------------------------------------------------------
+
+// A plausible 20-byte status frame: header 6c 80 04, then DB0..DB14, checksum.
+static const uint8_t kFrame[20] = {0x6c, 0x80, 0x04, 0x08, 0x3b, 0x2e, 0x4c, 0x22, 0x00, 0x00, 0x00, 0x00,
+                                   0x02, 0x10, 0x3b, 0x00, 0x05, 0x00, 0x02, 0x1d};
+
+static void test_the_first_frame_is_published_whole(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX];
+  const size_t n = mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("first | 6c 80 04 08 3b 2e 4c 22 00 00 00 00 02 10 3b 00 05 00 02 1d", out);
+  TEST_ASSERT_EQUAL_size_t(strlen(out), n);
+  TEST_ASSERT_TRUE(d.have_last);
+}
+
+static void test_an_unchanged_frame_publishes_nothing(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX] = "untouched";
+  mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
+  TEST_ASSERT_EQUAL_size_t(0, mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("first | 6c 80 04 08 3b 2e 4c 22 00 00 00 00 02 10 3b 00 05 00 02 1d", out);  // left alone
+}
+
+static void test_a_changed_status_byte_is_named_with_old_and_new(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX];
+  mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
+  uint8_t next[20];
+  memcpy(next, kFrame, 20);
+  next[DB5] = 0x10;  // a HI/ECO press flipping an undocumented bit
+  TEST_ASSERT_GREATER_THAN_size_t(0, mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("DB5 00>10 | 6c 80 04 08 3b 2e 4c 22 10 00 00 00 02 10 3b 00 05 00 02 1d", out);
+}
+
+static void test_the_compare_is_against_the_last_published_frame(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX];
+  mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
+  uint8_t next[20];
+  memcpy(next, kFrame, 20);
+  next[DB5] = 0x10;
+  mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out));
+  next[DB5] = 0x11;
+  mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING_LEN("DB5 10>11 |", out, 11);
+}
+
+static void test_masked_bytes_never_trigger_a_publish(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX];
+  mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
+  uint8_t next[20];
+  memcpy(next, kFrame, 20);
+  next[DB9] = 0x80;   // the operating-data cycle
+  next[DB10] = 0x10;
+  next[DB11] = 0x33;
+  next[DB12] = 0x01;
+  next[DB6] ^= 0xc0;  // the echoed request prefix
+  next[DB14] ^= 0x04; // the frame toggle
+  next[CBH] = 0xaa;   // checksum follows the rest
+  next[CBL] = 0xbb;
+  TEST_ASSERT_EQUAL_size_t(0, mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out)));
+}
+
+static void test_the_low_bits_of_db6_and_the_rest_of_db14_still_count(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX];
+  mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
+  uint8_t next[20];
+  memcpy(next, kFrame, 20);
+  next[DB6] |= 0x01;
+  next[DB14] |= 0x08;
+  TEST_ASSERT_GREATER_THAN_size_t(0, mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING_LEN("DB6 00>01 DB14 00>08 |", out, 22);
+}
+
+static void test_more_than_six_changes_are_summarised_with_a_plus(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX];
+  mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
+  uint8_t next[20];
+  memcpy(next, kFrame, 20);
+  for (size_t i = DB0; i <= DB5; i++) next[i] ^= 0x01;  // six
+  next[DB7] ^= 0x01;                                    // the seventh
+  TEST_ASSERT_GREATER_THAN_size_t(0, mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB3 4c>4d DB4 22>23 DB5 00>01 + |", out, 62);
+  TEST_ASSERT_LESS_THAN_size_t(MHI_DIAG_TEXT_MAX, strlen(out));
+}
+
+static void test_an_extended_frame_names_its_extra_bytes(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 33);
+  char out[MHI_DIAG_TEXT_MAX];
+  uint8_t frame[33] = {0};
+  memcpy(frame, kFrame, 20);
+  mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));
+  frame[DB15] = 0x04;  // 3D auto
+  TEST_ASSERT_GREATER_THAN_size_t(0, mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING_LEN("DB15 00>04 |", out, 12);
+  TEST_ASSERT_LESS_THAN_size_t(MHI_DIAG_TEXT_MAX, strlen(out));
+}
+
+static void test_a_frame_longer_than_the_maximum_is_refused(void) {
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 33);
+  uint8_t frame[40] = {0};
+  char out[MHI_DIAG_TEXT_MAX];
+  TEST_ASSERT_EQUAL_size_t(0, mhi_diag_frame_changes(&d, frame, 40, mask, out, sizeof(out)));
+  TEST_ASSERT_FALSE(d.have_last);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_request_parses_an_indoor_code);
@@ -74,5 +230,16 @@ int main(void) {
   RUN_TEST(test_request_rejects_anything_but_four_hex_digits);
   RUN_TEST(test_opdata_text_shows_the_four_bytes_in_hex);
   RUN_TEST(test_opdata_text_refuses_a_buffer_that_cannot_hold_it);
+  RUN_TEST(test_default_mask_ignores_what_changes_on_its_own);
+  RUN_TEST(test_default_mask_compares_the_status_bytes_in_full);
+  RUN_TEST(test_the_first_frame_is_published_whole);
+  RUN_TEST(test_an_unchanged_frame_publishes_nothing);
+  RUN_TEST(test_a_changed_status_byte_is_named_with_old_and_new);
+  RUN_TEST(test_the_compare_is_against_the_last_published_frame);
+  RUN_TEST(test_masked_bytes_never_trigger_a_publish);
+  RUN_TEST(test_the_low_bits_of_db6_and_the_rest_of_db14_still_count);
+  RUN_TEST(test_more_than_six_changes_are_summarised_with_a_plus);
+  RUN_TEST(test_an_extended_frame_names_its_extra_bytes);
+  RUN_TEST(test_a_frame_longer_than_the_maximum_is_refused);
   return UNITY_END();
 }

@@ -18,7 +18,10 @@
 #define DB2 SB2 + 3
 #define DB3 SB2 + 4
 #define DB4 SB2 + 5
+#define DB5 SB2 + 6
 #define DB6 SB2 + 7
+#define DB7 SB2 + 8
+#define DB8 SB2 + 9
 #define DB9 SB2 + 10
 #define DB10 SB2 + 11
 #define DB11 SB2 + 12
