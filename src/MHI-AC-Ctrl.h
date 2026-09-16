@@ -156,6 +156,24 @@
 #define TOPIC_REQUEST_PASSIVEMODE "PassiveMode"
 #endif
 
+// Protocol discovery tooling (fork #4): what the AC's frame changed, unknown
+// operating data with its value bytes, and a one-shot request.
+#ifndef TOPIC_DIAG_FRAME
+#define TOPIC_DIAG_FRAME "diag/frame"
+#endif
+#ifndef TOPIC_DIAG_OPDATA
+#define TOPIC_DIAG_OPDATA "diag/opdata"
+#endif
+#ifndef TOPIC_DIAG
+#define TOPIC_DIAG "Diag"
+#endif
+#ifndef TOPIC_REQUEST_DIAG
+#define TOPIC_REQUEST_DIAG "Diag"
+#endif
+#ifndef TOPIC_REQUEST_OPDATA
+#define TOPIC_REQUEST_OPDATA "OpDataRequest"
+#endif
+
 // MQTT payload text
 #ifndef PAYLOAD_CONNECTED_TRUE
 #define PAYLOAD_CONNECTED_TRUE "1"
@@ -250,6 +268,12 @@
 #endif
 #ifndef PAYLOAD_REQUEST_PASSIVEMODE_OFF
 #define PAYLOAD_REQUEST_PASSIVEMODE_OFF "Off"
+#endif
+#ifndef PAYLOAD_DIAG_ON
+#define PAYLOAD_DIAG_ON "On"
+#endif
+#ifndef PAYLOAD_DIAG_OFF
+#define PAYLOAD_DIAG_OFF "Off"
 #endif
 
 enum POWER_STATUS {

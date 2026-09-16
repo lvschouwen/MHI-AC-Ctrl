@@ -44,6 +44,10 @@
 #define WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL 12    // WiFi network re-scan interval in minutes with alternate to +5dB stronger signal if detected
 #endif
 
+#ifndef DIAG_DEFAULT
+#define DIAG_DEFAULT true                           // whether diag/frame (the status-frame change topic) is on after boot; set/Diag switches it at runtime
+#endif
+
 #ifndef TELEMETRY_PERIOD
 #define TELEMETRY_PERIOD 300                        // seconds between publishes of RSSI, Uptime and FreeHeap while MQTT is connected; 0 publishes them at MQTT connect only
 #endif

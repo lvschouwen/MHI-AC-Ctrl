@@ -11,6 +11,8 @@
 #include "MHI-AC-Ctrl.h"
 #include "mhi_action.h"
 #include "mhi_diag.h"
+#include "mhi_diag_frame.h"
+#include "mhi_link.h"
 #include "mhi_mqtt.h"
 #include "mhi_status.h"
 #include "mhi_temp.h"
@@ -27,6 +29,21 @@ bool troom_was_set_by_DS18X20 = false;
 
 // Reset on every MQTT (re)connect, so Troom is re-sent like every other status.
 MhiTroomFilter troom_filter = {0, false};
+
+// Protocol discovery tooling (#4 batch A). diag/frame compares each valid
+// frame with the last *published* one, at most once a second, while Diag is
+// on; a reconnect starts with a whole frame ("first | ...").
+static MhiDiagFrame diag_frame = {{0}, false};
+static uint8_t diag_mask[MHI_DIAG_FRAME_MAX];
+static MhiRetryPacer diag_pacer = {0, false};
+static bool diag_on = DIAG_DEFAULT;
+
+static void publish_diag_state() {
+  if (diag_on)
+    output_P((ACStatus)type_status, PSTR(TOPIC_DIAG), PSTR(PAYLOAD_DIAG_ON));
+  else
+    output_P((ACStatus)type_status, PSTR(TOPIC_DIAG), PSTR(PAYLOAD_DIAG_OFF));
+}
 
 // Longest payload we ever parse is a temperature; anything longer is not a
 // command we understand.
@@ -211,6 +228,29 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     }
     else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_PASSIVEMODE_OFF)) == 0) {
       mhi_ac_ctrl_core.set_passive_mode(false);
+      publish_cmd_ok();
+    }
+    else
+      publish_cmd_invalidparameter();
+  }
+  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_DIAG)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_DIAG_ON)) == 0) {
+      diag_on = true;
+      publish_diag_state();
+      publish_cmd_ok();
+    }
+    else if (strcmp_P(payload_str, PSTR(PAYLOAD_DIAG_OFF)) == 0) {
+      diag_on = false;
+      publish_diag_state();
+      publish_cmd_ok();
+    }
+    else
+      publish_cmd_invalidparameter();
+  }
+  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_OPDATA)) == 0) {
+    uint8_t prefix, code;
+    if (mhi_opdata_request_parse(payload_str, &prefix, &code)) {
+      mhi_ac_ctrl_core.request_OpData(prefix, code);
       publish_cmd_ok();
     }
     else
@@ -501,6 +541,19 @@ class StatusHandler : public CallbackInterface_Status {
           break;
       }
     }
+
+    void cbiRawFunction(ACStatus status, const uint8_t* bytes, size_t len) override {
+      char text[MHI_DIAG_TEXT_MAX];
+      if (status == raw_opdata) {
+        // An event, not state: not retained, published every time it is seen.
+        if (mhi_diag_opdata_text(bytes, text, sizeof(text)) > 0)
+          MQTTclient.publish(MQTT_PREFIX TOPIC_DIAG_OPDATA, text, false);
+      }
+      else if (status == raw_frame && diag_on && mhi_retry_due(&diag_pacer, millis(), 1000)) {
+        if (mhi_diag_frame_changes(&diag_frame, bytes, len, diag_mask, text, sizeof(text)) > 0)
+          MQTTclient.publish(MQTT_PREFIX TOPIC_DIAG_FRAME, text, false);
+      }
+    }
 };
 StatusHandler mhiStatusHandler;
 
@@ -526,6 +579,7 @@ void setup() {
   const bool drive_miso = mhi_miso_may_be_driven(wiring_faults);
   if (!drive_miso)
     Serial.println(F("Signal on MISO: leaving it an input, so commands will not reach the AC"));
+  mhi_diag_mask_default(diag_mask, sizeof(diag_mask));
   mhi_ac_ctrl_core.init(drive_miso);
 #ifdef USE_EXTENDED_FRAME_SIZE    
   mhi_ac_ctrl_core.set_frame_size(33); // switch to framesize 33 (like WF-RAC). Only 20 or 33 possible
@@ -556,6 +610,9 @@ void loop() {
     if (MQTTStatus == MQTT_RECONNECTED) {
       mhi_ac_ctrl_core.reset_old_values();  // after a reconnect
       mhi_troom_filter_reset(&troom_filter);
+      publish_diag_state();
+      diag_frame.have_last = false;   // the next diag/frame is a whole frame
+      mhi_retry_reset(&diag_pacer);
     }
     ArduinoOTA.handle();
   }
