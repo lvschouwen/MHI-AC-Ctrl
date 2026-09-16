@@ -44,6 +44,13 @@
 #define WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL 12    // WiFi network re-scan interval in minutes with alternate to +5dB stronger signal if detected
 #endif
 
+#ifndef TELEMETRY_PERIOD
+#define TELEMETRY_PERIOD 300                        // seconds between publishes of RSSI, Uptime and FreeHeap while MQTT is connected; 0 publishes them at MQTT connect only
+#endif
+#if TELEMETRY_PERIOD * 1000UL > 0xFFFFFFFFUL
+#error "TELEMETRY_PERIOD must be below 4294967 seconds (49.7 days): the interval is kept in 32-bit milliseconds"
+#endif
+
 #ifndef MQTT_SERVER
 #define MQTT_SERVER "192.168.178.111"               // broker name or IP address of the broker
 #endif
@@ -142,6 +149,7 @@ void MeasureFrequency();                                      // measures the fr
 void initWiFi();                                              // basic WiFi initialization
 void setupWiFi(int& WiFiStatus);                              // setup WIFi connection to AP
 int MQTTreconnect();                                          // (re)connect to MQTT broker
+void publishTelemetry();                                      // call every loop() pass: advances the uptime counter; publishes RSSI, Uptime, FreeHeap every TELEMETRY_PERIOD s while connected
 void publish_cmd_ok();                                        // last MQTT cmd was o.k.
 void publish_cmd_unknown();                                   // last MQTT cmd was unknown
 void publish_cmd_invalidparameter();                          // a paramter of the last MQTT was wrong

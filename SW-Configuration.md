@@ -112,7 +112,10 @@ fMOSI    |r  |unsigned integer|frequency of the MOSI pin in Hz during boot
 fSCK     |r  |unsigned integer|frequency of the SCK pin in Hz during boot
 Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `MISO` or `SCK,MOSI`. A fault is reported and the unit keeps running so it stays reachable over OTA. After a `MISO` fault the MISO pin stays an input: the AC status is still read, but no commands reach the AC <sup>5</sup>
 reset|w|"reset"|resets the ESP8266
-RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm after MQTT (re-)connect
+RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
+Uptime   |r  |integer         |seconds since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; keeps counting past the 49.7-day `millis()` wrap
+FreeHeap |r  |integer         |free heap in bytes, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
+ResetReason|r|string          |why the ESP8266 last started, at MQTT (re-)connect: `Power On`, `Software/System restart` (also after an OTA flash or `set/reset`), `Hardware Watchdog`, `Software Watchdog`, `Exception`, `External System`
 WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
 WIFI_PHY |r  |"11b", "11g", "11n"|802.11 mode the unit joined with, after MQTT (re-)connect. `11n` unless the [PHY mode fallback](#wifi-phy-mode-fallback) had to switch to `11g`
 Version  |r  |string          |Short git commit hash the firmware was built from, e.g. `9d8886d`; `-dirty` is appended when the build had uncommitted changes, `unknown` when built without git
@@ -123,6 +126,11 @@ APs      |r  |string          |Matched APs seen at scan with RSSI value, one mes
 <sup>5</sup> The frequencies in `fSCK`, `fMOSI` and `fMISO` say what was measured; `Wiring` says whether it was acceptable. Expect SCK above 3000 Hz, MOSI between 30 Hz and the SCK frequency, and MISO at or below 10 Hz.
 
 Note: The topic and the payload text of the status data is adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), except `APs`.
+
+`RSSI`, `Uptime` and `FreeHeap` are published at MQTT (re-)connect and then periodically, so a unit can be watched without waiting for a reconnect: a live signal strength, an uptime that shows a reboot, a heap that shows a leak. `ResetReason` is published at connect only, since it does not change.
+```cpp
+#define TELEMETRY_PERIOD 300   // seconds between the periodic publishes; 0 publishes them at MQTT connect only
+```
 
 ### MQTT operating data
 MHI-AC-Ctrl can provide operating data of the indoor and outdoor unit. This data is not needed for daily use, but might be interesting in specific use cases. Operating data is only published when there is a change of the content. The retained flag is `true`.

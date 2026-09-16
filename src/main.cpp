@@ -556,6 +556,7 @@ void loop() {
     }
     ArduinoOTA.handle();
   }
+  publishTelemetry();  // every pass, connected or not, so the uptime counter never misses a millis() wrap
 
 #if TEMP_MEASURE_PERIOD > 0
   // A reading has come back since setup or since the last fault. Decides

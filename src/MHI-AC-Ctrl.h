@@ -29,6 +29,15 @@
 #ifndef TOPIC_WIFI_PHY
 #define TOPIC_WIFI_PHY "WIFI_PHY"
 #endif
+#ifndef TOPIC_UPTIME
+#define TOPIC_UPTIME "Uptime"
+#endif
+#ifndef TOPIC_FREE_HEAP
+#define TOPIC_FREE_HEAP "FreeHeap"
+#endif
+#ifndef TOPIC_RESET_REASON
+#define TOPIC_RESET_REASON "ResetReason"
+#endif
 #ifndef TOPIC_CMD_RECEIVED
 #define TOPIC_CMD_RECEIVED "cmd_received"
 #endif

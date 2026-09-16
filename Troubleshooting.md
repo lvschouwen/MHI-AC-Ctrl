@@ -29,6 +29,8 @@ This should be considered especially when you use the IR RC in parallel to MHI-A
 Connecting the MHI-AC-Ctrl controller will **disable** the RC timer functionality. This also apply to the standard MHI WiFi (or other) controller. See [#148](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/148) for more information and [Passive Mode](SW-Configuration.md#passive-mode) for a workaround.
 
 ## :fire: ESP8266 crashes periodically
+The `ResetReason` topic says how the last start came about, and `Uptime` shows how long ago that was. `Hardware Watchdog`, `Software Watchdog` and `Exception` are crashes; `Power On`, `Software/System restart` (an OTA flash, `set/reset`) and `External System` are not. A unit that keeps reporting a crash reason with a short uptime is the case below.
+
 For a periodic crash there are different causes possible:
 
 ### :fire: Pins not properly connected

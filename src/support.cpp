@@ -5,6 +5,7 @@
 #include "mhi_link.h"
 #include "mhi_phy.h"
 #include "mhi_temp.h"
+#include "mhi_uptime.h"
 
 WiFiClient espClient;
 PubSubClient MQTTclient(espClient);
@@ -195,6 +196,33 @@ void setupWiFi(int& WiFiStatusParam) {
   WiFiStatusParam = WiFiStatus; // return WiFiStatus to caller
 }
 
+// RSSI, Uptime and FreeHeap used to be one connect-time snapshot (RSSI) or
+// nothing at all, so the health check could not tell "no drops" from
+// "rebooted and started counting again". Published at connect and every
+// TELEMETRY_PERIOD seconds after it (#18). The uptime counter is advanced on
+// every pass while connected, so it never misses the millis() wrap.
+static MhiUptime uptime_counter = {0, 0, 0};
+static MhiRetryPacer telemetry_pacer = {0, false};
+
+static void publishTelemetryNow(uint32_t uptime_s) {
+  char strtmp[12];
+  itoa(WiFi.RSSI(), strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_RSSI), strtmp);
+  ultoa(uptime_s, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_UPTIME), strtmp);
+  ultoa(ESP.getFreeHeap(), strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_FREE_HEAP), strtmp);
+}
+
+// Called on every loop() pass, connected or not: an outage longer than the
+// millis() wrap must not cost the counter a wrap.
+void publishTelemetry() {
+  const unsigned long now = millis();
+  const uint32_t uptime_s = mhi_uptime_advance(&uptime_counter, now);
+  if (TELEMETRY_PERIOD > 0 && MQTTclient.connected() && mhi_retry_due(&telemetry_pacer, now, TELEMETRY_PERIOD * 1000UL))
+    publishTelemetryNow(uptime_s);
+}
+
 int MQTTreconnect() {
   char strtmp[50];
   static int reconnect_trials=0;
@@ -219,8 +247,10 @@ int MQTTreconnect() {
       reconnect_trials=0;
       output_P((ACStatus)type_status, PSTR(TOPIC_CONNECTED), PSTR(PAYLOAD_CONNECTED_TRUE));
       output_P((ACStatus)type_status, PSTR(TOPIC_VERSION), PSTR(VERSION));
-      itoa(WiFi.RSSI(), strtmp, 10);
-      output_P((ACStatus)type_status, PSTR(TOPIC_RSSI), strtmp);
+      output_P((ACStatus)type_status, PSTR(TOPIC_RESET_REASON), ESP.getResetReason().c_str());
+      publishTelemetryNow(mhi_uptime_advance(&uptime_counter, millis()));
+      telemetry_pacer.last_ms = millis();  // the first periodic publish is one period after this one
+      telemetry_pacer.attempted = true;
       itoa(WIFI_lost, strtmp, 10);
       output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_LOST), strtmp);
       itoa(MQTT_lost, strtmp, 10);
