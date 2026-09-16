@@ -24,9 +24,9 @@ MHI-AC-Ctrl doesn't support all functions of the infrared remote control. This i
 - Vanes up/down is supported, but with the limitation that if the last command was issued by the IR RC, then the vanes up/down status is not visible in MHI-AC-Ctrl
 - ECO, Silent and Night set back mode
 
-To find out which bytes a remote function changes on your unit, see [Finding out what a remote button does](SW-Configuration.md#finding-out-what-a-remote-button-does): `diag/frame` names the status bytes that change, `diag/opdata` shows unknown operating data with its value, and `set/OpDataRequest` asks the AC for any operating-data code.
-
 This should be considered especially when you use the IR RC in parallel to MHI-AC-Ctrl.
+
+To find out which bytes a remote function changes on your unit, see [Finding out what a remote button does](SW-Configuration.md#finding-out-what-a-remote-button-does): `diag/frame` names the status bytes that change, `diag/opdata` shows unknown operating data with its value, and `set/OpDataRequest` asks the AC for any operating-data code.
 
 Connecting the MHI-AC-Ctrl controller will **disable** the RC timer functionality. This also apply to the standard MHI WiFi (or other) controller. See [#148](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/148) for more information and [Passive Mode](SW-Configuration.md#passive-mode) for a workaround.
 
