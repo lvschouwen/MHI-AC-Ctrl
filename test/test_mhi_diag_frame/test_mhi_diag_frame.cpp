@@ -51,11 +51,28 @@ static void test_request_rejects_anything_but_four_hex_digits(void) {
   TEST_ASSERT_EQUAL_HEX8(2, code);
 }
 
+// --- unknown operating data with its value bytes ---------------------------
+
+static void test_opdata_text_shows_the_four_bytes_in_hex(void) {
+  const uint8_t db9[4] = {0xdd, 0x80, 0x01, 0x00};  // Silent, as seen on 16 Sep
+  char out[16];
+  TEST_ASSERT_EQUAL_size_t(11, mhi_diag_opdata_text(db9, out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("dd 80 01 00", out);
+}
+
+static void test_opdata_text_refuses_a_buffer_that_cannot_hold_it(void) {
+  const uint8_t db9[4] = {0x21, 0x10, 0x00, 0x00};
+  char out[11];  // one short of the NUL
+  TEST_ASSERT_EQUAL_size_t(0, mhi_diag_opdata_text(db9, out, sizeof(out)));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_request_parses_an_indoor_code);
   RUN_TEST(test_request_parses_an_outdoor_code_in_upper_case);
   RUN_TEST(test_request_rejects_a_prefix_the_ac_never_sees);
   RUN_TEST(test_request_rejects_anything_but_four_hex_digits);
+  RUN_TEST(test_opdata_text_shows_the_four_bytes_in_hex);
+  RUN_TEST(test_opdata_text_refuses_a_buffer_that_cannot_hold_it);
   return UNITY_END();
 }

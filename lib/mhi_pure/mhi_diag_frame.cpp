@@ -16,8 +16,9 @@ size_t mhi_diag_frame_changes(MhiDiagFrame* d, const uint8_t* frame, size_t len,
 }
 
 size_t mhi_diag_opdata_text(const uint8_t* db9, char* out, size_t out_len) {
-  (void)db9; (void)out; (void)out_len;
-  return 0;
+  if (out_len < 12) return 0;  // "xx xx xx xx" and the NUL
+  const int n = snprintf(out, out_len, "%02x %02x %02x %02x", db9[0], db9[1], db9[2], db9[3]);
+  return n > 0 ? (size_t)n : 0;
 }
 
 static int hex_nibble(char c) {
