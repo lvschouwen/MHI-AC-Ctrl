@@ -23,6 +23,8 @@ static void test_frame_layout_matches_the_protocol(void) {
   TEST_ASSERT_EQUAL_INT(18, CBH);
   TEST_ASSERT_EQUAL_INT(19, CBL);
   TEST_ASSERT_EQUAL_INT(32, CBL2);
+  // The outdoor unit state behind the Action topic; hberntsen reads index 16 too.
+  TEST_ASSERT_EQUAL_INT(16, DB13);
 }
 
 static void test_checksum_of_an_empty_frame_is_zero(void) {
