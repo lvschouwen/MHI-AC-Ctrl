@@ -20,6 +20,10 @@ enum MhiWiringFault : uint8_t {
   MHI_WIRING_FAULT_MISO = 1 << 2,  // our own output line is being driven
 };
 
+// What mhi_wiring_fault_text writes for a clean board. Discovery's wiring
+// binary sensor compares the Wiring topic with it.
+#define MHI_WIRING_OK "o.k."
+
 // Bitmask of MhiWiringFault, 0 when everything looks right. All three pins are
 // judged independently so one bad reading does not hide the others.
 uint8_t mhi_wiring_faults(uint32_t sck_hz, uint32_t mosi_hz, uint32_t miso_hz);

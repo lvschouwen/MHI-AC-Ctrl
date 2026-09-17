@@ -61,6 +61,14 @@ static void test_healthy_wiring_reads_as_ok(void) {
   TEST_ASSERT_EQUAL_STRING("o.k.", buf);
 }
 
+static void test_the_ok_text_is_the_shared_constant(void) {
+  // Discovery's wiring binary sensor compares the Wiring topic with this text.
+  char out[16];
+  mhi_wiring_fault_text(0, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING(MHI_WIRING_OK, out);
+  TEST_ASSERT_EQUAL_STRING("o.k.", MHI_WIRING_OK);
+}
+
 static void test_single_fault_names_the_pin(void) {
   char buf[32];
   mhi_wiring_fault_text(MHI_WIRING_FAULT_MISO, buf, sizeof(buf));
@@ -127,6 +135,7 @@ int main(void) {
   RUN_TEST(test_miso_must_be_quiet);
   RUN_TEST(test_faults_are_reported_independently);
   RUN_TEST(test_healthy_wiring_reads_as_ok);
+  RUN_TEST(test_the_ok_text_is_the_shared_constant);
   RUN_TEST(test_single_fault_names_the_pin);
   RUN_TEST(test_multiple_faults_are_listed);
   RUN_TEST(test_text_never_overruns_a_short_buffer);

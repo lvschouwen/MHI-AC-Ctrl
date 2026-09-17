@@ -17,11 +17,12 @@
 // Room for "DB26 ff>ff " x 6, "+ ", "|" and 33 bytes as " xx", plus the NUL.
 #define MHI_DIAG_TEXT_MAX 200
 
-// The compare mask: which bits of each MOSI byte take part. The header, the
-// operating-data bytes DB9-DB12, the checksum bytes and the frame toggle in
-// DB14 bit 2 are ignored; DB6 keeps only its low six bits, because bits 0xc0
-// echo the operating-data request prefix (0x40 / 0xc0). A byte that proves
-// noisy on hardware is masked here, with a test.
+// The compare mask: which bits of each MOSI byte take part. The header, DB3
+// (raw Troom, which dithers at a temperature boundary), the operating-data
+// bytes DB9-DB12, the checksum bytes and the frame toggle in DB14 bit 2 are
+// ignored; DB6 keeps only its low six bits, because bits 0xc0 echo the
+// operating-data request prefix (0x40 / 0xc0). A byte that proves noisy on
+// hardware is masked here, with a test.
 void mhi_diag_mask_default(uint8_t* mask, size_t len);
 
 struct MhiDiagFrame {

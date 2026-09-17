@@ -14,6 +14,12 @@
 #define MHI_DB13_HEATING 0x02
 #define MHI_DB13_COMPRESSOR 0x04
 
+// Undocumented in SPI.md, observed on Uitkijk on 16 Sep 2026 (fork #4, batch A
+// remote test): DB7 bit 1 changed in the same frame as DB13 5<->1 both times
+// the compressor stopped and started (~8 min on, ~3 min off all evening).
+// Recorded, not decoded: Action already follows DB13.
+#define MHI_DB7_OUTDOOR_RUNNING 0x02
+
 // Values match Home Assistant's hvac_action names in the same order as the
 // PAYLOAD_ACTION_* texts in MHI-AC-Ctrl.h.
 enum MhiHvacAction : uint8_t {

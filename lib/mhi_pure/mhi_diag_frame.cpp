@@ -9,6 +9,7 @@
 void mhi_diag_mask_default(uint8_t* mask, size_t len) {
   memset(mask, 0xff, len);
   for (size_t i = SB0; i <= SB2 && i < len; i++) mask[i] = 0x00;
+  if (len > DB3) mask[DB3] = 0x00;   // raw Troom dithers at a boundary; Troom carries the filtered value
   if (len > DB6) mask[DB6] = 0x3f;   // bits 0xc0 echo the request prefix
   for (size_t i = DB9; i <= DB12 && i < len; i++) mask[i] = 0x00;
   if (len > DB14) mask[DB14] = (uint8_t)~0x04;  // the frame toggle

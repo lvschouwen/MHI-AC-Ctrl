@@ -32,7 +32,7 @@ void mhi_wiring_fault_text(uint8_t faults, char* out, size_t out_size) {
   }
 
   if (written == 0) {
-    for (const char* c = "o.k."; *c && written + 1 < out_size; c++) out[written++] = *c;
+    for (const char* c = MHI_WIRING_OK; *c && written + 1 < out_size; c++) out[written++] = *c;
   }
   out[written] = '\0';
 }

@@ -74,6 +74,7 @@ static void test_default_mask_ignores_what_changes_on_its_own(void) {
   TEST_ASSERT_EQUAL_HEX8(0x00, mask[SB0]);
   TEST_ASSERT_EQUAL_HEX8(0x00, mask[SB1]);
   TEST_ASSERT_EQUAL_HEX8(0x00, mask[SB2]);
+  TEST_ASSERT_EQUAL_HEX8(0x00, mask[DB3]);   // raw Troom dithers at a temperature boundary (16 Sep 2026)
   TEST_ASSERT_EQUAL_HEX8(0x3f, mask[DB6]);   // request-prefix bits 0xc0 cycle
   TEST_ASSERT_EQUAL_HEX8(0x00, mask[DB9]);
   TEST_ASSERT_EQUAL_HEX8(0x00, mask[DB10]);
@@ -100,6 +101,20 @@ static void test_default_mask_compares_the_status_bytes_in_full(void) {
 // A plausible 20-byte status frame: header 6c 80 04, then DB0..DB14, checksum.
 static const uint8_t kFrame[20] = {0x6c, 0x80, 0x04, 0x08, 0x3b, 0x2e, 0x4c, 0x22, 0x00, 0x00, 0x00, 0x00,
                                    0x02, 0x10, 0x3b, 0x00, 0x05, 0x00, 0x02, 0x1d};
+
+static void test_a_room_temperature_dither_alone_publishes_nothing(void) {
+  // Uitkijk, 16 Sep 2026: "DB3 89>8a" up to 13 times a minute while the room
+  // sat on a boundary. Troom already carries the filtered value.
+  MhiDiagFrame d = {{0}, false};
+  uint8_t mask[MHI_DIAG_FRAME_MAX];
+  mhi_diag_mask_default(mask, 20);
+  char out[MHI_DIAG_TEXT_MAX];
+  TEST_ASSERT_TRUE(mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out)) > 0);  // the first frame
+  uint8_t dither[20];
+  memcpy(dither, kFrame, 20);
+  dither[DB3] = kFrame[DB3] + 1;
+  TEST_ASSERT_EQUAL_size_t(0, mhi_diag_frame_changes(&d, dither, 20, mask, out, sizeof(out)));
+}
 
 static void test_the_first_frame_is_published_whole(void) {
   MhiDiagFrame d = {{0}, false};
@@ -191,10 +206,10 @@ static void test_more_than_six_changes_are_summarised_with_a_plus(void) {
   mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
   uint8_t next[20];
   memcpy(next, kFrame, 20);
-  for (size_t i = DB0; i <= DB5; i++) next[i] ^= 0x01;  // six
-  next[DB7] ^= 0x01;                                    // the seventh
+  for (size_t i = DB0; i <= DB5; i++) next[i] ^= 0x01;  // six, but DB3 is masked
+  next[DB7] ^= 0x01;                                    // the seventh (now the sixth)
   TEST_ASSERT_GREATER_THAN_size_t(0, mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB3 4c>4d DB4 22>23 DB5 00>01 + |", out, 62);
+  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB4 22>23 DB5 00>01 DB7 00>01 |", out, 61);
   TEST_ASSERT_LESS_THAN_size_t(MHI_DIAG_TEXT_MAX, strlen(out));
 }
 
@@ -231,12 +246,12 @@ static void test_the_worst_case_extended_frame_fits_the_text_buffer(void) {
   memcpy(frame, kFrame, 20);
   frame[CBL2] = 0xab;  // the extended frame's second checksum byte; arbitrary but distinctive
   mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));  // first, whole frame
-  for (size_t i = DB0; i <= DB5; i++) frame[i] ^= 0x01;  // six named changes
-  frame[DB7] ^= 0x01;                                    // the seventh, summarised with "+"
+  for (size_t i = DB0; i <= DB5; i++) frame[i] ^= 0x01;  // six named changes, but DB3 is masked
+  frame[DB7] ^= 0x01;                                    // the seventh (now the sixth)
   const size_t n = mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));
   TEST_ASSERT_GREATER_THAN_size_t(0, n);
   TEST_ASSERT_TRUE(strlen(out) < MHI_DIAG_TEXT_MAX);
-  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB3 4c>4d DB4 22>23 DB5 00>01 + |", out, 62);
+  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB4 22>23 DB5 00>01 DB7 00>01 |", out, 61);
   TEST_ASSERT_EQUAL_STRING(" ab", out + strlen(out) - 3);  // ends with the frame's last byte
 }
 
@@ -259,6 +274,7 @@ int main(void) {
   RUN_TEST(test_opdata_text_refuses_a_buffer_that_cannot_hold_it);
   RUN_TEST(test_default_mask_ignores_what_changes_on_its_own);
   RUN_TEST(test_default_mask_compares_the_status_bytes_in_full);
+  RUN_TEST(test_a_room_temperature_dither_alone_publishes_nothing);
   RUN_TEST(test_the_first_frame_is_published_whole);
   RUN_TEST(test_an_unchanged_frame_publishes_nothing);
   RUN_TEST(test_a_changed_status_byte_is_named_with_old_and_new);
