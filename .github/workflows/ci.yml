@@ -39,6 +39,11 @@ jobs:
       - name: Run tests
         run: pio test -e native
 
+      - name: Discovery fixtures match the code
+        run: |
+          git diff --exit-code -- test/fixtures/discovery
+          test -z "$(git status --porcelain -- test/fixtures/discovery)"
+
   build:
     name: Build ${{ matrix.environment }}
     runs-on: ubuntu-latest
@@ -57,6 +62,7 @@ jobs:
           - ci-poweron-when-changing-mode
           - ci-continue-without-mqtt
           - ci-custom-payloads
+          - ci-ha-discovery
           - ci-config-defaults
           - ci-all-options
     steps:

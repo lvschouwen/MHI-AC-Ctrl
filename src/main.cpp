@@ -9,6 +9,7 @@
 
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
+#include "discovery.h"
 #include "mhi_action.h"
 #include "mhi_diag.h"
 #include "mhi_diag_frame.h"
@@ -586,6 +587,7 @@ void setup() {
   MQTTclient.setServer(MQTT_SERVER, MQTT_PORT);
   MQTTclient.setCallback(MQTT_subscribe_callback);
   mhi_ac_ctrl_core.MHIAcCtrlStatus(&mhiStatusHandler);
+  discovery_setup();
   const bool drive_miso = mhi_miso_may_be_driven(wiring_faults);
   if (!drive_miso)
     Serial.println(F("Signal on MISO: leaving it an input, so commands will not reach the AC"));
@@ -623,8 +625,10 @@ void loop() {
       publish_diag_state();
       diag_frame.have_last = false;   // the next diag/frame is a whole frame
       mhi_retry_reset(&diag_pacer);
+      discovery_restart();
     }
     ArduinoOTA.handle();
+    discovery_loop();
   }
   publishTelemetry();  // every pass, connected or not, so the uptime counter never misses a millis() wrap
 

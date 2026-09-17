@@ -48,6 +48,52 @@
 #define DIAG_DEFAULT true                           // whether diag/frame (the status-frame change topic) is on after boot; set/Diag switches it at runtime
 #endif
 
+// Home Assistant MQTT discovery (fork #4 batch B, SW-Configuration.md "Home
+// Assistant discovery"). Off by default: HA's climate accepts only its own mode
+// names, so a build for it also sets the PAYLOAD_MODE_* texts (see the docs).
+//#define HA_DISCOVERY true                           // uncomment to publish the discovery configs after every MQTT connect
+#ifndef HA_DISCOVERY_PREFIX
+#define HA_DISCOVERY_PREFIX "homeassistant"         // HA's discovery prefix
+#endif
+#ifndef HA_DEVICE_NAME
+#define HA_DEVICE_NAME HOSTNAME                     // the device the entities belong to; HA prefixes every entity name with it
+#endif
+#ifndef HA_CLIMATE_ID
+#define HA_CLIMATE_ID HOSTNAME                      // unique_id of the climate entity
+#endif
+#ifndef HA_ID_PREFIX
+#define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, ...
+#endif
+//#define HA_ENTITY_PREFIX "ac_slaapkamer"          // when defined, every entity but the climate gets default_entity_id <domain>.<prefix>_<suffix>; lower case a-z 0-9 _
+#ifndef HA_NAME_VANES
+#define HA_NAME_VANES "Vanes"                       // entity names, shown after the device name
+#endif
+#ifndef HA_NAME_SILENT
+#define HA_NAME_SILENT "Silent"
+#endif
+#ifndef HA_NAME_PROBLEM
+#define HA_NAME_PROBLEM "Problem"
+#endif
+#ifndef HA_NAME_WIRING
+#define HA_NAME_WIRING "Wiring"
+#endif
+#ifndef HA_NAME_UPTIME
+#define HA_NAME_UPTIME "Uptime"
+#endif
+#ifndef HA_NAME_FREE_HEAP
+#define HA_NAME_FREE_HEAP "Free heap"
+#endif
+#ifndef HA_NAME_RSSI
+#define HA_NAME_RSSI "Wi-Fi signal"
+#endif
+#ifndef HA_NAME_RESET_REASON
+#define HA_NAME_RESET_REASON "Reset reason"
+#endif
+#ifndef HA_NAME_WIFI_PHY
+#define HA_NAME_WIFI_PHY "Wi-Fi PHY"
+#endif
+//#define HA_RESET_REASON_TPL "{{ value }}"         // when defined, the reset-reason sensor's value_template (a Jinja template, e.g. a translation table)
+
 #ifndef TELEMETRY_PERIOD
 #define TELEMETRY_PERIOD 300                        // seconds between publishes of RSSI, Uptime and FreeHeap while MQTT is connected; 0 publishes them at MQTT connect only
 #endif

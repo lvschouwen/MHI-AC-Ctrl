@@ -176,6 +176,9 @@
 #ifndef TOPIC_REQUEST_OPDATA
 #define TOPIC_REQUEST_OPDATA "OpDataRequest"
 #endif
+#ifndef TOPIC_DISCOVERY
+#define TOPIC_DISCOVERY "Discovery"           // retained, after the discovery configs went out: ok, or modes when the climate row was skipped (HA_DISCOVERY)
+#endif
 
 // MQTT payload text
 #ifndef PAYLOAD_CONNECTED_TRUE
@@ -298,6 +301,12 @@
 #endif
 #ifndef PAYLOAD_SILENT_OFF
 #define PAYLOAD_SILENT_OFF "Off"
+#endif
+#ifndef PAYLOAD_DISCOVERY_OK
+#define PAYLOAD_DISCOVERY_OK "ok"
+#endif
+#ifndef PAYLOAD_DISCOVERY_MODES
+#define PAYLOAD_DISCOVERY_MODES "modes"
 #endif
 
 enum POWER_STATUS {
