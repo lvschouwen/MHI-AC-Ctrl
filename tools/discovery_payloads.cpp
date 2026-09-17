@@ -21,11 +21,13 @@ static const char* kNameOption[MHI_DISCOVERY_ROWS] = {
   NULL, "--name-vanes", "--name-silent", "--name-problem", "--name-wiring", "--name-uptime",
   "--name-free-heap", "--name-rssi", "--name-reset-reason", "--name-wifi-phy"};
 
-// Splits "a,b,c" in place into exactly n items.
+// Splits "a,b,c" in place into exactly n items; fewer or more is an error.
 static bool split(char* list, const char** items, size_t n) {
   size_t i = 0;
-  for (char* p = strtok(list, ","); p && i < n; p = strtok(NULL, ","))
+  for (char* p = strtok(list, ","); p; p = strtok(NULL, ",")) {
+    if (i == n) return false;
     items[i++] = p;
+  }
   return i == n;
 }
 
