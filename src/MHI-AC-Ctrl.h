@@ -245,6 +245,21 @@
 #ifndef PAYLOAD_VANES_SWING
 #define PAYLOAD_VANES_SWING "Swing"
 #endif
+// Vane positions, top to bottom (fork #4 batch B). set/Vanes also accepts 1..4
+// and 5 (= swing) whatever these say; define them as "1".."4" to keep v2.8's
+// texts on the topic.
+#ifndef PAYLOAD_VANES_1
+#define PAYLOAD_VANES_1 "Up"
+#endif
+#ifndef PAYLOAD_VANES_2
+#define PAYLOAD_VANES_2 "UpCenter"
+#endif
+#ifndef PAYLOAD_VANES_3
+#define PAYLOAD_VANES_3 "CenterDown"
+#endif
+#ifndef PAYLOAD_VANES_4
+#define PAYLOAD_VANES_4 "Down"
+#endif
 #ifndef PAYLOAD_OP_DEFROST_ON
 #define PAYLOAD_OP_DEFROST_ON "On"
 #endif

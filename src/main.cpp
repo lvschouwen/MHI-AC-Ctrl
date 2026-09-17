@@ -17,6 +17,7 @@
 #include "mhi_status.h"
 #include "mhi_temp.h"
 #include "mhi_troom_filter.h"
+#include "mhi_vanes.h"
 #include "support.h"
 
 MHI_AC_Ctrl_Core mhi_ac_ctrl_core;
@@ -37,6 +38,10 @@ static MhiDiagFrame diag_frame = {{0}, false};
 static uint8_t diag_mask[MHI_DIAG_FRAME_MAX];
 static MhiRetryPacer diag_pacer = {0, false};
 static bool diag_on = DIAG_DEFAULT;
+
+// The texts on the Vanes topic; set/Vanes accepts these and 1..5 (fork #4 batch B).
+static const MhiVanesNames vanes_names = {{PAYLOAD_VANES_1, PAYLOAD_VANES_2, PAYLOAD_VANES_3, PAYLOAD_VANES_4},
+                                          PAYLOAD_VANES_SWING, PAYLOAD_VANES_UNKNOWN};
 
 static void publish_diag_state() {
   if (diag_on)
@@ -151,18 +156,13 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_VANES)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_VANES_SWING)) == 0) {
-      mhi_ac_ctrl_core.set_vanes(vanes_swing);
+    const int vanes = mhi_vanes_parse(&vanes_names, payload_str);
+    if (vanes != MHI_VANES_UNKNOWN) {
+      mhi_ac_ctrl_core.set_vanes(vanes);
       publish_cmd_ok();
     }
-    else {
-      if ((atoi(payload_str) >= 1) & (atoi(payload_str) <= 5)) {
-        mhi_ac_ctrl_core.set_vanes(atoi(payload_str));
-        publish_cmd_ok();
-      }
-      else
-        publish_cmd_invalidparameter();
-    }
+    else
+      publish_cmd_invalidparameter();
   }
 #ifdef USE_EXTENDED_FRAME_SIZE  
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_VANESLR)) == 0) {
@@ -370,17 +370,7 @@ class StatusHandler : public CallbackInterface_Status {
           }
           break;
         case status_vanes:
-          switch (value) {
-            case vanes_unknown:
-              output_P(status, PSTR(TOPIC_VANES), PSTR(PAYLOAD_VANES_UNKNOWN));
-              break;
-            case vanes_swing:
-              output_P(status, PSTR(TOPIC_VANES), PSTR(PAYLOAD_VANES_SWING));
-              break;
-            default:
-              itoa(value, strtmp, 10);
-              output_P(status, PSTR(TOPIC_VANES), strtmp);
-          }
+          output_P(status, PSTR(TOPIC_VANES), mhi_vanes_text(&vanes_names, value));
           break;
         // The case labels stay outside the #ifdef so the switch remains
         // exhaustive over ACStatus and -Wswitch keeps catching real omissions.
