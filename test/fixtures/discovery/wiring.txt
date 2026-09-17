@@ -1,0 +1,2 @@
+homeassistant/binary_sensor/MHI-AC-Ctrl_wiring/config
+{"~":"MHI-AC-Ctrl","name":"Wiring","uniq_id":"MHI-AC-Ctrl_wiring","stat_t":"~/Wiring","val_tpl":"{{ 'OFF' if value == 'o.k.' else 'ON' }}","dev_cla":"problem","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["MHI-AC-Ctrl"],"name":"MHI-AC-Ctrl","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"fixture"}}
