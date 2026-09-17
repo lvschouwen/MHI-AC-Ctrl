@@ -221,6 +221,7 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
       put(&o, FMT("\"ic\":\"mdi:wifi-cog\","));
       break;
     case MHI_DISCOVERY_ROWS:  // excluded above; keeps -Wswitch exhaustive
+      out[0] = '\0';
       return 0;
   }
   tail(&o, c, diagnostic);

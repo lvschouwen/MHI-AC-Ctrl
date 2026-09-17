@@ -9,7 +9,8 @@
 //   .pio/discovery_payloads --base airco/uitkijk --hostname airco-uitkijk --device-name "AC Uitkijk"
 //     --climate-id AC_Uitkijk --id-prefix ac_uitkijk --entity-prefix ac_uitkijk --version 2eab73c
 //     --name-uptime "tijd sinds opstart" ... --reset-reason-tpl "{{ ... }}"
-// Every option has the repo default; --modes and --vanes take comma-separated lists.
+// Every option has the repo default; --modes and --vanes take exactly six
+// comma-separated items; an option given twice takes its last value.
 
 #include <stdio.h>
 #include <stdlib.h>

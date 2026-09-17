@@ -34,6 +34,10 @@ enum MhiDiscoveryRow : uint8_t {
 
 // Everything a payload is made of. Field order is binding: main.cpp and the
 // tests fill it with designated initialisers, which GCC requires in order.
+// Only entity_prefix, reset_reason_tpl and names[MHI_DISCOVERY_CLIMATE] may be
+// NULL. Names, the device name and the template are JSON-escaped; every other
+// text goes into the JSON as it is and must not contain '"' or '\\' (they are
+// compile-time macros today; escape them here if they ever become runtime).
 struct MhiDiscoveryCtx {
   const char* discovery_prefix;  // "homeassistant"
   const char* base;              // MQTT_PREFIX without its trailing slash, the payload's "~"

@@ -75,6 +75,7 @@ static bool json_shape_ok(const char* s) {
   bool in_str = false;
   if (strstr(s, "(null)") != NULL) return false;
   for (; *s; s++) {
+    if (*s == '%') return false;  // a conversion left over, inside or outside a string
     if (in_str) {
       if (*s == '\\' && s[1]) s++;
       else if (*s == '"') in_str = false;
@@ -83,7 +84,6 @@ static bool json_shape_ok(const char* s) {
     if (*s == '"') in_str = true;
     else if (*s == '{' || *s == '[') depth++;
     else if (*s == '}' || *s == ']') { if (--depth < 0) return false; }
-    else if (*s == '%') return false;
   }
   return depth == 0 && !in_str;
 }
