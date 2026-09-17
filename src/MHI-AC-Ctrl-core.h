@@ -26,6 +26,7 @@ const byte opdata[][2] PROGMEM = {
   { 0x40, 0x1e},  // 37 "TOTAL-COMP-RUN" [h]
   { 0x40, 0x13},  // 38 "OU-EEV" [Puls]
   { 0xc0, 0x94},  //    "energy-used" [kWh]
+  { 0xc0, 0xdd},  //    "SILENT" (fork #4): DB11 bit 5; the AC also reports it unasked after a remote press
 
 };
 
@@ -49,7 +50,7 @@ enum ACType {   // Type enum
 };
 
 enum ACStatus { // Status enum
-  status_power = type_status, status_mode, status_fan, status_vanes, status_vanesLR, status_3Dauto, status_troom, status_tsetpoint, status_errorcode, status_action,
+  status_power = type_status, status_mode, status_fan, status_vanes, status_vanesLR, status_3Dauto, status_troom, status_tsetpoint, status_errorcode, status_action, status_silent,
   raw_frame, raw_opdata,  // cbiRawFunction only: the whole MOSI frame, and DB9..DB12 of unknown operating data. Never published through output_P
   opdata_mode = type_opdata, opdata_kwh, opdata_tsetpoint, opdata_return_air, opdata_outdoor, opdata_tho_r1, opdata_iu_fanspeed, opdata_thi_r1, opdata_thi_r2, opdata_thi_r3,
   opdata_ou_fanspeed, opdata_total_iu_run, opdata_total_comp_run, opdata_comp, opdata_ct, opdata_td,
@@ -102,6 +103,7 @@ class MHI_AC_Ctrl_Core {
     byte status_tsetpoint_old;
     byte status_errorcode_old;
     byte status_action_old;
+    byte status_silent_old;
 
     byte status_vanesLR_old;
     byte status_3Dauto_old;
@@ -141,6 +143,12 @@ class MHI_AC_Ctrl_Core {
     bool request_opdata_pending = false;
     byte request_opdata_prefix = 0;
     byte request_opdata_code = 0;
+    // Silent operation write (fork #4 batch B): DB6 0x80, DB9 0x21, DB10 0/1
+    // in the next MISO frame pair, the write hberntsen/mhi-ac-ctrl-esp32 PR #42
+    // carries (traced from a ProtoArt controller by mreijnde). Shares the 0x80
+    // command slot with request_erropData.
+    bool request_silent_pending = false;
+    byte new_silent = 0;
     bool passiveMode = false;
     byte new_Troom = 0xff;    // writing 0xff to DB3 indicates the usage of the internal room temperature sensor
     float Troom_offset = 0.0;
@@ -171,6 +179,7 @@ class MHI_AC_Ctrl_Core {
     void set_troom(byte temperature);     // set the room temperature used by AC (0xff indicates the usage of the internal room temperature sensor)
     void request_ErrOpData();             // request that the AC provides the error data
     void request_OpData(byte prefix, byte code);  // ask the AC once for one operating-data code (prefix 0x40/0xc0 as in the request table)
+    void set_silent(bool on);             // Silent operation on/off; the Silent status confirms it within a second or two
     float get_troom_offset();             // get troom offset, only usefull when ENHANCED_RESOLUTION is used
     void set_troom_offset(float offset);  // set troom offset, only usefull when ENHANCED_RESOLUTION is used
     void set_frame_size(byte framesize);  // set framesize to 20 or 33

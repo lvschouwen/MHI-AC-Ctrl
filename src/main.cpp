@@ -258,6 +258,18 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     else
       publish_cmd_invalidparameter();
   }
+  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_SILENT)) == 0) {
+    if (strcmp_P(payload_str, PSTR(PAYLOAD_SILENT_ON)) == 0) {
+      mhi_ac_ctrl_core.set_silent(true);
+      publish_cmd_ok();
+    }
+    else if (strcmp_P(payload_str, PSTR(PAYLOAD_SILENT_OFF)) == 0) {
+      mhi_ac_ctrl_core.set_silent(false);
+      publish_cmd_ok();
+    }
+    else
+      publish_cmd_invalidparameter();
+  }
   else
     publish_cmd_unknown();
 }
@@ -443,6 +455,12 @@ class StatusHandler : public CallbackInterface_Status {
               output_P(status, PSTR(TOPIC_ACTION), PSTR(PAYLOAD_ACTION_FAN));
               break;
           }
+          break;
+        case status_silent:
+          if (value)
+            output_P(status, PSTR(TOPIC_SILENT), PSTR(PAYLOAD_SILENT_ON));
+          else
+            output_P(status, PSTR(TOPIC_SILENT), PSTR(PAYLOAD_SILENT_OFF));
           break;
         case opdata_return_air:
         case erropdata_return_air:

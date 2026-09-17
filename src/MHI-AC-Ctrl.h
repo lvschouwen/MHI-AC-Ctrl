@@ -155,6 +155,9 @@
 #ifndef TOPIC_REQUEST_PASSIVEMODE
 #define TOPIC_REQUEST_PASSIVEMODE "PassiveMode"
 #endif
+#ifndef TOPIC_SILENT
+#define TOPIC_SILENT "Silent"                 // status and set/ command (fork #4 batch B)
+#endif
 
 // Protocol discovery tooling (fork #4): what the AC's frame changed, unknown
 // operating data with its value bytes, and a one-shot request.
@@ -289,6 +292,12 @@
 #endif
 #ifndef PAYLOAD_DIAG_OFF
 #define PAYLOAD_DIAG_OFF "Off"
+#endif
+#ifndef PAYLOAD_SILENT_ON
+#define PAYLOAD_SILENT_ON "On"
+#endif
+#ifndef PAYLOAD_SILENT_OFF
+#define PAYLOAD_SILENT_OFF "Off"
 #endif
 
 enum POWER_STATUS {

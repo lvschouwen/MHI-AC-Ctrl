@@ -18,6 +18,7 @@ void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection t
   status_tsetpoint_old = 0x00;
   status_errorcode_old = 0xff;
   status_action_old = 0xff;
+  status_silent_old = 0xff;
   status_vanesLR_old = 0xff;
   status_3Dauto_old = 0xff;
 
@@ -108,6 +109,11 @@ void MHI_AC_Ctrl_Core::request_OpData(byte prefix, byte code) {
   request_opdata_pending = true;  // a second command before it is sent replaces it
 }
 
+void MHI_AC_Ctrl_Core::set_silent(bool on) {
+  new_silent = on ? 0x01 : 0x00;
+  request_silent_pending = true;  // a second command before it is sent replaces it
+}
+
 void MHI_AC_Ctrl_Core::set_troom(byte troom) {
   //Serial.printf("MHI_AC_Ctrl_Core::set_troom %i\n", troom);
   new_Troom = troom;
@@ -168,7 +174,9 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   if (frame++ <= 2) {                       // use opdata request only for 2 subsequent frames
     if (doubleframe) {                      // start when MISO_frame[DB14] bit2 is set
       if (erropdataCnt == 0) {
-        if (request_opdata_pending) {
+        if (request_opdata_pending && !request_erropData && !request_silent_pending) {
+          // The 0x80 command slot below would overwrite DB6/DB9 in this same
+          // pair; the probe waits for the next window instead of being lost.
           // The probe takes this slot instead of the next code; opdataNo is
           // not advanced, so the cycle resumes with the code it would have sent.
           MISO_frame[DB6] = request_opdata_prefix;
@@ -219,10 +227,19 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     new_Vanes0 = 0;
     new_Vanes1 = 0;
 
+    MISO_frame[DB10] = 0xff;  // its idle value again after a Silent write
     if (request_erropData) {
       MISO_frame[DB6] = 0x80;
       MISO_frame[DB9] = 0x45;
       request_erropData = false;
+    }
+    else if (request_silent_pending) {  // the same 0x80 command slot; waits one pair behind ErrOpData
+      MISO_frame[DB6] = 0x80;
+      MISO_frame[DB9] = 0x21;
+      MISO_frame[DB10] = new_silent;
+      request_silent_pending = false;
+      if (!request_opdata_pending)      // read it back so the Silent topic confirms the write; a user's probe is not replaced
+        request_OpData(0xc0, 0xdd);
     }
   }
 
@@ -604,6 +621,15 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
           }
           else if (MOSI_frame[DB10] == 0x12) { // count of following error operating data
             erropdataCnt = MOSI_frame[DB11] + 4;
+          }
+        }
+        break;
+      case 0xdd:                              // Silent operation (fork #4): reported unasked after a remote press, and on request
+        if (MOSI_frame[DB10] == 0x80) {       // the answer's type byte; 'dd 80 20 00' on, 'dd 80 00 00' off (Uitkijk, 16 Sep 2026)
+          const byte silenttmp = (MOSI_frame[DB11] & 0x20) != 0;
+          if (silenttmp != status_silent_old) {
+            status_silent_old = silenttmp;
+            m_cbiStatus->cbiStatusFunction(status_silent, silenttmp);
           }
         }
         break;
