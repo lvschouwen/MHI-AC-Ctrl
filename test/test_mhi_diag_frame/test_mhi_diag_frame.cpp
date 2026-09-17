@@ -206,10 +206,11 @@ static void test_more_than_six_changes_are_summarised_with_a_plus(void) {
   mhi_diag_frame_changes(&d, kFrame, 20, mask, out, sizeof(out));
   uint8_t next[20];
   memcpy(next, kFrame, 20);
-  for (size_t i = DB0; i <= DB5; i++) next[i] ^= 0x01;  // six, but DB3 is masked
-  next[DB7] ^= 0x01;                                    // the seventh (now the sixth)
+  for (size_t i = DB0; i <= DB5; i++) next[i] ^= 0x01;  // six named: DB0, DB1, DB2, DB4, DB5, DB7
+  next[DB7] ^= 0x01;
+  next[DB8] ^= 0x01;                                    // DB3 is masked; DB8 keeps it at seven
   TEST_ASSERT_GREATER_THAN_size_t(0, mhi_diag_frame_changes(&d, next, 20, mask, out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB4 22>23 DB5 00>01 DB7 00>01 |", out, 61);
+  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB4 22>23 DB5 00>01 DB7 00>01 + |", out, 62);
   TEST_ASSERT_LESS_THAN_size_t(MHI_DIAG_TEXT_MAX, strlen(out));
 }
 
@@ -246,12 +247,13 @@ static void test_the_worst_case_extended_frame_fits_the_text_buffer(void) {
   memcpy(frame, kFrame, 20);
   frame[CBL2] = 0xab;  // the extended frame's second checksum byte; arbitrary but distinctive
   mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));  // first, whole frame
-  for (size_t i = DB0; i <= DB5; i++) frame[i] ^= 0x01;  // six named changes, but DB3 is masked
-  frame[DB7] ^= 0x01;                                    // the seventh (now the sixth)
+  for (size_t i = DB0; i <= DB5; i++) frame[i] ^= 0x01;  // six named: DB0, DB1, DB2, DB4, DB5, DB7
+  frame[DB7] ^= 0x01;
+  frame[DB8] ^= 0x01;                                    // DB3 is masked; DB8 keeps it at seven
   const size_t n = mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));
   TEST_ASSERT_GREATER_THAN_size_t(0, n);
   TEST_ASSERT_TRUE(strlen(out) < MHI_DIAG_TEXT_MAX);
-  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB4 22>23 DB5 00>01 DB7 00>01 |", out, 61);
+  TEST_ASSERT_EQUAL_STRING_LEN("DB0 08>09 DB1 3b>3a DB2 2e>2f DB4 22>23 DB5 00>01 DB7 00>01 + |", out, 62);
   TEST_ASSERT_EQUAL_STRING(" ab", out + strlen(out) - 3);  // ends with the frame's last byte
 }
 
