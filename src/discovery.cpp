@@ -10,6 +10,13 @@
 
 #ifdef HA_DISCOVERY
 
+// The climate's "off" mode is set/Mode <PAYLOAD_MODE_OFF>, which the firmware
+// parses only with POWERON_WHEN_CHANGING_MODE; without it Home Assistant could
+// not switch the unit off and Mode would show the last mode while it is off.
+#ifndef POWERON_WHEN_CHANGING_MODE
+#error "HA_DISCOVERY needs POWERON_WHEN_CHANGING_MODE: the climate's off mode is set/Mode off"
+#endif
+
 // The ~/set/... topics assume the set prefix sits under the status prefix,
 // as the defaults do (MQTT_SET_PREFIX MQTT_PREFIX "set/").
 constexpr bool starts_with(const char* s, const char* prefix) {
@@ -17,6 +24,8 @@ constexpr bool starts_with(const char* s, const char* prefix) {
 }
 static_assert(starts_with(MQTT_SET_PREFIX, MQTT_PREFIX), "HA_DISCOVERY needs MQTT_SET_PREFIX to start with MQTT_PREFIX");
 static_assert(sizeof(MQTT_PREFIX) > 1, "HA_DISCOVERY needs a non-empty MQTT_PREFIX");
+// Every topic in the configs is "~/<name>", so the prefix must end in "/".
+static_assert(MQTT_PREFIX[sizeof(MQTT_PREFIX) - 2] == '/', "HA_DISCOVERY needs MQTT_PREFIX to end with /");
 
 // MQTT_PREFIX without its trailing slash: the payload's "~".
 static char base_topic[sizeof(MQTT_PREFIX)];

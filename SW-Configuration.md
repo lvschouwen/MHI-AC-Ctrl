@@ -86,7 +86,7 @@ Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-
 Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
 Tsetpoint|r/w|18 ... 30|Target room temperature (float) in °C, resolution is 0.5°C
 Fan|r/w|1,2,3,4,"Auto"|Fan level
-Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing","?"|Vanes up/down position, top to bottom; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>
+Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing","?"|Vanes up/down position, top to bottom; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>; define `PAYLOAD_VANES_1` .. `PAYLOAD_VANES_4` as `"1"` .. `"4"` in `config_defaults.h` to keep v2.8's texts
 Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
 Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C; readings outside this range are ignored <sup>3</sup>
 Errorcode|r|0 .. 255|error code (unsigned int)
@@ -292,13 +292,13 @@ topic | r/w | value | comment
 `set/Diag` | w | `On`, `Off` | switch `diag/frame` at runtime; answers on `cmd_received`
 `set/OpDataRequest` | w | four hex digits, e.g. `c021` | ask the AC once for operating-data code `0x21` with request prefix `c0` (indoor) or `40` (outdoor), the same request the built-in codes use, in place of the next code of the normal cycle. The answer arrives on `diag/opdata`, or on the code's own topic if it is a known one and its value changed. `cmd_received` answers `o.k.`, or `invalid parameter` for any other prefix or length
 
-Worked example (16 Sep 2026, `airco/uitkijk/#` captured while pressing the remote): SILENT on and off each produced `OpData/unknown 32989` (`0x80DD`), so Silent is reported as `DB9 = 0xDD`, `DB10 = 0x80`, with the on/off state in `DB11`, which `diag/opdata` now shows. HI/ECO produced no operating data at all; its only trace was `Fan` and the internal setpoint changing. With `diag/frame` running, a press that flips a bit anywhere in the status frame shows up as one line naming the byte.
+Worked example (16 Sep 2026, `airco/uitkijk/#` captured while pressing the remote): SILENT on and off each produced `OpData/unknown 32989` (`0x80DD`), so Silent is reported as `DB9 = 0xDD`, `DB10 = 0x80`, with the on/off state in `DB11`. Batch B decodes that answer into the `Silent` topic, so a press no longer shows on `OpData/unknown` or `diag/opdata`; a code the firmware does not decode still appears on `diag/opdata` with its value bytes the same way. HI/ECO produced no operating data at all; its only trace was `Fan` and the internal setpoint changing. With `diag/frame` running, a press that flips a bit anywhere in the status frame shows up as one line naming the byte.
 
 ## Home Assistant discovery ([support.h](src/support.h))
 
 With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`), a select for the vane position, a switch for `Silent`, two problem binary sensors (`Errorcode` ≠ 0, `Wiring` ≠ `o.k.`) and five diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`), all under one device. Availability comes from `connected`.
 
-Home Assistant's climate accepts only its own mode names, so a discovery build also needs the `PAYLOAD_MODE_*` texts of [Topic and payload text](#topic-and-payload-text-mhi-ac-ctrlh). The firmware checks them at boot: with other texts the climate config is skipped, Serial says so and the retained `Discovery` topic reads `modes` instead of `ok`.
+Home Assistant's climate accepts only its own mode names, so a discovery build also needs `POWERON_WHEN_CHANGING_MODE` (the climate's `off` mode is `set/Mode off`; the build refuses `HA_DISCOVERY` without the option) and the `PAYLOAD_MODE_*` texts of [Topic and payload text](#topic-and-payload-text-mhi-ac-ctrlh). The `PAYLOAD_ACTION_*` texts must stay Home Assistant's `hvac_action` names as well: the climate reads `Action` without a template. The firmware checks them at boot: with other texts the climate config is skipped, Serial says so and the retained `Discovery` topic reads `modes` instead of `ok`.
 
 ```cpp
 #define HA_DISCOVERY true                 // publish the discovery configs
@@ -306,7 +306,7 @@ Home Assistant's climate accepts only its own mode names, so a discovery build a
 #define HA_DEVICE_NAME HOSTNAME           // the device; Home Assistant shows every entity as "<device> <entity name>"
 #define HA_CLIMATE_ID HOSTNAME            // unique_id of the climate
 #define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy
-//#define HA_ENTITY_PREFIX "ac_bedroom"   // optional: gives those entities the IDs select.ac_bedroom_vanes, switch.ac_bedroom_silent, ... (lower case a-z 0-9 _)
+//#define HA_ENTITY_PREFIX "ac_bedroom"   // optional: gives those entities the IDs select.ac_bedroom_vanes, switch.ac_bedroom_silent, ... (lower case a-z 0-9 _) (needs Home Assistant 2025.10 or newer, which knows default_entity_id)
 #define HA_NAME_VANES "Vanes"             // entity names; likewise HA_NAME_SILENT, _PROBLEM, _WIRING, _UPTIME, _FREE_HEAP, _RSSI, _RESET_REASON, _WIFI_PHY
 //#define HA_RESET_REASON_TPL "{{ value }}" // optional value_template of the reset-reason sensor
 ```

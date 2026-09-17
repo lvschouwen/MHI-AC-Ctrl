@@ -30,6 +30,8 @@ struct Out {
   bool overflow;
 };
 
+static void put(Out* o, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+
 static void put(Out* o, const char* fmt, ...) {
   if (o->overflow) return;
   va_list ap;

@@ -43,6 +43,7 @@ static bool diag_on = DIAG_DEFAULT;
 // The texts on the Vanes topic; set/Vanes accepts these and 1..5 (fork #4 batch B).
 static const MhiVanesNames vanes_names = {{PAYLOAD_VANES_1, PAYLOAD_VANES_2, PAYLOAD_VANES_3, PAYLOAD_VANES_4},
                                           PAYLOAD_VANES_SWING, PAYLOAD_VANES_UNKNOWN};
+static_assert(MHI_VANES_SWING == vanes_swing && MHI_VANES_UNKNOWN == vanes_unknown, "mhi_vanes numbers the positions as the core's ACVanes does");
 
 static void publish_diag_state() {
   if (diag_on)
