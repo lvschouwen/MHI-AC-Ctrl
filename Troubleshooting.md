@@ -74,7 +74,7 @@ Please check this [section](#fire-pins-not-properly-connected)
 ### :fire: Wrong MQTT set path used
 The MQTT path for receiving the status is different from the MQTT path for setting values. Re-check that you use the set-path described in [SW-Configuration.md](https://github.com/absalom-muc/MHI-AC-Ctrl/blob/master/SW-Configuration.md#mqtt-status). Please pay attention to the case sensitivity.
 ## :fire: Last Vanes up/down status not visible in MHI-AC-Ctrl
-That is no bug, but a restriction because the SPI unfortunately doesn't provide the Vanes status when the IR remote control was used for the last command.
+That is no bug, but a restriction because the SPI unfortunately doesn't provide the Vanes status when the IR remote control was used for the last command. The `Vanes` topic then reads `?`, and so do the climate's swing mode and the vane select in Home Assistant, until the vanes are set over MQTT again.
 
 ## :fire: Log shows errors, but it works nevertheless
 With some ACs the SPI connection is fragile because of a different timing. E.g.

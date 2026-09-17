@@ -86,11 +86,13 @@ Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-
 Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
 Tsetpoint|r/w|18 ... 30|Target room temperature (float) in °C, resolution is 0.5°C
 Fan|r/w|1,2,3,4,"Auto"|Fan level
-Vanes|r/w|1,2,3,4,"Swing","?"|Vanes up/down position; writing 5 is the same as "Swing" <sup>1</sup>
+Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing","?"|Vanes up/down position, top to bottom; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>
 Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
 Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C; readings outside this range are ignored <sup>3</sup>
 Errorcode|r|0 .. 255|error code (unsigned int)
 Action|r|"off", "idle", "cooling", "heating", "drying", "fan"|what the AC is doing <sup>5</sup>
+Silent|r/w|"On", "Off"|Silent operation of the outdoor unit, read from the AC and settable <sup>6</sup>
+Discovery|r|"ok", "modes"|Only with `HA_DISCOVERY`: the Home Assistant discovery configs were published; "modes" means the climate config was skipped because the mode texts are not Home Assistant's, see [Home Assistant discovery](#home-assistant-discovery-supporth)
 ErrOpData|w||triggers the reading of last error operating data
 VanesLR|r/w|1,2,3,4,5,6,7,"Swing"|Vanes left/right position <sup>4</sup>
 3Dauto|r/w|"On", "Off"|3D auto only works for mode Auto, Cool and heat <sup>4</sup>
@@ -100,6 +102,8 @@ VanesLR|r/w|1,2,3,4,5,6,7,"Swing"|Vanes left/right position <sup>4</sup>
 <sup>3</sup> Only available when a DS18x20 is connected, please see the description in [Hardware.md](Hardware.md) and in section [External Temperature Sensor Settings](#external-temperature-sensor-settings-supporth).
 <sup>4</sup> Only available if USE_EXTENDED_FRAME_SIZE is enabled in [support.h](src/support.h).
 <sup>5</sup> From the outdoor unit state in `DB13`: `idle` while the unit is on but its compressor is stopped, e.g. when the room has reached the setpoint. In auto mode, heating or cooling comes from the outdoor unit too. `fan` in fan mode, `off` while the unit is off. The payloads are Home Assistant's `hvac_action` names, so `action_topic` needs no template.
+
+<sup>6</sup> The state comes from operating-data code `0xDD`, which the AC reports after every SILENT press on the remote and which the firmware also polls once per operating-data cycle. Writing sends the command traced from a ProtoArt controller ([hberntsen PR #42](https://github.com/hberntsen/mhi-ac-ctrl-esp32/pull/42)); the `Silent` topic confirms it within a second or two. Two quirks of the AC: a Silent set from the infrared remote cannot be cleared over `set/Silent` and vice versa, and on a multi-split each indoor unit can hold the shared outdoor unit in Silent.
 
 Additionally, the following program status topics are available:
 
@@ -290,6 +294,33 @@ topic | r/w | value | comment
 
 Worked example (16 Sep 2026, `airco/uitkijk/#` captured while pressing the remote): SILENT on and off each produced `OpData/unknown 32989` (`0x80DD`), so Silent is reported as `DB9 = 0xDD`, `DB10 = 0x80`, with the on/off state in `DB11`, which `diag/opdata` now shows. HI/ECO produced no operating data at all; its only trace was `Fan` and the internal setpoint changing. With `diag/frame` running, a press that flips a bit anywhere in the status frame shows up as one line naming the byte.
 
+## Home Assistant discovery ([support.h](src/support.h))
+
+With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`), a select for the vane position, a switch for `Silent`, two problem binary sensors (`Errorcode` ≠ 0, `Wiring` ≠ `o.k.`) and five diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`), all under one device. Availability comes from `connected`.
+
+Home Assistant's climate accepts only its own mode names, so a discovery build also needs the `PAYLOAD_MODE_*` texts of [Topic and payload text](#topic-and-payload-text-mhi-ac-ctrlh). The firmware checks them at boot: with other texts the climate config is skipped, Serial says so and the retained `Discovery` topic reads `modes` instead of `ok`.
+
+```cpp
+#define HA_DISCOVERY true                 // publish the discovery configs
+#define HA_DISCOVERY_PREFIX "homeassistant"
+#define HA_DEVICE_NAME HOSTNAME           // the device; Home Assistant shows every entity as "<device> <entity name>"
+#define HA_CLIMATE_ID HOSTNAME            // unique_id of the climate
+#define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy
+//#define HA_ENTITY_PREFIX "ac_bedroom"   // optional: gives those entities the IDs select.ac_bedroom_vanes, switch.ac_bedroom_silent, ... (lower case a-z 0-9 _)
+#define HA_NAME_VANES "Vanes"             // entity names; likewise HA_NAME_SILENT, _PROBLEM, _WIRING, _UPTIME, _FREE_HEAP, _RSSI, _RESET_REASON, _WIFI_PHY
+//#define HA_RESET_REASON_TPL "{{ value }}" // optional value_template of the reset-reason sensor
+```
+
+The `unique_id`s never change once entities exist: Home Assistant keys entities by them and keeps their entity IDs, history and automations across firmware updates and renames. A config with a `unique_id` that a YAML entity still uses is rejected as a duplicate, so remove the YAML entity (and reload the MQTT YAML) before the unit's first discovery build connects.
+
+Configs stay retained on the broker after a hostname or prefix change. Remove the old ones by hand, one per component and `unique_id`:
+
+```
+mosquitto_pub -h <broker> -r -n -t homeassistant/climate/<old unique_id>/config
+```
+
+`tools/discovery_payloads.cpp` renders the payloads a build will publish on your PC (build line in the file), which is handy to check them before flashing.
+
 # Advanced settings
 
 ## Topic and payload text ([MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h))
@@ -333,13 +364,14 @@ Currently the following operating data in double quotes are supported
   { 0x40, 0x1e},  // 37 "TOTAL-COMP-RUN" [h]
   { 0x40, 0x13},  // 38 "OU-EEV" [Puls]
   { 0xc0, 0x94},  //    "energy-used" [kWh]
+  { 0xc0, 0xdd},  //    "SILENT" (fork #4): DB11 bit 5, the Silent topic
 ```
 
 Note 1: If you are not interested in these operating modes (e.g. to reduce the MQTT load) you can comment out the according lines. But at least 1 line has to stay.
 For `THI-R2`, `THO-R1` and `TDSH` the formula for calculation is not known yet; `THI-R1` and `THI-R3` use a rough approximation and the `COMP` formula is unconfirmed.
 You can find some hints related to the meaning of the operating data [here](https://www.hrponline.co.uk/media/pdf/41/42/ed/Beijer-Ref-Service-Support-Handbook-19cWKESQUhzVIy5.pdf#page=7). Addtional opdata information is available [here](https://github.com/absalom-muc/MHI-AC-Trace/blob/main/SPI.md#operation-data-details).
 
-Note 2: The MQTT topic names are the `TOPIC_*` defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), not the comment text above: `SET-TEMP` is published as `OpData/Tsetpoint`, `energy-used` as `OpData/KWH`, `OU-EEV` as `OpData/OU-EEV1`, `PROTECTION-No` as `OpData/PROTECTION-NO` and `MODE` as `OpData/Mode`. An opcode the program does not know is published on `OpData/unknown`. `OpData/TD` publishes the text `<=30` for values below 41 °C.
+Note 2: The MQTT topic names are the `TOPIC_*` defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), not the comment text above: `SET-TEMP` is published as `OpData/Tsetpoint`, `energy-used` as `OpData/KWH`, `OU-EEV` as `OpData/OU-EEV1`, `PROTECTION-No` as `OpData/PROTECTION-NO` and `MODE` as `OpData/Mode`. An opcode the program does not know is published on `OpData/unknown`. `OpData/TD` publishes the text `<=30` for values below 41 °C. `SILENT` is published on the status topic `Silent`, not under `OpData/`.
 
 Note 3: The energy-used is the energy in kWh counting from power on the AC. If you power off the AC, the value (in kWh) will keep the last value. When you power on the AC again, it will start from 0 again.
 
