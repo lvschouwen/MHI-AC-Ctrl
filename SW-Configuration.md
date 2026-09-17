@@ -286,7 +286,7 @@ Some remote functions are not decoded (ECO, HI POWER, night setback), and which 
 
 topic | r/w | value | comment
 ---|---|---|---
-`diag/frame` | r | `DB5 00>10 \| 6c 80 04 …` | the bytes of the AC's status frame that changed since the last publish, old>new, then the whole frame in hex. At most six changed bytes are named; a `+` marks that there were more. At most once a second while `Diag` is `On`; `first \| …` after every MQTT connect. The bytes that change on their own are left out of the compare: the header, the operating-data bytes DB9-DB12 and the request-prefix bits of DB6, the checksum, the frame toggle in DB14. Not retained
+`diag/frame` | r | `DB5 00>10 \| 6c 80 04 …` | the bytes of the AC's status frame that changed since the last publish, old>new, then the whole frame in hex. At most six changed bytes are named; a `+` marks that there were more. At most once a second while `Diag` is `On`; `first \| …` after every MQTT connect. The bytes that change on their own are left out of the compare: the header, DB3 (the raw room temperature, which dithers at a temperature boundary; `Troom` carries the filtered value), the operating-data bytes DB9-DB12 and the request-prefix bits of DB6, the checksum, the frame toggle in DB14. Not retained
 `diag/opdata` | r | `dd 80 01 00` | an operating-data answer the firmware does not decode, as DB9 DB10 DB11 DB12. `OpData/unknown` still publishes the same answer as a number. Not retained
 `Diag` | r | `On`, `Off` | whether `diag/frame` is published
 `set/Diag` | w | `On`, `Off` | switch `diag/frame` at runtime; answers on `cmd_received`
