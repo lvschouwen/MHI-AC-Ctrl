@@ -192,10 +192,11 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
 
     }
   }
-  else  // reset OpData request
+  else  // reset OpData request; DB10 idles with it, so a Silent parameter is never on the wire without its command
   {
     MISO_frame[DB6] = 0x80;
-    MISO_frame[DB9] = 0xff;    
+    MISO_frame[DB9] = 0xff;
+    MISO_frame[DB10] = 0xff;
   }
   
   if (doubleframe) {                        // and the other MISO data changes are updated when MISO_frame[DB14] bit2 is set
@@ -227,13 +228,12 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     new_Vanes0 = 0;
     new_Vanes1 = 0;
 
-    MISO_frame[DB10] = 0xff;  // its idle value again after a Silent write
     if (request_erropData) {
       MISO_frame[DB6] = 0x80;
       MISO_frame[DB9] = 0x45;
       request_erropData = false;
     }
-    else if (request_silent_pending) {  // the same 0x80 command slot; waits one pair behind ErrOpData
+    else if (request_silent_pending && erropdataCnt == 0) {  // the same 0x80 command slot; waits one pair behind ErrOpData and for an error-data dump to end
       MISO_frame[DB6] = 0x80;
       MISO_frame[DB9] = 0x21;
       MISO_frame[DB10] = new_silent;
