@@ -79,13 +79,21 @@ static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
   if (row == MHI_DISCOVERY_CLIMATE) {
     // null: the climate is the device's main feature, HA names it after the device.
     put(o, FMT("\"name\":null,\"uniq_id\":\"%s\","), c->climate_id);
+    if (c->entity_prefix) put(o, FMT("\"default_entity_id\":\"climate.%s\","), c->entity_prefix);
     return;
   }
   put(o, FMT("\"name\":"));
   put_str(o, c->names[row]);
   put(o, FMT(",\"uniq_id\":\"%s_%s\","), c->id_prefix, kSuffix[row]);
-  if (c->entity_prefix)
-    put(o, FMT("\"default_entity_id\":\"%s.%s_%s\","), kComponent[row], c->entity_prefix, kSuffix[row]);
+  if (c->entity_prefix) {
+    // The ID HA derives itself for a device without an area, pinned.
+    char slug[48];
+    if (mhi_discovery_slug(c->names[row], slug, sizeof(slug)) == 0) {
+      o->overflow = true;
+      return;
+    }
+    put(o, FMT("\"default_entity_id\":\"%s.%s_%s\","), kComponent[row], c->entity_prefix, slug);
+  }
 }
 
 static void tail(Out* o, const MhiDiscoveryCtx* c, bool diagnostic) {
@@ -98,6 +106,33 @@ static void tail(Out* o, const MhiDiscoveryCtx* c, bool diagnostic) {
 
 static void state_topic(Out* o, const char* topic) {
   put(o, FMT("\"stat_t\":\"~/%s\","), topic);
+}
+
+size_t mhi_discovery_slug(const char* name, char* out, size_t out_len) {
+  if (!out || out_len == 0) return 0;
+  out[0] = '\0';
+  if (!name) return 0;
+  size_t n = 0;
+  bool separator_pending = false;  // written before the next alphanumeric, never at the ends
+  for (; *name; name++) {
+    const unsigned char ch = (unsigned char)*name;
+    const bool alnum = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+    if (!alnum) {
+      if (n > 0) separator_pending = true;
+      continue;
+    }
+    if (n + 1 + (separator_pending ? 1 : 0) >= out_len) {
+      out[0] = '\0';
+      return 0;
+    }
+    if (separator_pending) {
+      out[n++] = '_';
+      separator_pending = false;
+    }
+    out[n++] = (ch >= 'A' && ch <= 'Z') ? (char)(ch - 'A' + 'a') : (char)ch;
+  }
+  out[n] = '\0';
+  return n;
 }
 
 bool mhi_discovery_modes_valid(const MhiDiscoveryCtx* c) {

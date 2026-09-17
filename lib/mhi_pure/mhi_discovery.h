@@ -43,7 +43,7 @@ struct MhiDiscoveryCtx {
   const char* version;           // dev.sw
   const char* climate_id;        // uniq_id of the climate, e.g. "AC_Slaapkamer"
   const char* id_prefix;         // uniq_id prefix of the other rows, e.g. "ac_slaapkamer"
-  const char* entity_prefix;     // default_entity_id prefix, e.g. "ac_slaapkamer" -> select.ac_slaapkamer_vanes; NULL: none
+  const char* entity_prefix;     // default_entity_id prefix, e.g. "ac_slaapkamer" -> climate.ac_slaapkamer, select.ac_slaapkamer_<slug of the name>; NULL: none
   const char* names[MHI_DISCOVERY_ROWS];  // entity names; [MHI_DISCOVERY_CLIMATE] is unused (the climate is named after the device)
   const char* reset_reason_tpl;  // value template of the reset-reason sensor; NULL: none
   // Topic texts (TOPIC_*), relative to base.
@@ -80,6 +80,15 @@ bool mhi_discovery_modes_valid(const MhiDiscoveryCtx* ctx);
 // "<discovery_prefix>/<component>/<uniq_id>/config". Returns the length,
 // 0 when it does not fit out_len.
 size_t mhi_discovery_topic(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx, char* out, size_t out_len);
+
+// Home Assistant's slug of an entity name: lower case, every run of characters
+// outside a-z 0-9 becomes one "_", none at the ends. With entity_prefix set,
+// every row's default_entity_id is <component>.<entity_prefix>_<slug(name)>
+// (the climate's is climate.<entity_prefix>): the ID HA derives itself from
+// "<device name> <entity name>" when the device has no area, pinned so an area
+// or a lost registry never moves what automations read. Returns the length,
+// 0 when the name is NULL, slugs to nothing or does not fit out_len.
+size_t mhi_discovery_slug(const char* name, char* out, size_t out_len);
 
 // One row's JSON. Returns the length, 0 (and an empty string) when it does
 // not fit out_len. out_len should be MHI_DISCOVERY_BUF.

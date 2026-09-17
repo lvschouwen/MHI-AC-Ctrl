@@ -64,7 +64,7 @@
 #ifndef HA_ID_PREFIX
 #define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, ...
 #endif
-//#define HA_ENTITY_PREFIX "ac_slaapkamer"          // when defined, every entity but the climate gets default_entity_id <domain>.<prefix>_<suffix>; lower case a-z 0-9 _
+//#define HA_ENTITY_PREFIX "ac_slaapkamer"          // when defined, every entity gets default_entity_id: climate.<prefix>, and <domain>.<prefix>_<slug of its name> for the rest (what HA derives itself); lower case a-z 0-9 _
 #ifndef HA_NAME_VANES
 #define HA_NAME_VANES "Vanes"                       // entity names, shown after the device name
 #endif
