@@ -9,8 +9,17 @@
 //   .pio/discovery_payloads --base airco/uitkijk --hostname airco-uitkijk --device-name "AC Uitkijk"
 //     --climate-id AC_Uitkijk --id-prefix ac_uitkijk --entity-prefix ac_uitkijk --version 2eab73c
 //     --name-uptime "time since boot" ... --reset-reason-tpl "{{ ... }}"
+// Batch C (fork #20/#19/#21) adds: --lr 0|1 (USE_EXTENDED_FRAME_SIZE) with
+//   --vanes-lr (eight comma-separated names); --outdoor 0|1 (HA_OUTDOOR_DEVICE)
+//   with --outdoor-id, --outdoor-name and --outdoor-entity-prefix; --fan-1 ..
+//   --fan-4; and one --name-* per new row: --name-vanes-lr, --name-3dauto,
+//   --name-frame-errors, --name-frame-timeouts, --name-error-code,
+//   --name-ou-outdoor, --name-ou-ct, --name-ou-kwh, --name-ou-comp,
+//   --name-ou-defrost, --name-ou-comp-run, --name-ou-protection.
 // Every option has the repo default; --modes and --vanes take exactly six
-// comma-separated items; an option given twice takes its last value.
+// comma-separated items and --vanes-lr exactly eight; --lr and --outdoor take
+// exactly 0 or 1; --outdoor-id defaults to <id_prefix>_outdoor, as the
+// firmware's HA_OUTDOOR_ID does; an option given twice takes its last value.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +33,17 @@ static const char* kNameOption[MHI_DISCOVERY_ROWS] = {
   "--name-vanes-lr", "--name-3dauto", "--name-frame-errors", "--name-frame-timeouts", "--name-error-code",
   "--name-ou-outdoor", "--name-ou-ct", "--name-ou-kwh", "--name-ou-comp", "--name-ou-defrost",
   "--name-ou-comp-run", "--name-ou-protection"};
+
+// A 0/1 option; anything else is malformed. External callers compare live
+// payloads against this output, so "--lr true" has to be an error rather than a
+// silent off that renders the wrong set of rows.
+static bool flag(const char* val, bool* out) {
+  if (strcmp(val, "0") == 0 || strcmp(val, "1") == 0) {
+    *out = val[0] == '1';
+    return true;
+  }
+  return false;
+}
 
 // Splits "a,b,c" in place into exactly n items; fewer or more is an error.
 static bool split(char* list, const char** items, size_t n) {
@@ -64,6 +84,8 @@ int main(int argc, char** argv) {
     .vanes_lr = {"Left", "LeftCenter", "Center", "CenterRight", "Right", "Wide", "Spot", "Swing"},
     .threedauto_on = "On", .threedauto_off = "Off",
     .has_outdoor = false,
+    // outdoor_id is re-derived from id_prefix after the option loop unless
+    // --outdoor-id is given; this literal is the same value for the defaults.
     .outdoor_id = "MHI-AC-Ctrl_outdoor", .outdoor_name = "AC outdoor unit", .outdoor_entity_prefix = NULL,
     .op_prefix = "OpData/",
     .t_op_outdoor = "OUTDOOR", .t_op_ct = "CT", .t_op_kwh = "KWH", .t_op_comp = "COMP", .t_op_defrost = "DEFROST",
@@ -72,6 +94,7 @@ int main(int argc, char** argv) {
     .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
     .fan = {"1", "2", "3", "4"},
   };
+  bool outdoor_id_given = false;
   for (int i = 1; i + 1 < argc; i += 2) {
     const char* opt = argv[i];
     char* val = argv[i + 1];
@@ -91,10 +114,10 @@ int main(int argc, char** argv) {
     else if (strcmp(opt, "--silent-off") == 0) c.silent_off = val;
     else if (strcmp(opt, "--modes") == 0) known = split(val, c.modes, 6);
     else if (strcmp(opt, "--vanes") == 0) known = split(val, c.vanes, 6);
-    else if (strcmp(opt, "--lr") == 0) c.has_lr = strcmp(val, "1") == 0;
+    else if (strcmp(opt, "--lr") == 0) known = flag(val, &c.has_lr);
     else if (strcmp(opt, "--vanes-lr") == 0) known = split(val, c.vanes_lr, 8);
-    else if (strcmp(opt, "--outdoor") == 0) c.has_outdoor = strcmp(val, "1") == 0;
-    else if (strcmp(opt, "--outdoor-id") == 0) c.outdoor_id = val;
+    else if (strcmp(opt, "--outdoor") == 0) known = flag(val, &c.has_outdoor);
+    else if (strcmp(opt, "--outdoor-id") == 0) { c.outdoor_id = val; outdoor_id_given = true; }
     else if (strcmp(opt, "--outdoor-name") == 0) c.outdoor_name = val;
     else if (strcmp(opt, "--outdoor-entity-prefix") == 0) c.outdoor_entity_prefix = val;
     else if (strcmp(opt, "--fan-1") == 0) c.fan[0] = val;
@@ -114,6 +137,18 @@ int main(int argc, char** argv) {
   if ((argc - 1) % 2 != 0) {
     fprintf(stderr, "discovery_payloads: every option takes one value\n");
     return 2;
+  }
+  // The firmware's HA_OUTDOOR_ID is HA_ID_PREFIX "_outdoor" (src/support.h), so
+  // the default has to follow --id-prefix; it can only be derived once the
+  // option loop is done.
+  char derived_outdoor_id[MHI_DISCOVERY_TOPIC_MAX];
+  if (!outdoor_id_given) {
+    const int n = snprintf(derived_outdoor_id, sizeof(derived_outdoor_id), "%s_outdoor", c.id_prefix);
+    if (n < 0 || (size_t)n >= sizeof(derived_outdoor_id)) {
+      fprintf(stderr, "discovery_payloads: --id-prefix is too long for the derived outdoor id\n");
+      return 1;
+    }
+    c.outdoor_id = derived_outdoor_id;
   }
   if (!mhi_discovery_modes_valid(&c)) {
     fprintf(stderr, "discovery_payloads: the modes are not Home Assistant's; the firmware would skip the climate row\n");
