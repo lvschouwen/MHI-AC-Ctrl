@@ -88,7 +88,9 @@ void MHI_AC_Ctrl_Core::set_vanes(uint vanes) {
 
 void MHI_AC_Ctrl_Core::set_vanesLR(uint vanesLR) {
   uint8_t db16, db17;
-  mhi_vanes_lr_command((int)vanesLR, &db16, &db17);
+  // A value the command does not know is dropped here: leaving new_VanesLR*
+  // alone keeps a valid command that is still queued instead of wiping it.
+  if (!mhi_vanes_lr_command((int)vanesLR, &db16, &db17)) return;
   new_VanesLR1 = db16;  // ORed into MISO_frame[DB16] in loop()
   new_VanesLR0 = db17;  // ORed into MISO_frame[DB17] in loop()
 }

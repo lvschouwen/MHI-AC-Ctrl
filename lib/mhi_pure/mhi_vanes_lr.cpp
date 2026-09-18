@@ -1,15 +1,17 @@
 #include "mhi_vanes_lr.h"
 #include <string.h>
 
-void mhi_vanes_lr_command(int value, uint8_t* db16, uint8_t* db17) {
+bool mhi_vanes_lr_command(int value, uint8_t* db16, uint8_t* db17) {
+  *db16 = 0x00;  // zeroed on every path, so a caller's locals are never read uninitialised
+  *db17 = 0x00;
   if (value == MHI_VANES_LR_SWING) {
-    *db16 = 0x00;
     *db17 = 0x03;  // swing set flag (0x02) + swing on (0x01)
+    return true;
   }
-  else {
-    *db16 = 0x10 | (uint8_t)(value - 1);  // set flag + position, 0-based
-    *db17 = 0x02;                          // swing set flag, swing off
-  }
+  if (value < 1 || value > 7) return false;  // rejected: no set flag at all
+  *db16 = 0x10 | (uint8_t)(value - 1);  // set flag + position, 0-based
+  *db17 = 0x02;                         // swing set flag, swing off
+  return true;
 }
 
 uint8_t mhi_3dauto_command(bool on) {

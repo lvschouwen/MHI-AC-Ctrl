@@ -16,7 +16,7 @@ Design for one firmware build carrying fork issues **#20**, **#19** and **#21**.
 ### 2.1 Core: one flag per command
 New pure module `lib/mhi_pure/mhi_vanes_lr.{h,cpp}`:
 
-- `void mhi_vanes_lr_command(int value, uint8_t* db16, uint8_t* db17)`: for 1..7 `*db16 = 0x10 | (value - 1)`, `*db17 = 0x02` (swing set flag, swing off); for `MHI_VANES_LR_SWING` (8, the core's `vanesLR_swing`) `*db16 = 0`, `*db17 = 0x03`. **No `0x08`.**
+- `bool mhi_vanes_lr_command(int value, uint8_t* db16, uint8_t* db17)`: for 1..7 `*db16 = 0x10 | (value - 1)`, `*db17 = 0x02` (swing set flag, swing off); for `MHI_VANES_LR_SWING` (8, the core's `vanesLR_swing`) `*db16 = 0`, `*db17 = 0x03`. **No `0x08`.** Revised on 18 Sep 2026 from `void` to `bool`: both outputs are zeroed on every path and any other value is refused (false, both bytes 0, so no set flag reaches the frame) rather than clamped, and `set_vanesLR()` then leaves `new_VanesLR0`/`new_VanesLR1` untouched so an already queued valid command survives.
 - `uint8_t mhi_3dauto_command(bool on)`: `0x08 | (on ? 0x04 : 0)`. **No `0x02`.**
 - `int mhi_vanes_lr_decode(uint8_t db16, uint8_t db17)`: swing bit set → `MHI_VANES_LR_SWING`, else `(db16 & 0x07) + 1`. `bool mhi_3dauto_decode(uint8_t db17)`: `db17 & 0x04`. The set-flag echoes never change the result.
 - Names, as `mhi_vanes` does for up/down: `struct MhiVanesLrNames { const char* pos[7]; const char* swing; }`, `mhi_vanes_lr_text()`, `mhi_vanes_lr_parse()` (the eight names, or `"1"`..`"8"` with 8 = swing; 0 when none).

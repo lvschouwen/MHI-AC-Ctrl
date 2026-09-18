@@ -16,19 +16,32 @@ static const MhiVanesLrNames kNames = {
 
 static void test_command_sets_the_position_and_the_swing_set_flag_only(void) {
   uint8_t db16, db17;
-  mhi_vanes_lr_command(1, &db16, &db17);
+  TEST_ASSERT_TRUE(mhi_vanes_lr_command(1, &db16, &db17));
   TEST_ASSERT_EQUAL_HEX8(0x10, db16);  // set flag (0x10) + position 0
   TEST_ASSERT_EQUAL_HEX8(0x02, db17);  // swing set flag, swing off; no 0x08
-  mhi_vanes_lr_command(7, &db16, &db17);
+  TEST_ASSERT_TRUE(mhi_vanes_lr_command(7, &db16, &db17));
   TEST_ASSERT_EQUAL_HEX8(0x16, db16);  // set flag + position 6
   TEST_ASSERT_EQUAL_HEX8(0x02, db17);
 }
 
 static void test_command_swing_sets_no_position(void) {
   uint8_t db16, db17;
-  mhi_vanes_lr_command(MHI_VANES_LR_SWING, &db16, &db17);
+  TEST_ASSERT_TRUE(mhi_vanes_lr_command(MHI_VANES_LR_SWING, &db16, &db17));
   TEST_ASSERT_EQUAL_HEX8(0x00, db16);
   TEST_ASSERT_EQUAL_HEX8(0x03, db17);  // swing set flag + swing on; no 0x08
+}
+
+static void test_command_refuses_a_value_it_does_not_know(void) {
+  // Reject, never clamp: a clamped value would move the louver somewhere
+  // nobody asked for. Both bytes are left at 0, so the frame carries no set
+  // flag at all and the caller can tell the command apart from a real one.
+  static const int kBad[] = {0, -1, 9, 255};
+  for (unsigned i = 0; i < sizeof(kBad) / sizeof(kBad[0]); i++) {
+    uint8_t db16 = 0xff, db17 = 0xff;
+    TEST_ASSERT_FALSE(mhi_vanes_lr_command(kBad[i], &db16, &db17));
+    TEST_ASSERT_EQUAL_HEX8(0x00, db16);
+    TEST_ASSERT_EQUAL_HEX8(0x00, db17);
+  }
 }
 
 static void test_3dauto_command_sets_no_swing_flag(void) {
@@ -84,6 +97,7 @@ int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_command_sets_the_position_and_the_swing_set_flag_only);
   RUN_TEST(test_command_swing_sets_no_position);
+  RUN_TEST(test_command_refuses_a_value_it_does_not_know);
   RUN_TEST(test_3dauto_command_sets_no_swing_flag);
   RUN_TEST(test_decode_reads_position_and_swing);
   RUN_TEST(test_decode_masks_the_acs_echo_of_the_set_flags);

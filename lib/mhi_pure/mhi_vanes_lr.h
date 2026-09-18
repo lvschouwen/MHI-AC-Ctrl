@@ -8,7 +8,10 @@
 
 // DB16/DB17 for a position (1..7) or swing. Raises only the swing set flag
 // (DB17 0x02); the 3D-auto set flag (0x08) is never touched.
-void mhi_vanes_lr_command(int value, uint8_t* db16, uint8_t* db17);
+// Both outputs are zeroed first on every path. A value that is neither 1..7
+// nor MHI_VANES_LR_SWING is refused: false, with both bytes 0 (no set flag),
+// because clamping it would move the louver somewhere nobody asked for.
+bool mhi_vanes_lr_command(int value, uint8_t* db16, uint8_t* db17);
 
 // DB17 for 3D auto on/off. Raises only the 3D-auto set flag (0x08); the
 // swing set flag (0x02) is never touched.
