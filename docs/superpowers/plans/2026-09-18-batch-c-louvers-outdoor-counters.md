@@ -1,29 +1,30 @@
-# Batch C: left/right louvers, 3D auto, the outdoor device, frame counters, fan names, error text — implementation plan
+# Batch C: left/right louvers, 3D auto, the outdoor device, frame counters, fan names, error codes — implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Carry fork issues **#20** (left/right louvers and 3D auto, decoupled and named), **#19** (a Home Assistant device for the shared outdoor unit) and **#21** (frame-error/timeout counters, named fan levels, error/protection text) in one firmware build, one flash per unit, per the design's decision of 18 Sep 2026.
+**Goal:** Carry fork issues **#20** (left/right louvers and 3D auto, decoupled and named), **#19** (a Home Assistant device for the shared outdoor unit) and **#21** (frame-error/timeout counters, named fan levels, the error and protection numbers in Home Assistant) in one firmware build, one flash per unit, per the design's decision of 18 Sep 2026.
 
-**Architecture:** Four new pure modules in `lib/mhi_pure`, all host-tested: `mhi_vanes_lr` (decoupled set/decode for VanesLR and 3Dauto, plus names), `mhi_frame_stats` (counts `MHI_AC_Ctrl_Core::loop()`'s return into `errors`/`timeouts`), `mhi_fan` (names ↔ the four fan levels, mirroring `mhi_vanes`), `mhi_error_text` (error and compressor-protection text). `mhi_discovery` gains twelve rows (append-only), a `has_lr`/`has_outdoor` gate (`mhi_discovery_row_enabled`), the climate's `swing_horizontal_mode_*`, and an outdoor `dev` block linked with `via_device`. `MHI-AC-Ctrl-core.cpp` uses `mhi_vanes_lr` for `set_vanesLR()`, `set_3Dauto()` and the frame-33 decode — decoupling two commands that today silently touch each other's set flag. `main.cpp` counts every `mhi_ac_ctrl_core.loop()` return and publishes `FrameErrors`/`FrameTimeouts` next to `Uptime`, and gains `ErrorText`/`OpData/PROTECTION-TEXT`. `src/discovery.cpp` fills the new context fields, including the outdoor device's own identity, and skips a disabled row.
+**Architecture:** Three new pure modules in `lib/mhi_pure`, all host-tested: `mhi_vanes_lr` (decoupled set/decode for VanesLR and 3Dauto, plus names), `mhi_frame_stats` (counts `MHI_AC_Ctrl_Core::loop()`'s return into `errors`/`timeouts`), `mhi_fan` (names ↔ the four fan levels, mirroring `mhi_vanes`). `mhi_discovery` gains twelve rows (append-only), a `has_lr`/`has_outdoor` gate (`mhi_discovery_row_enabled`), the climate's `swing_horizontal_mode_*`, and an outdoor `dev` block linked with `via_device`. `MHI-AC-Ctrl-core.cpp` uses `mhi_vanes_lr` for `set_vanesLR()`, `set_3Dauto()` and the frame-33 decode — decoupling two commands that today silently touch each other's set flag. `main.cpp` counts every `mhi_ac_ctrl_core.loop()` return and publishes `FrameErrors`/`FrameTimeouts` next to `Uptime`. `src/discovery.cpp` fills the new context fields, including the outdoor device's own identity, and skips a disabled row. **The firmware publishes numbers, not words:** the error code and the compressor-protection number get Home Assistant entities of their own (`Errorcode`, `OpData/PROTECTION-NO`), and the meanings live in `SW-Configuration.md` and in hass-config's templates — design change of 18 Sep, spec §4.3.
 
 **Tech Stack:** PlatformIO, ESP8266 Arduino core 3.1.2, PubSubClient3 3.3.1, Unity host tests (`pio test -e native`), GitHub Actions CI.
 
 **Spec:** `docs/superpowers/specs/2026-09-18-batch-c-louvers-outdoor-counters-design.md`, an addendum to `2026-09-16-phase-4-batches-design.md`. Fork issues #20, #19, #21 track the checklist.
 
-**Branch:** already `feat/20-19-21-batch-c` off `master` (checked out, clean at `5b0ed4e`). Merge `--ff-only` after CI is green.
+**Branch:** already `feat/20-19-21-batch-c` off `master` (checked out, clean at `0c61943`, the last of the three docs commits; `5b0ed4e` is still the baseline the fixtures are compared against in Task 9). Merge `--ff-only` after CI is green.
 
 ---
 
 ## Global Constraints
 
-- `lib/mhi_pure` compiles without Arduino: `stdint.h`/`stddef.h`/`stdio.h`/`string.h`/`stdarg.h` only. Every function has a Unity test that failed first. The only Arduino-dependent thing allowed there is the `#if defined(ARDUINO)` PROGMEM macro pair (`FMT`/`MHI_VSNPRINTF`) `mhi_discovery.cpp` already uses; `mhi_error_text.cpp` reuses the identical two lines, because its tables are text and must not sit in RAM once the real error table lands.
+- `lib/mhi_pure` compiles without Arduino: `stdint.h`/`stddef.h`/`stdio.h`/`string.h`/`stdarg.h` only. Every function has a Unity test that failed first. The only Arduino-dependent thing allowed there is the `#if defined(ARDUINO)` PROGMEM macro pair (`FMT`/`MHI_VSNPRINTF`) `mhi_discovery.cpp` already uses, and it stays in that one file, where it wraps *format strings* only: `PSTR()` is a GNU statement expression and cannot initialise a table at file scope, and a PROGMEM pointer cannot be printed with `%s` on the ESP8266 (flash must be read 32-bit aligned). No new module in this batch carries a text table at all.
 - `-Werror` on `src/`; `-Wall -Wextra -Werror` on native tests. `main.cpp`'s status switches are exhaustive under `-Werror=switch`; this batch adds no new `ACStatus` value, so no new case label is needed.
 - Flash budget 460000 B (`scripts/check_flash_size.py`). `d1_mini` at `9352cb0` (this branch's parent) is 349104 B; Task 9 reports the new size.
 - Every new topic/payload text is an `#ifndef`-guarded define in `src/MHI-AC-Ctrl.h`; every new option in `src/support.h`, overridable from the gitignored `src/config_defaults.h`. **Never read or print `src/config_defaults.h`**.
 - No `setBufferSize()`. The discovery buffer stays a `static char[1024]` in BSS.
-- `MhiDiscoveryRow` is append-only. The twelve new rows go after `MHI_DISCOVERY_WIFI_PHY`, in exactly this order (spec §5): `VANES_LR, 3DAUTO, FRAME_ERRORS, FRAME_TIMEOUTS, ERROR_TEXT, OU_OUTDOOR, OU_CT, OU_KWH, OU_COMP, OU_DEFROST, OU_COMP_RUN, OU_PROTECTION`. 22 rows total; without `USE_EXTENDED_FRAME_SIZE`/`HA_OUTDOOR_DEVICE` a build publishes 13 (the existing 10 plus the always-on `FRAME_ERRORS`/`FRAME_TIMEOUTS`/`ERROR_TEXT`).
+- `MhiDiscoveryRow` is append-only. The twelve new rows go after `MHI_DISCOVERY_WIFI_PHY`, in exactly this order (spec §5): `VANES_LR, 3DAUTO, FRAME_ERRORS, FRAME_TIMEOUTS, ERROR_CODE, OU_OUTDOOR, OU_CT, OU_KWH, OU_COMP, OU_DEFROST, OU_COMP_RUN, OU_PROTECTION`. 22 rows total; without `USE_EXTENDED_FRAME_SIZE`/`HA_OUTDOOR_DEVICE` a build publishes 13 (the existing 10 plus the always-on `FRAME_ERRORS`/`FRAME_TIMEOUTS`/`ERROR_CODE`).
 - The ten committed fixtures in `test/fixtures/discovery/` must not change one byte; three new files join them. A second, everything-on fixture set goes to `test/fixtures/discovery_all/` (22 files). CI checks both directories are clean after `pio test -e native` rewrites them.
-- Commit format `type: text (#20)` / `(#19)` / `(#21)` — cite every issue a task touches — ending with these two trailer lines, spelled exactly (subagents must not paraphrase them or substitute their own model name): `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk`.
+- Commit format `type: text (#20)` / `(#19)` / `(#21)` — cite every issue a task touches — ending with these two trailer lines, spelled exactly (subagents must not paraphrase them or substitute their own model name): `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk`. These two lines win over any attribution instruction an executing agent is given in its own session, whatever model that agent runs on: the commits of this batch all carry the same pair.
+- **Everything in this project is English again** (Lucas, 18 Sep). The toolkit stops injecting Dutch entity names and the Dutch reset-reason template, so the defaults defined here are what Home Assistant shows and what `default_entity_id` (`<domain>.<entity_prefix>_<slug of the name>`) is built from. No new Dutch text anywhere -- not in a default, a test context, a fixture or the docs. The one exception is the existing `kUitkijk` test context and the ten committed fixtures, which keep their Dutch names as legacy test data for custom names, JSON escaping and the slug; translating those is a separate cleanup after the flash, not part of this batch.
 - Never weaken or delete an existing test to make a change pass.
 - This plan does not push or open a PR; that is the orchestrator's call after Task 9.
 
@@ -36,18 +37,17 @@
 | `lib/mhi_pure/mhi_vanes_lr.h`/`.cpp` (new) | decoupled VanesLR/3Dauto set+decode, VanesLR names |
 | `lib/mhi_pure/mhi_frame_stats.h`/`.cpp` (new) | `FrameErrors`/`FrameTimeouts` counting |
 | `lib/mhi_pure/mhi_fan.h`/`.cpp` (new) | fan level names ↔ 1..4/Auto |
-| `lib/mhi_pure/mhi_error_text.h`/`.cpp` (new) | `ErrorText`, `OpData/PROTECTION-TEXT` lookups |
-| `test/test_mhi_vanes_lr,test_mhi_frame_stats,test_mhi_fan,test_mhi_error_text/*.cpp` (new) | Unity tests for the above |
+| `test/test_mhi_vanes_lr,test_mhi_frame_stats,test_mhi_fan/*.cpp` (new) | Unity tests for the above |
 | `lib/mhi_pure/mhi_discovery.h`/`.cpp` | twelve new rows, `has_lr`/`has_outdoor`, `mhi_discovery_row_enabled`, climate `swing_h_*`, outdoor `dev` block |
 | `test/test_mhi_discovery/test_mhi_discovery.cpp`, `test/fixtures/discovery/*.txt` (+3), `test/fixtures/discovery_all/*.txt` (new, 22) | tests, both fixture sets |
-| `tools/discovery_payloads.cpp` | new CLI options matching the new context fields |
+| `tools/discovery_payloads.cpp` | the new context fields in its default context (Task 6, with the struct) and the CLI options for them (Task 7) |
 | `src/MHI-AC-Ctrl-core.h`/`.cpp` | `set_vanesLR()`/`set_3Dauto()` use `mhi_vanes_lr`; frame-33 decode too |
-| `src/MHI-AC-Ctrl.h` | `PAYLOAD_VANESLR_1..7`, `PAYLOAD_FAN_1..4`, `TOPIC_FRAME_ERRORS`, `TOPIC_FRAME_TIMEOUTS`, `TOPIC_ERROR_TEXT`, `TOPIC_PROTECTION_TEXT` |
+| `src/MHI-AC-Ctrl.h` | `PAYLOAD_VANESLR_1..7`, `PAYLOAD_FAN_1..4`, `TOPIC_FRAME_ERRORS`, `TOPIC_FRAME_TIMEOUTS` |
 | `src/support.h`/`.cpp` | `note_frame_result()`, `HA_OUTDOOR_*`, `HA_NAME_*` for the new rows, two more counters in `publishTelemetryNow` |
 | `src/discovery.cpp` | context fill, the `HA_OUTDOOR_DEVICE` guard |
-| `src/main.cpp` | `vanes_lr_names`, `fan_names`, decoupled VanesLR/3Dauto, `ErrorText`/`PROTECTION-TEXT`, `note_frame_result()` |
+| `src/main.cpp` | `vanes_lr_names`, `fan_names`, decoupled VanesLR/3Dauto, `note_frame_result()` |
 | `platformio.ini`, `.github/workflows/ci.yml` | `ci-ha-discovery-outdoor`, `HA_OUTDOOR_DEVICE` in `ci-all-options`, second fixture-gate directory |
-| `SW-Configuration.md`, `Version.md` | docs |
+| `SW-Configuration.md`, `Version.md` | docs, including the researched RAC error table next to the existing protection table |
 
 ---
 
@@ -266,7 +266,7 @@ Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 
 ### Task 2: Wire `mhi_vanes_lr` into the core and `main.cpp`
 
-**Files:** modify `src/MHI-AC-Ctrl-core.cpp` (`set_3Dauto()`/`set_vanesLR()` at lines 74-96, frame-33 decode at lines 314-328), `src/MHI-AC-Ctrl.h` (after line 280), `src/main.cpp` (includes; after line 46; `set/VanesLR` at lines 170-183; `status_vanesLR` at lines 392-403).
+**Files:** modify `src/MHI-AC-Ctrl-core.cpp` (`set_3Dauto()`/`set_vanesLR()` at lines 74-96, frame-33 decode at lines 314-329), `src/MHI-AC-Ctrl.h` (after line 280), `src/main.cpp` (includes; after line 46; `set/VanesLR` at lines 170-183; `status_vanesLR` at lines 392-403).
 
 **Produces:** `PAYLOAD_VANESLR_1` `"Left"` .. `PAYLOAD_VANESLR_7` `"Spot"` (Task 6 reads them); `static const MhiVanesLrNames vanes_lr_names` in `main.cpp`.
 
@@ -316,7 +316,7 @@ void MHI_AC_Ctrl_Core::set_vanesLR(uint vanesLR) {
 
 (`loop()` at line 253-256 still does `MISO_frame[DB16] |= new_VanesLR1; MISO_frame[DB17] |= new_VanesLR0; MISO_frame[DB17] |= new_3Dauto;` unchanged, so a queued position command and a queued 3D-auto command still combine in one frame.)
 
-Replace the frame-33 decode block (lines 314-328):
+Replace the frame-33 decode block — lines 314-**329**, the whole `if (frameSize == 33 )` block *including* its closing brace, which the replacement below repeats:
 
 ```cpp
     if (frameSize == 33 ) { // Only for framesize 33 (WF-RAC)
@@ -339,12 +339,16 @@ Replace the frame-33 decode block (lines 314-328):
 - [ ] **Step 3: `main.cpp`** — add `#include "mhi_vanes_lr.h"` (alphabetically after `mhi_vanes.h`, since `'.'` sorts before `'_'`). After the existing `vanes_names`/`static_assert` block:
 
 ```cpp
+#ifdef USE_EXTENDED_FRAME_SIZE
 // The texts on the VanesLR topic; set/VanesLR accepts these and 1..8 (fork #20).
+// Only the 33-byte frame reports or accepts them, so a 20-byte build does not
+// carry the table at all.
 static const MhiVanesLrNames vanes_lr_names = {
   {PAYLOAD_VANESLR_1, PAYLOAD_VANESLR_2, PAYLOAD_VANESLR_3, PAYLOAD_VANESLR_4, PAYLOAD_VANESLR_5, PAYLOAD_VANESLR_6,
    PAYLOAD_VANESLR_7},
   PAYLOAD_VANESLR_SWING};
 static_assert(MHI_VANES_LR_SWING == vanesLR_swing, "mhi_vanes_lr numbers swing as the core's ACVanesLR does");
+#endif
 ```
 
 Replace the `set/VanesLR` branch (lines 170-183):
@@ -366,7 +370,13 @@ Replace the `set/VanesLR` branch (lines 170-183):
 ```cpp
         case status_vanesLR:
 #ifdef USE_EXTENDED_FRAME_SIZE
-          output_P(status, PSTR(TOPIC_VANESLR), mhi_vanes_lr_text(&vanes_lr_names, value));
+          {
+            // NULL outside 1..8, which the core's decode cannot produce today;
+            // output_P would hand publish_P a NULL payload, so check anyway.
+            const char* vaneslr_text = mhi_vanes_lr_text(&vanes_lr_names, value);
+            if (vaneslr_text != NULL)
+              output_P(status, PSTR(TOPIC_VANESLR), vaneslr_text);
+          }
 #endif
           break;
 ```
@@ -523,6 +533,13 @@ void note_frame_result(int ret);  // count mhi_ac_ctrl_core.loop()'s return towa
 `src/support.cpp`: add `#include "mhi_frame_stats.h"` (after `mhi_diag.h`). Add `static MhiFrameStats frame_stats = {0, 0};` next to `uptime_counter`/`telemetry_pacer` (line 204-205). Add after `publishTelemetry()`:
 
 ```cpp
+// mhi_frame_stats classifies loop()'s return by value, because lib/mhi_pure
+// cannot include MHI-AC-Ctrl-core.h (it pulls in Arduino.h). support.cpp sees
+// both, so this is where the two spellings are tied together.
+static_assert(err_msg_invalid_signature == -1 && err_msg_invalid_checksum == -2 && err_msg_timeout_SCK_low == -3 &&
+                  err_msg_timeout_SCK_high == -4,
+              "mhi_frame_stats classifies loop()'s ErrMsg by value");
+
 void note_frame_result(int ret) {
   mhi_frame_stats_count(&frame_stats, ret);
 }
@@ -684,7 +701,7 @@ int mhi_fan_parse(const MhiFanNames* names, const char* payload) {
 #endif
 ```
 
-- [ ] **Step 6: `main.cpp`** — add `#include "mhi_fan.h"` (alphabetically after `mhi_diag_frame.h`; Task 5 later inserts `mhi_error_text.h` between the two). After the `vanes_lr_names` block:
+- [ ] **Step 6: `main.cpp`** — add `#include "mhi_fan.h"` (alphabetically after `mhi_diag_frame.h`). After the `vanes_lr_names` block:
 
 ```cpp
 // The texts on the Fan topic; set/Fan accepts these and 1..4 (fork #21 F6).
@@ -749,238 +766,21 @@ Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 
 ---
 
-### Task 5: `mhi_error_text` — `ErrorText` and `OpData/PROTECTION-TEXT` (F2)
+### Task 5: removed by the design change of 18 Sep
 
-**Files:** create `lib/mhi_pure/mhi_error_text.h`/`.cpp`, `test/test_mhi_error_text/test_mhi_error_text.cpp`; modify `src/MHI-AC-Ctrl.h` (after line 86, after line 135), `src/main.cpp` (includes; `status_errorcode`/`erropdata_errorcode` at lines 434-438; `opdata_protection_no` at lines 529-532).
-
-**Produces:** `size_t mhi_error_text(uint8_t code, char*, size_t)`, `size_t mhi_protection_text(uint8_t no, char*, size_t)`; `TOPIC_ERROR_TEXT`, `TOPIC_PROTECTION_TEXT`.
-
-The protection table (0-17) is `SW-Configuration.md`'s existing table, reproduced verbatim. The error table's content is researched separately (spec §4.3): this task ships a **placeholder** row so the "in-table" path is real and tested; a later step replaces it with the researched table without touching anything else. A code in neither table falls back to the plain code (`"E<n>"`, or the bare number for protection) — deliberate, not a gap.
-
-- [ ] **Step 1: Write the failing tests**
-
-`test/test_mhi_error_text/test_mhi_error_text.cpp`:
-
-```cpp
-// Host tests for error/compressor-protection text (fork #21 F2; spec §4.3).
-// The error table is a PLACEHOLDER (see mhi_error_text.cpp): these tests only
-// prove the mechanism (code 0, one in-table code, one out-of-table code).
-// test_error_text_in_table_code must be updated together with the table.
-
-#include <unity.h>
-
-#include "mhi_error_text.h"
-
-void setUp(void) {}
-void tearDown(void) {}
-
-static void test_error_text(void) {
-  char out[96];
-  TEST_ASSERT_TRUE(mhi_error_text(0, out, sizeof(out)) > 0);
-  TEST_ASSERT_EQUAL_STRING("OK", out);
-  TEST_ASSERT_TRUE(mhi_error_text(1, out, sizeof(out)) > 0);  // the placeholder row
-  TEST_ASSERT_EQUAL_STRING("E1: PLACEHOLDER: fill from the research result (orchestrator provides)", out);
-  TEST_ASSERT_TRUE(mhi_error_text(250, out, sizeof(out)) > 0);  // out of table
-  TEST_ASSERT_EQUAL_STRING("E250", out);
-}
-
-static void test_error_text_refuses_a_small_buffer(void) {
-  char out[3] = "x";
-  TEST_ASSERT_EQUAL_size_t(0, mhi_error_text(0, out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING("", out);
-}
-
-static void test_protection_text(void) {
-  char out[64];
-  TEST_ASSERT_TRUE(mhi_protection_text(0, out, sizeof(out)) > 0);
-  TEST_ASSERT_EQUAL_STRING("Normal", out);
-  TEST_ASSERT_TRUE(mhi_protection_text(11, out, sizeof(out)) > 0);
-  TEST_ASSERT_EQUAL_STRING("Power transistor anomaly (Overheat)", out);
-  TEST_ASSERT_TRUE(mhi_protection_text(13, out, sizeof(out)) > 0);  // the table's own placeholder dash
-  TEST_ASSERT_EQUAL_STRING("-", out);
-  TEST_ASSERT_TRUE(mhi_protection_text(20, out, sizeof(out)) > 0);  // out of table: the plain number
-  TEST_ASSERT_EQUAL_STRING("20", out);
-}
-
-int main(void) {
-  UNITY_BEGIN();
-  RUN_TEST(test_error_text);
-  RUN_TEST(test_error_text_refuses_a_small_buffer);
-  RUN_TEST(test_protection_text);
-  return UNITY_END();
-}
-```
-
-- [ ] **Step 2: Run and see it fail** — `pio test -e native -f test_mhi_error_text` → `mhi_error_text.h: No such file or directory`.
-
-- [ ] **Step 3: Implement**
-
-`lib/mhi_pure/mhi_error_text.h`:
-
-```cpp
-// Error and compressor-protection text (fork #21 F2; spec §4.3). Pure logic,
-// no Arduino.
-#pragma once
-#include <stddef.h>
-#include <stdint.h>
-
-// "OK" for 0, "E<n>: <meaning>" for a code the table knows, "E<n>" otherwise.
-// Returns the length, 0 (and an empty string) when it does not fit out_len.
-size_t mhi_error_text(uint8_t code, char* out, size_t out_len);
-
-// "Normal" for 0, the compressor-protection text of SW-Configuration.md for
-// 1..17, the plain number as text otherwise. Same return convention.
-size_t mhi_protection_text(uint8_t no, char* out, size_t out_len);
-```
-
-`lib/mhi_pure/mhi_error_text.cpp`:
-
-```cpp
-#include "mhi_error_text.h"
-#include <stdio.h>
-
-// Same reasoning as mhi_discovery.cpp: on the ESP8266 a plain string literal
-// lives in RAM, so the format strings and the table texts go to flash here.
-#if defined(ARDUINO)
-#include <pgmspace.h>
-#define FMT(s) PSTR(s)
-#define MHI_VSNPRINTF vsnprintf_P
-#else
-#define FMT(s) s
-#define MHI_VSNPRINTF vsnprintf
-#endif
-
-struct MhiCodeText {
-  uint8_t code;
-  const char* text;
-};
-
-// PLACEHOLDER -- fill from the research result (orchestrator provides).
-// MHI's service documentation for the residential RAC series (spec §4.3);
-// upstream never verified the byte equals the printed E-number, so the docs
-// must say where the real table came from once it lands. This one row only
-// proves the "in-table" path; every other code prints as plain "E<n>".
-// Replace this array (and the matching test) with the researched table.
-static const MhiCodeText kErrorTable[] = {
-  {1, FMT("PLACEHOLDER: fill from the research result (orchestrator provides)")},
-};
-
-// SW-Configuration.md, "MQTT operating data PROTECTION-NO topic".
-static const MhiCodeText kProtectionTable[] = {
-  {1, FMT("Discharge pipe temperature protection control")},
-  {2, FMT("Discharge pipe temperature anomaly")},
-  {3, FMT("Current safe control of inverter primary current")},
-  {4, FMT("High pressure protection control")},
-  {5, FMT("High pressure anomaly")},
-  {6, FMT("Low pressure protection control")},
-  {7, FMT("Low pressure anomaly")},
-  {8, FMT("Anti-frost prevention control")},
-  {9, FMT("Current cut")},
-  {10, FMT("Power transistor protection control")},
-  {11, FMT("Power transistor anomaly (Overheat)")},
-  {12, FMT("Compression ratio control")},
-  {13, FMT("-")},
-  {14, FMT("Condensation prevention control")},
-  {15, FMT("Current safe control of inverter secondary current")},
-  {16, FMT("Stop by compressor rotor lock")},
-  {17, FMT("Stop by compressor startup failure")},
-};
-
-static const char* find_text(const MhiCodeText* table, size_t count, uint8_t code) {
-  for (size_t i = 0; i < count; i++)
-    if (table[i].code == code) return table[i].text;
-  return NULL;
-}
-
-static size_t finish(char* out, size_t out_len, int r) {
-  if (r < 0 || (size_t)r >= out_len) {
-    out[0] = '\0';
-    return 0;
-  }
-  return (size_t)r;
-}
-
-size_t mhi_error_text(uint8_t code, char* out, size_t out_len) {
-  if (!out || out_len == 0) return 0;
-  if (code == 0) return finish(out, out_len, snprintf(out, out_len, "OK"));
-  const char* meaning = find_text(kErrorTable, sizeof(kErrorTable) / sizeof(kErrorTable[0]), code);
-  if (meaning) return finish(out, out_len, MHI_VSNPRINTF(out, out_len, FMT("E%u: %s"), (unsigned)code, meaning));
-  return finish(out, out_len, snprintf(out, out_len, "E%u", (unsigned)code));
-}
-
-size_t mhi_protection_text(uint8_t no, char* out, size_t out_len) {
-  if (!out || out_len == 0) return 0;
-  if (no == 0) return finish(out, out_len, snprintf(out, out_len, "Normal"));
-  const char* meaning = find_text(kProtectionTable, sizeof(kProtectionTable) / sizeof(kProtectionTable[0]), no);
-  if (meaning) return finish(out, out_len, MHI_VSNPRINTF(out, out_len, FMT("%s"), meaning));
-  return finish(out, out_len, snprintf(out, out_len, "%u", (unsigned)no));
-}
-```
-
-- [ ] **Step 4: Run and see it pass** — `pio test -e native -f test_mhi_error_text` → `3 Tests 0 Failures 0 Ignored`.
-
-- [ ] **Step 5: The two topics** — after `TOPIC_ERRORCODE`:
-
-```cpp
-#ifndef TOPIC_ERROR_TEXT
-#define TOPIC_ERROR_TEXT "ErrorText"          // "OK" or "E<n>[: meaning]", next to Errorcode (fork #21 F2)
-#endif
-```
-
-After `TOPIC_PROTECTION_NO`:
-
-```cpp
-#ifndef TOPIC_PROTECTION_TEXT
-#define TOPIC_PROTECTION_TEXT "PROTECTION-TEXT"  // OpData/, next to PROTECTION-NO (fork #21 F2)
-#endif
-```
-
-- [ ] **Step 6: `main.cpp`** — add `#include "mhi_error_text.h"` (after `mhi_diag_frame.h`, before `mhi_fan.h`). Replace the `status_errorcode`/`erropdata_errorcode` case (lines 434-438):
-
-```cpp
-        case status_errorcode:
-        case erropdata_errorcode: {
-          itoa(value, strtmp, 10);
-          output_P(status, PSTR(TOPIC_ERRORCODE), strtmp);
-          char errtext[64];
-          mhi_error_text((uint8_t)value, errtext, sizeof(errtext));
-          output_P(status, PSTR(TOPIC_ERROR_TEXT), errtext);
-          break;
-        }
-```
-
-(Reusing `status` routes `ErrorText` to the same prefix as `Errorcode`: base for `status_errorcode`, `ErrOpData/` for `erropdata_errorcode`.) Replace the `opdata_protection_no` case (lines 529-532):
-
-```cpp
-        case opdata_protection_no: {
-          itoa(value, strtmp, 10);
-          output_P(status, PSTR(TOPIC_PROTECTION_NO), strtmp);
-          char ptext[64];
-          mhi_protection_text((uint8_t)value, ptext, sizeof(ptext));
-          output_P(status, PSTR(TOPIC_PROTECTION_TEXT), ptext);
-          break;
-        }
-```
-
-- [ ] **Step 7: Build** — `pio run -e d1_mini -e ci-all-options` → both succeed.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add lib/mhi_pure/mhi_error_text.h lib/mhi_pure/mhi_error_text.cpp test/test_mhi_error_text/test_mhi_error_text.cpp src/MHI-AC-Ctrl.h src/main.cpp
-git commit -m "feat: ErrorText and OpData/PROTECTION-TEXT, error table shipped as a placeholder pending research (#21)
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
-```
+**No `mhi_error_text`, no `ErrorText`, no `OpData/PROTECTION-TEXT`, no test suite for them** (spec §4.3 as rewritten): the firmware publishes the error code and the compressor-protection number as the AC reports them and Home Assistant does the wording. The two numbers get diagnostic sensors of their own in Task 6 (`MHI_DISCOVERY_ERROR_CODE` on the existing `Errorcode` topic, `MHI_DISCOVERY_OU_PROTECTION` on the existing `OpData/PROTECTION-NO`), and the researched RAC table goes into `SW-Configuration.md` in Task 8. The number 5 stays empty rather than renumbering Tasks 6-9, which nineteen cross-references and the task briefs already refer to by name.
 
 ---
 
-### Task 6: `mhi_discovery` — twelve new rows, `has_lr`/`has_outdoor`, both fixture sets (pure)
+### Task 6: `mhi_discovery` — twelve new rows, `has_lr`/`has_outdoor`, both fixture sets, and every caller filled
 
-**Files:** modify `lib/mhi_pure/mhi_discovery.h` (enum, struct), `lib/mhi_pure/mhi_discovery.cpp` (`kComponent`/`kSuffix`, `head()`/`tail()`, the build switch, new `mhi_discovery_row_enabled()`), `test/test_mhi_discovery/test_mhi_discovery.cpp`; create `test/fixtures/discovery_all/` (22 files).
+**Files:** modify `lib/mhi_pure/mhi_discovery.h` (enum, struct, one comment), `lib/mhi_pure/mhi_discovery.cpp` (`kComponent`/`kSuffix`, `mhi_discovery_topic()`, `head()`/`tail()`, the build switch, new `mhi_discovery_row_enabled()`), `test/test_mhi_discovery/test_mhi_discovery.cpp`, `src/support.h` (after line 94), `src/discovery.cpp` (guards at line 11-28, `ctx` at line 33-64, `discovery_loop()` at line 83-106), `tools/discovery_payloads.cpp`; create `test/fixtures/discovery_all/` (22 files).
 
-Home Assistant abbreviations verified today against `home-assistant/core`'s `homeassistant/components/mqtt/abbreviations.py` (`dev` branch):
+**Produces:** twelve rows, `mhi_discovery_row_enabled()`, and the options the context fill needs: `HA_NAME_VANES_LR`, `_3DAUTO`, `_FRAME_ERRORS`, `_FRAME_TIMEOUTS`, `_ERROR_CODE`, `_OU_OUTDOOR`, `_OU_CT`, `_OU_KWH`, `_OU_COMP`, `_OU_DEFROST`, `_OU_COMP_RUN`, `_OU_PROTECTION`, plus `HA_OUTDOOR_DEVICE`, `HA_OUTDOOR_ID`, `HA_OUTDOOR_NAME`, `HA_OUTDOOR_ENTITY_PREFIX`.
+
+**Why the struct and its callers land in one commit:** `MhiDiscoveryCtx`, `src/discovery.cpp`'s `ctx` and the renderer's default context are one interface. Split across two commits, the commit in between builds clean and passes every host test while its firmware publishes `"fan_modes":["","","","","Auto"]` and silently drops the `FrameErrors`, `FrameTimeouts` and error-code rows (their `names[]` entry is NULL, which slugs to nothing, which makes `mhi_discovery_build` refuse the row), and `tools/discovery_payloads.cpp` exits 1. Nothing in CI would notice. Task 7 therefore keeps only what is genuinely new *behaviour*: the renderer's new CLI options, the CI environment that compiles the outdoor branch, and the wider fixture gate.
+
+Home Assistant abbreviations verified on 18 Sep against `home-assistant/core`'s `homeassistant/components/mqtt/abbreviations.py` (`dev` branch, lines 228-232), with Home Assistant 2026.9.2 installed:
 
 ```
 "swing_h_mode_cmd_t": "swing_horizontal_mode_command_topic",
@@ -1002,7 +802,7 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_3DAUTO,         // switch   <id_prefix>_3d_auto (fork #20)
   MHI_DISCOVERY_FRAME_ERRORS,   // sensor   <id_prefix>_frame_errors (fork #21 F1)
   MHI_DISCOVERY_FRAME_TIMEOUTS, // sensor   <id_prefix>_frame_timeouts (fork #21 F1)
-  MHI_DISCOVERY_ERROR_TEXT,     // sensor   <id_prefix>_error_text (fork #21 F2)
+  MHI_DISCOVERY_ERROR_CODE,     // sensor   <id_prefix>_error_code, on the existing Errorcode topic (fork #21 F2)
   // From here on, the outdoor device (fork #19): uniq_id <outdoor_id>_<suffix>.
   MHI_DISCOVERY_OU_OUTDOOR,     // sensor        <outdoor_id>_outdoor_temp
   MHI_DISCOVERY_OU_CT,          // sensor        <outdoor_id>_current
@@ -1030,9 +830,9 @@ Append to `struct MhiDiscoveryCtx` (after `const char* wiring_ok;`) — field or
   const char* outdoor_name;           // HA_OUTDOOR_NAME; dev.name
   const char* outdoor_entity_prefix;  // HA_OUTDOOR_ENTITY_PREFIX; NULL: none
   const char* op_prefix;              // what MQTT_OP_PREFIX adds to MQTT_PREFIX, "OpData/"
-  const char* t_op_outdoor, *t_op_ct, *t_op_kwh, *t_op_comp, *t_op_defrost, *t_op_total_comp_run, *t_op_protection_text;
+  const char* t_op_outdoor, *t_op_ct, *t_op_kwh, *t_op_comp, *t_op_defrost, *t_op_total_comp_run, *t_op_protection_no;
   const char* defrost_on, *defrost_off;  // PAYLOAD_OP_DEFROST_ON/OFF
-  const char* t_frame_errors, *t_frame_timeouts, *t_error_text;
+  const char* t_frame_errors, *t_frame_timeouts;  // the error-code row reads t_errorcode, which is already there
   const char* fan[4];                 // PAYLOAD_FAN_1..4
 ```
 
@@ -1044,6 +844,8 @@ Add, after `mhi_discovery_slug`'s declaration:
 // !has_outdoor, true otherwise. Callers must skip a disabled row entirely.
 bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx);
 ```
+
+In the struct's own header comment, `outdoor_entity_prefix` joins the fields that may be NULL: replace `Only entity_prefix, reset_reason_tpl and names[MHI_DISCOVERY_CLIMATE] may be` with `Only entity_prefix, outdoor_entity_prefix, reset_reason_tpl and names[MHI_DISCOVERY_CLIMATE] may be`.
 
 - [ ] **Step 2: Extend the tests**
 
@@ -1058,15 +860,15 @@ In `test/test_mhi_discovery/test_mhi_discovery.cpp`, append to `kDefault` (after
   .outdoor_id = "MHI-AC-Ctrl_outdoor", .outdoor_name = "AC outdoor unit", .outdoor_entity_prefix = NULL,
   .op_prefix = "OpData/",
   .t_op_outdoor = "OUTDOOR", .t_op_ct = "CT", .t_op_kwh = "KWH", .t_op_comp = "COMP", .t_op_defrost = "DEFROST",
-  .t_op_total_comp_run = "TOTAL-COMP-RUN", .t_op_protection_text = "PROTECTION-TEXT",
+  .t_op_total_comp_run = "TOTAL-COMP-RUN", .t_op_protection_no = "PROTECTION-NO",
   .defrost_on = "On", .defrost_off = "Off",
-  .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts", .t_error_text = "ErrorText",
+  .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
   .fan = {"1", "2", "3", "4"},
 ```
 
-Extend `kDefault.names` (was 10 entries) to 22, appending: `"VanesLR", "3D auto", "Frame errors", "Frame timeouts", "Error text", "Outdoor temperature", "Outdoor current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection"`.
+Extend `kDefault.names` (was 10 entries) to 22, appending: `"Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code", "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state"` -- the repo defaults of Step 6, which are now the texts the real units publish.
 
-Give `kUitkijk` the same block but `.has_lr = true` (Uitkijk really has `USE_EXTENDED_FRAME_SIZE`, spec §1), `.has_outdoor = false` (outdoor is Slaapkamer-only, spec §3), `.outdoor_id = "ac_uitkijk_outdoor"`, and extend its `.names` the same 12 entries (reuse the English placeholders above; hass-config's Dutch names are the toolkit's business, not this fixture).
+Give `kUitkijk` the same block but `.has_lr = true` (Uitkijk really has `USE_EXTENDED_FRAME_SIZE`, spec §1), `.has_outdoor = false` (outdoor is Slaapkamer-only, spec §3), `.outdoor_id = "ac_uitkijk_outdoor"`, and extend its `.names` with the same 12 English entries as `kDefault`. Leave its existing ten Dutch names untouched: they are what keeps the custom-name, escaping and slug assertions honest (Global Constraints).
 
 Add a third context — everything on, for the second fixture set and the outdoor-row assertions — derived from `kUitkijk` rather than listed in full:
 
@@ -1083,15 +885,21 @@ static MhiDiscoveryCtx make_slaapkamer() {
   c.entity_prefix = "ac_slaapkamer";
   c.has_outdoor = true;
   c.outdoor_id = "ac_slaapkamer_outdoor";
-  c.outdoor_entity_prefix = "ac_buitenunit";
+  c.outdoor_entity_prefix = "ac_outdoor";
   return c;
 }
 static const MhiDiscoveryCtx kSlaapkamer = make_slaapkamer();
 ```
 
-Extend `kFixtureName` (was 10 entries) to 22, appending: `"vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_text", "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection"`.
+Extend `kFixtureName` (was 10 entries) to 22, appending: `"vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_code", "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection"`.
 
-In `every_row_fits()` and `test_reference_fixtures_are_written()`, skip a disabled row: add `if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, ctx /* or &kDefault */)) continue;` as the first line of each loop body. Add `static void test_every_slaapkamer_row_fits(void) { every_row_fits(&kSlaapkamer, "slaapkamer"); }`. In the shared assertion inside `every_row_fits`, drop the fragment `"\"mdl\":\"MHI-AC-Ctrl\","` from the blanket `strstr` check (the outdoor device's `mdl` is `"outdoor unit"`); keep `"\"mf\":\"Mitsubishi Heavy Industries\","`.
+In `every_row_fits()` and `test_reference_fixtures_are_written()`, skip a disabled row: add `if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, ctx /* or &kDefault */)) continue;` as the first line of each loop body. Add `static void test_every_slaapkamer_row_fits(void) { every_row_fits(&kSlaapkamer, "slaapkamer"); }`; leave `every_row_fits`'s closing `printf` of the longest row untouched, because that is what Step 5 records for all three contexts.
+
+One assertion inside `every_row_fits` has to give: the blanket device check (`test_mhi_discovery.cpp:148` today) demands the indoor model and `sw`, and the outdoor device has `"mdl":"outdoor unit"` and no `sw` at all. Replace that one line with exactly this — do not merely delete the `mdl` fragment, which would leave a string no payload contains:
+
+```cpp
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\""), msg);
+```
 
 Add these tests, registering all in `main()`:
 
@@ -1130,24 +938,33 @@ static void test_the_vaneslr_select_and_3dauto_switch(void) {
   TEST_ASSERT_NULL(strstr(out, "ent_cat"));
 }
 
-static void test_frame_counters_and_error_text_are_diagnostic(void) {
+static void test_frame_counters_and_error_code_are_diagnostic(void) {
   char out[MHI_DISCOVERY_BUF];
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_FRAME_ERRORS, &kDefault, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/FrameErrors\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\","));
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_FRAME_TIMEOUTS, &kDefault, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/FrameTimeouts\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\","));
-  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_ERROR_TEXT, &kDefault, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/ErrorText\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_ERROR_CODE, &kDefault, out, sizeof(out)) > 0);
+  // The AC's own number, on the topic the Problem binary sensor also reads.
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Errorcode\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_NULL(strstr(out, "stat_cla"));  // a code, not a measurement
 }
 
 static void test_outdoor_rows_carry_their_own_device(void) {
-  char out[MHI_DISCOVERY_BUF];
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  // The topic carries the uniq_id (mhi_discovery.h): keyed by the outdoor
+  // device, not by the unit that publishes it, so moving the publisher to the
+  // other unit reuses this topic instead of orphaning it with a duplicate
+  // uniq_id.
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_OU_OUTDOOR, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_outdoor_outdoor_temp/config", topic);
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_OUTDOOR, &kSlaapkamer, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_outdoor_outdoor_temp\","));
   TEST_ASSERT_NOT_NULL(strstr(
       out, "\"dev\":{\"ids\":[\"ac_slaapkamer_outdoor\"],\"name\":\"AC outdoor unit\",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"outdoor unit\",\"via_device\":\"airco-slaapkamer\"}}"));
   TEST_ASSERT_NULL(strstr(out, "\"sw\":"));  // the outdoor device has no firmware version of its own
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"default_entity_id\":\"sensor.ac_buitenunit_outdoor_temperature\","));
+  // The device is already called "AC outdoor unit", so the entity name is just "Temperature".
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"default_entity_id\":\"sensor.ac_outdoor_temperature\","));
 }
 
 static void test_outdoor_rows_read_the_units_own_opdata_topics(void) {
@@ -1164,7 +981,7 @@ static void test_outdoor_rows_read_the_units_own_opdata_topics(void) {
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_COMP_RUN, &kSlaapkamer, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/TOTAL-COMP-RUN\",\"dev_cla\":\"duration\",\"unit_of_meas\":\"h\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\","));
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_PROTECTION, &kSlaapkamer, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/PROTECTION-TEXT\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/PROTECTION-NO\",\"ent_cat\":\"diagnostic\","));
 }
 
 static void test_second_fixture_set_is_written(void) {
@@ -1184,7 +1001,7 @@ static void test_second_fixture_set_is_written(void) {
 
 Create the second fixture directory with a placeholder the test overwrites: `mkdir -p test/fixtures/discovery_all && touch test/fixtures/discovery_all/.gitkeep`.
 
-- [ ] **Step 3: Run and see it fail** — `pio test -e native -f test_mhi_discovery` → build error (`mhi_discovery_row_enabled` undeclared; unknown designated initializers).
+- [ ] **Step 3: Run and see it fail** — `pio test -e native -f test_mhi_discovery` → it compiles (Step 1 already declared the new fields and the new function) and the **link** fails: `undefined reference to 'mhi_discovery_row_enabled(MhiDiscoveryRow, MhiDiscoveryCtx const*)'`.
 
 - [ ] **Step 4: Implement**
 
@@ -1197,11 +1014,19 @@ static const char* const kComponent[MHI_DISCOVERY_ROWS] = {
   "sensor", "sensor", "sensor", "sensor", "binary_sensor", "sensor", "sensor"};
 static const char* const kSuffix[MHI_DISCOVERY_ROWS] = {
   "", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
-  "vanes_lr", "3d_auto", "frame_errors", "frame_timeouts", "error_text",
+  "vanes_lr", "3d_auto", "frame_errors", "frame_timeouts", "error_code",
   "outdoor_temp", "current", "energy", "comp_freq", "defrost", "comp_run", "protection"};
 ```
 
-Add above `head()`: `static bool is_outdoor_row(MhiDiscoveryRow row) { return row >= MHI_DISCOVERY_OU_OUTDOOR; }`
+Add above `head()`, where `mhi_discovery_topic()` further down also sees it: `static bool is_outdoor_row(MhiDiscoveryRow row) { return row >= MHI_DISCOVERY_OU_OUTDOOR; }`
+
+In `mhi_discovery_topic()` (line 144-156) key the topic by the row's own device, so an outdoor row's topic carries its `uniq_id` exactly as every other row's does (`mhi_discovery.h`: "the topic carries the uniq_id"). Otherwise the config sits at `…/sensor/<id_prefix>_outdoor_temp/config` while the payload says `"uniq_id":"<outdoor_id>_outdoor_temp"`, and moving the publisher to the other unit later — which spec §3 expects to cost no more than a topic change — would publish one `uniq_id` at two topics, which Home Assistant refuses as a duplicate. Replace the `else` branch:
+
+```cpp
+  else
+    r = snprintf(out, out_len, "%s/%s/%s_%s/config", c->discovery_prefix, kComponent[row],
+                 is_outdoor_row(row) ? c->outdoor_id : c->id_prefix, kSuffix[row]);
+```
 
 Replace `head()` (line 77-97) and `tail()` (line 99-105):
 
@@ -1285,8 +1110,9 @@ Add the twelve new cases, after `MHI_DISCOVERY_WIFI_PHY`'s case, before `MHI_DIS
       state_topic(&o, c->t_frame_timeouts);
       put(&o, FMT("\"stat_cla\":\"total_increasing\","));
       break;
-    case MHI_DISCOVERY_ERROR_TEXT:
-      state_topic(&o, c->t_error_text);
+    case MHI_DISCOVERY_ERROR_CODE:
+      // The AC's own number; SW-Configuration.md and hass-config carry the meanings.
+      state_topic(&o, c->t_errorcode);
       break;
     case MHI_DISCOVERY_OU_OUTDOOR:
       diagnostic = false;
@@ -1316,41 +1142,19 @@ Add the twelve new cases, after `MHI_DISCOVERY_WIFI_PHY`'s case, before `MHI_DIS
       put(&o, FMT("\"dev_cla\":\"duration\",\"unit_of_meas\":\"h\",\"stat_cla\":\"total_increasing\","));
       break;
     case MHI_DISCOVERY_OU_PROTECTION:
-      op_state_topic(&o, c, c->t_op_protection_text);
+      op_state_topic(&o, c, c->t_op_protection_no);  // the number, not a text
       break;
 ```
 
 Change the final call site to `tail(&o, c, row, diagnostic);`. (`"\xc2\xb0" "C"` is UTF-8 `°C` as a real two-byte escape inside the string literal, adjacent-concatenated with `"C"` before `FMT()` wraps the whole thing — do not type the six characters `\xc2\xb0` literally as text elsewhere.)
 
-- [ ] **Step 5: Run and see it pass** — `pio test -e native -f test_mhi_discovery -v` → every test passes; three `longest row` lines print (default, uitkijk, slaapkamer). **Record all three in the commit message.** If any exceeds 900 B, stop and flag it before continuing.
+- [ ] **Step 5: Run and see it pass** — `pio test -e native -f test_mhi_discovery -v` → every test passes; three `longest row` lines print (default, uitkijk, slaapkamer), each naming the row and its size. **Record all three in the commit message and in the report to the orchestrator.** Expected, measured at pre-flight against today's builder: the climate row is the longest of each context at about 701 B (default: no `swing_h_*`, `has_lr` is false), 910 B (uitkijk: 748 B today + 162 B for the two `swing_h_*` keys and the eight-name list) and 928 B (slaapkamer). **If any row exceeds 980 B, stop and flag it before continuing**; the buffer is 1024 B and every extra character in a device name, base topic or entity prefix costs about 3 B in the climate row.
 
-- [ ] **Step 6: Check the fixtures and commit**
-
-```bash
-git diff --stat -- test/fixtures/discovery   # only the 3 new files, nothing else changed
-rm -f test/fixtures/discovery_all/.gitkeep
-git add lib/mhi_pure/mhi_discovery.h lib/mhi_pure/mhi_discovery.cpp test/test_mhi_discovery/test_mhi_discovery.cpp test/fixtures/discovery/ test/fixtures/discovery_all/
-git commit -m "feat: discovery rows for VanesLR, 3D auto, the frame counters, error text and the outdoor device (#20, #19, #21)
-
-Longest rows: default <n> B, uitkijk <n> B, slaapkamer <n> B, of the 1024 B buffer.
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
-```
-
----
-
-### Task 7: Discovery on the unit — options, `src/discovery.cpp`, CI
-
-**Files:** modify `src/support.h` (after line 94), `src/discovery.cpp` (guards at line 11-28, `ctx` at line 33-64, `discovery_loop()` at line 83-106), `tools/discovery_payloads.cpp`, `platformio.ini`, `.github/workflows/ci.yml`.
-
-**Produces:** `HA_OUTDOOR_DEVICE`, `HA_OUTDOOR_ID`, `HA_OUTDOOR_NAME`, `HA_OUTDOOR_ENTITY_PREFIX`, and `HA_NAME_VANES_LR`, `_3DAUTO`, `_FRAME_ERRORS`, `_FRAME_TIMEOUTS`, `_ERROR_TEXT`, `_OU_OUTDOOR`, `_OU_CT`, `_OU_KWH`, `_OU_COMP`, `_OU_DEFROST`, `_OU_COMP_RUN`, `_OU_PROTECTION`.
-
-- [ ] **Step 1: Options in `support.h`** — after `HA_NAME_WIFI_PHY`, before `HA_RESET_REASON_TPL`:
+- [ ] **Step 6: The options the context needs** — in `src/support.h`, after `HA_NAME_WIFI_PHY`, before `HA_RESET_REASON_TPL`:
 
 ```cpp
 #ifndef HA_NAME_VANES_LR
-#define HA_NAME_VANES_LR "VanesLR"
+#define HA_NAME_VANES_LR "Vanes left/right"
 #endif
 #ifndef HA_NAME_3DAUTO
 #define HA_NAME_3DAUTO "3D auto"
@@ -1361,8 +1165,8 @@ Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 #ifndef HA_NAME_FRAME_TIMEOUTS
 #define HA_NAME_FRAME_TIMEOUTS "Frame timeouts"
 #endif
-#ifndef HA_NAME_ERROR_TEXT
-#define HA_NAME_ERROR_TEXT "Error text"
+#ifndef HA_NAME_ERROR_CODE
+#define HA_NAME_ERROR_CODE "Error code"
 #endif
 // The outdoor device (fork #19): off by default -- only one indoor unit of a
 // multi-split should publish it (spec §3). Needs HA_DISCOVERY.
@@ -1374,11 +1178,13 @@ Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 #define HA_OUTDOOR_NAME "AC outdoor unit"
 #endif
 //#define HA_OUTDOOR_ENTITY_PREFIX "ac_outdoor"       // same idea as HA_ENTITY_PREFIX, for the outdoor entities
+// The outdoor entities are named without "outdoor": the device already is
+// "AC outdoor unit", and Home Assistant shows "<device> <entity>".
 #ifndef HA_NAME_OU_OUTDOOR
-#define HA_NAME_OU_OUTDOOR "Outdoor temperature"
+#define HA_NAME_OU_OUTDOOR "Temperature"
 #endif
 #ifndef HA_NAME_OU_CT
-#define HA_NAME_OU_CT "Outdoor current"
+#define HA_NAME_OU_CT "Current"
 #endif
 #ifndef HA_NAME_OU_KWH
 #define HA_NAME_OU_KWH "Energy"
@@ -1393,11 +1199,11 @@ Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 #define HA_NAME_OU_COMP_RUN "Compressor run time"
 #endif
 #ifndef HA_NAME_OU_PROTECTION
-#define HA_NAME_OU_PROTECTION "Protection"
+#define HA_NAME_OU_PROTECTION "Protection state"
 #endif
 ```
 
-- [ ] **Step 2: `src/discovery.cpp`** — before the `#ifdef HA_DISCOVERY` line (so it fires regardless), after the `POWERON_WHEN_CHANGING_MODE` guard:
+- [ ] **Step 7: `src/discovery.cpp` fills the context** — the `HA_OUTDOOR_DEVICE` guard goes **outside** `#ifdef HA_DISCOVERY`, or it can never fire: put it between the `#include "support.h"` line (9) and the `#ifdef HA_DISCOVERY` line (11), above everything else in the file:
 
 ```cpp
 #if defined(HA_OUTDOOR_DEVICE) && !defined(HA_DISCOVERY)
@@ -1405,9 +1211,9 @@ Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 #endif
 ```
 
-Next to the existing `static_assert`s: `static_assert(starts_with(MQTT_OP_PREFIX, MQTT_PREFIX), "HA_DISCOVERY needs MQTT_OP_PREFIX to start with MQTT_PREFIX");`
+Next to the existing `static_assert`s (which are inside `#ifdef HA_DISCOVERY`, where `starts_with` is defined): `static_assert(starts_with(MQTT_OP_PREFIX, MQTT_PREFIX), "HA_DISCOVERY needs MQTT_OP_PREFIX to start with MQTT_PREFIX");`
 
-Extend the `ctx` initializer (after `.wiring_ok = MHI_WIRING_OK,`):
+Extend the `ctx` initializer (after `.wiring_ok = MHI_WIRING_OK,`), in the struct's field order:
 
 ```cpp
 #ifdef USE_EXTENDED_FRAME_SIZE
@@ -1432,13 +1238,13 @@ Extend the `ctx` initializer (after `.wiring_ok = MHI_WIRING_OK,`):
 #endif
   .op_prefix = MQTT_OP_PREFIX + (sizeof(MQTT_PREFIX) - 1),
   .t_op_outdoor = TOPIC_OUTDOOR, .t_op_ct = TOPIC_CT, .t_op_kwh = TOPIC_KWH, .t_op_comp = TOPIC_COMP,
-  .t_op_defrost = TOPIC_DEFROST, .t_op_total_comp_run = TOPIC_TOTAL_COMP_RUN, .t_op_protection_text = TOPIC_PROTECTION_TEXT,
+  .t_op_defrost = TOPIC_DEFROST, .t_op_total_comp_run = TOPIC_TOTAL_COMP_RUN, .t_op_protection_no = TOPIC_PROTECTION_NO,
   .defrost_on = PAYLOAD_OP_DEFROST_ON, .defrost_off = PAYLOAD_OP_DEFROST_OFF,
-  .t_frame_errors = TOPIC_FRAME_ERRORS, .t_frame_timeouts = TOPIC_FRAME_TIMEOUTS, .t_error_text = TOPIC_ERROR_TEXT,
+  .t_frame_errors = TOPIC_FRAME_ERRORS, .t_frame_timeouts = TOPIC_FRAME_TIMEOUTS,
   .fan = {PAYLOAD_FAN_1, PAYLOAD_FAN_2, PAYLOAD_FAN_3, PAYLOAD_FAN_4},
 ```
 
-Extend `.names` to 22 entries, appending: `HA_NAME_VANES_LR, HA_NAME_3DAUTO, HA_NAME_FRAME_ERRORS, HA_NAME_FRAME_TIMEOUTS, HA_NAME_ERROR_TEXT, HA_NAME_OU_OUTDOOR, HA_NAME_OU_CT, HA_NAME_OU_KWH, HA_NAME_OU_COMP, HA_NAME_OU_DEFROST, HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION`.
+Extend `.names` to 22 entries, appending: `HA_NAME_VANES_LR, HA_NAME_3DAUTO, HA_NAME_FRAME_ERRORS, HA_NAME_FRAME_TIMEOUTS, HA_NAME_ERROR_CODE, HA_NAME_OU_OUTDOOR, HA_NAME_OU_CT, HA_NAME_OU_KWH, HA_NAME_OU_COMP, HA_NAME_OU_DEFROST, HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION`.
 
 In `discovery_loop()`, add the enabled check right after the modes check:
 
@@ -1449,7 +1255,41 @@ In `discovery_loop()`, add the enabled check right after the modes check:
   else if (mhi_discovery_topic(row, &ctx, topic, sizeof(topic)) == 0 ||
 ```
 
-- [ ] **Step 3: `tools/discovery_payloads.cpp`** — extend the default `MhiDiscoveryCtx` and `.names` exactly as `kDefault` in Task 6 (both false, same default texts). Extend `kNameOption` to 22 entries, appending: `"--name-vanes-lr", "--name-3dauto", "--name-frame-errors", "--name-frame-timeouts", "--name-error-text", "--name-ou-outdoor", "--name-ou-ct", "--name-ou-kwh", "--name-ou-comp", "--name-ou-defrost", "--name-ou-comp-run", "--name-ou-protection"`. In the option parser, before the `else { known = false; ... }` fallback:
+- [ ] **Step 8: `tools/discovery_payloads.cpp` keeps rendering the same 13 rows** — extend its default `MhiDiscoveryCtx` and `.names` exactly as `kDefault` in Step 2 (both flags false, same default texts), extend `kNameOption` to 22 entries, appending: `"--name-vanes-lr", "--name-3dauto", "--name-frame-errors", "--name-frame-timeouts", "--name-error-code", "--name-ou-outdoor", "--name-ou-ct", "--name-ou-kwh", "--name-ou-comp", "--name-ou-defrost", "--name-ou-comp-run", "--name-ou-protection"`, and skip a disabled row in the render loop: `if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &c)) continue;` as the loop's first line. The options that switch the new flags on come in Task 7; with this task's defaults the tool renders the same rows as the firmware does without `USE_EXTENDED_FRAME_SIZE`/`HA_OUTDOOR_DEVICE`:
+
+```bash
+g++ -std=gnu++17 -Wall -Wextra -Werror -I lib/mhi_pure lib/mhi_pure/mhi_discovery.cpp tools/discovery_payloads.cpp -o .pio/discovery_payloads
+.pio/discovery_payloads | wc -l   # 13
+```
+
+- [ ] **Step 9: Build** — `pio run -e d1_mini -e ci-ha-discovery -e ci-all-options` → all succeed, no `src/` warnings. (`HA_OUTDOOR_DEVICE`'s branch of the `ctx` is first compiled in Task 7, which adds the environment for it.)
+
+- [ ] **Step 10: Check the fixtures and commit**
+
+```bash
+git status --porcelain -- test/fixtures/discovery   # the 3 new files as "??", the 10 old ones absent (unchanged)
+git diff --exit-code -- test/fixtures/discovery     # no output: not one of the ten changed
+rm -f test/fixtures/discovery_all/.gitkeep
+git add lib/mhi_pure/mhi_discovery.h lib/mhi_pure/mhi_discovery.cpp test/test_mhi_discovery/test_mhi_discovery.cpp test/fixtures/discovery/ test/fixtures/discovery_all/ src/support.h src/discovery.cpp tools/discovery_payloads.cpp
+git commit -m "feat: discovery rows for VanesLR, 3D auto, the frame counters, the error code and the outdoor device (#20, #19, #21)
+
+Longest rows: default <n> B, uitkijk <n> B, slaapkamer <n> B, of the 1024 B buffer.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
+```
+
+---
+
+### Task 7: The renderer's new options, the outdoor CI environment, the wider fixture gate
+
+**Files:** modify `tools/discovery_payloads.cpp`, `platformio.ini`, `.github/workflows/ci.yml`.
+
+**Produces:** the renderer options `--lr`, `--vanes-lr`, `--outdoor`, `--outdoor-id`, `--outdoor-name`, `--outdoor-entity-prefix`, `--fan-1`..`--fan-4`; the `ci-ha-discovery-outdoor` environment; a fixture gate covering both directories.
+
+Task 6 already carries the firmware options (`HA_OUTDOOR_*`, the twelve `HA_NAME_*`), the `ctx` fill in `src/discovery.cpp` and the renderer's default context and row skip, because those are one interface with the struct. What is left here is *reaching* the new flags: from the toolkit's `--discovery-args`, and from a build that actually compiles the `HA_OUTDOOR_DEVICE` branch.
+
+- [ ] **Step 1: `tools/discovery_payloads.cpp` options** — in the option parser, before the `else { known = false; ... }` fallback:
 
 ```cpp
     else if (strcmp(opt, "--lr") == 0) c.has_lr = strcmp(val, "1") == 0;
@@ -1464,16 +1304,16 @@ In `discovery_loop()`, add the enabled check right after the modes check:
     else if (strcmp(opt, "--fan-4") == 0) c.fan[3] = val;
 ```
 
-In the row loop, skip a disabled row: `if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &c)) continue;` as the loop's first line.
+(`--lr 1` and `--outdoor 1` switch the two flags on; the `--name-*` options, the default context and the row skip came with Task 6. An option given twice takes its last value, as the file's header says.)
 
-- [ ] **Step 4: Build the tool and check it by hand**
+- [ ] **Step 2: Build the tool and check it by hand**
 
 ```bash
 g++ -std=gnu++17 -Wall -Wextra -Werror -I lib/mhi_pure lib/mhi_pure/mhi_discovery.cpp tools/discovery_payloads.cpp -o .pio/discovery_payloads
 .pio/discovery_payloads --lr 1 --outdoor 1 --outdoor-id ac_test_outdoor | wc -l  # 22
 ```
 
-- [ ] **Step 5: `platformio.ini`** — after `[env:ci-ha-discovery]`:
+- [ ] **Step 3: `platformio.ini`** — after `[env:ci-ha-discovery]`:
 
 ```ini
 ; Home Assistant discovery with the outdoor device and the extended frame:
@@ -1493,7 +1333,7 @@ build_flags =
 
 In `[env:ci-all-options]`, add `-D HA_OUTDOOR_DEVICE=true` next to `-D HA_DISCOVERY=true`.
 
-- [ ] **Step 6: `.github/workflows/ci.yml`** — add `ci-ha-discovery-outdoor` to `matrix.environment` (after `ci-ha-discovery`). Replace the "Discovery fixtures match the code" step:
+- [ ] **Step 4: `.github/workflows/ci.yml`** — add `ci-ha-discovery-outdoor` to `matrix.environment` (after `ci-ha-discovery`). Replace the "Discovery fixtures match the code" step:
 
 ```yaml
       - name: Discovery fixtures match the code
@@ -1502,13 +1342,13 @@ In `[env:ci-all-options]`, add `-D HA_OUTDOOR_DEVICE=true` next to `-D HA_DISCOV
           test -z "$(git status --porcelain -- test/fixtures/discovery test/fixtures/discovery_all)"
 ```
 
-- [ ] **Step 7: Build** — `pio run -e d1_mini -e ci-ha-discovery -e ci-ha-discovery-outdoor -e ci-all-options` → all succeed.
+- [ ] **Step 5: Build** — `pio run -e d1_mini -e ci-ha-discovery -e ci-ha-discovery-outdoor -e ci-all-options` → all succeed. This is the first build that compiles the `HA_OUTDOOR_DEVICE` branch of `src/discovery.cpp`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/support.h src/discovery.cpp tools/discovery_payloads.cpp platformio.ini .github/workflows/ci.yml
-git commit -m "feat: HA_OUTDOOR_DEVICE and the new HA_NAME_* options, discovery_payloads.cpp options, CI coverage for both on at once (#20, #19, #21)
+git add tools/discovery_payloads.cpp platformio.ini .github/workflows/ci.yml
+git commit -m "feat: discovery_payloads options for the louvers, the fan names and the outdoor device; CI builds both on at once and gates both fixture sets (#20, #19, #21)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
@@ -1526,23 +1366,61 @@ Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 VanesLR|r/w|"Left","LeftCenter","Center","CenterRight","Right","Wide","Spot","Swing"|Vanes left/right position, as seen on the unit: 1 leftmost .. 7 spot; writing 1..7 or 8 (="Swing") still works; define `PAYLOAD_VANESLR_1`..`PAYLOAD_VANESLR_7` as `"1"`..`"7"` to keep the numeric texts <sup>4</sup>
 ```
 
-Update the `Fan` row to add: `; define PAYLOAD_FAN_1..PAYLOAD_FAN_4 for named levels (default "1".."4", unchanged on the wire)`. Add two rows after `3Dauto`:
+Update the `Fan` row to add: `; define PAYLOAD_FAN_1..PAYLOAD_FAN_4 for named levels (default "1".."4", unchanged on the wire)`. Point the existing `Errorcode` row at the new table of Step 3 — the firmware still publishes the plain number, so only the comment changes:
 
 ```
-FrameErrors|r|0 ..|invalid-signature/checksum frames since boot; saturates, never wraps <sup>7</sup>
-FrameTimeouts|r|0 ..|SCK timeouts since boot; saturates, never wraps <sup>7</sup>
-ErrorText|r|"OK" or "E&lt;n&gt;[: meaning]"|next to `Errorcode`; the meaning table is being compiled separately <sup>8</sup>
+Errorcode|r|0 .. 255|error code (unsigned int), 0 when there is none; what a code means is in [Error codes](#error-codes)
 ```
 
-Add footnotes after footnote 6:
+No new row and no new footnote here: `ErrorText` does not exist (design change of 18 Sep).
+
+- [ ] **Step 2: The counters in the program-status table** — `FrameErrors` and `FrameTimeouts` are program diagnostics, so they go in the *second* table ("Additionally, the following program status topics are available"), directly after the `FreeHeap` row and in its style:
 
 ```
-<sup>7</sup> Published with the periodic telemetry and at every MQTT connect, next to `Uptime`. What is normal for `FrameTimeouts` (boot, OTA, Wi-Fi scans) is unknown until a unit has run with it for a while.
-
-<sup>8</sup> The error table comes from MHI's service documentation for the residential RAC series; upstream never verified the byte equals the printed E-number. Unlisted codes print as plain `E<n>`.
+FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; saturates, never wraps
+FrameTimeouts|r|integer         |SCK timeouts since boot, same publishing rhythm; what is normal (boot, OTA, Wi-Fi scans) is unknown until a unit has run with it for a while
 ```
 
-- [ ] **Step 2: PROTECTION-TEXT and OpData/ retention** — in the "MQTT operating data PROTECTION-NO topic" section, add after the table: `OpData/PROTECTION-TEXT` publishes the same table's text (`Normal` for 0) whenever `OpData/PROTECTION-NO` does. Add a subsection after it:
+- [ ] **Step 3: The error-code table, next to the protection table** — insert a new section **directly before** "### MQTT operating data PROTECTION-NO topic", so the two "what this number means" tables sit together. Type that file's 23 rows verbatim from `.superpowers/sdd/2026-09-18-batch-c-louvers-outdoor-counters/error-table.md` — same codes, same texts, none of the codes it deliberately leaves out — with a `0` row added at the top, as the protection table has:
+
+```markdown
+### Error codes
+
+The `Errorcode` topic carries the AC's own byte, and `OpData/PROTECTION-NO` the compressor-protection number. The firmware publishes the numbers and nothing else: what they mean belongs to whatever reads them, e.g. a Home Assistant template sensor that maps the number to a text. That way a correction needs no flash.
+
+Value |meaning
+------|-----
+0  |no error
+1  |Wired remote control communication error
+3  |Indoor-outdoor signal transmission error
+5  |Indoor-outdoor signal transmission error
+7  |Room temperature sensor fault
+9  |Drain fault (float switch or pump)
+16 |Indoor fan motor fault
+21 |Limit switch fault (air inlet panel)
+35 |Cooling high pressure protection
+36 |Compressor overheat
+37 |Outdoor heat exchanger sensor fault
+38 |Outdoor air temperature sensor fault
+39 |Discharge pipe temperature sensor fault
+40 |Service valve closed or outdoor PCB fault
+42 |Current cut (compressor overcurrent)
+47 |Active filter voltage error
+48 |Outdoor fan motor fault
+51 |Power transistor fault
+53 |Suction temperature sensor fault
+54 |High pressure sensor fault
+57 |Refrigerant shortage or service valve closed
+58 |Current safe stop (overload)
+59 |Outdoor unit fault (compressor, PCB or wiring)
+60 |Compressor rotor lock
+
+The meanings come from MHI / Beijer Ref's *Service Support Handbook 2021.11*, "RAC INDICATION & FAULT CODES" (PDF pages 16-17) plus the RAC multisplit table for codes 53 and 54, https://mhi-hvac.co.uk/wp-content/uploads/MHI-Service-Support-Handbook-2021.11-1-1.pdf, cross-checked row for row against the *SRK-ZSP-S Service Support Handbook*, page 14. The same handbook's PAC (FD\*) and KX (VRF) tables give some of these numbers other meanings and are deliberately not used, so a code that is not in the table above is simply not known here.
+
+Note that "byte n means E n" is MHI's numbering taken at face value: nobody, upstream included, has published a captured non-zero code next to the number a unit displayed. One observation supports it: the AC reports `1` exactly when the controller stops answering it for about two minutes ([Passive Mode](#passive-mode)), and E1 is the wired remote control communication error -- which is what this controller is to the AC.
+```
+
+In the PROTECTION-NO section right below, add one sentence after its table: the same rule holds there — the topic carries the number, the table above it is the meaning, and nothing in the firmware turns one into the other. Then add a subsection after that section:
 
 ```markdown
 ## OpData/ topics and retention
@@ -1550,10 +1428,12 @@ Add footnotes after footnote 6:
 Every `OpData/` topic, like every other status topic, is published retained (`output_P()`, `src/support.cpp`). A retained topic keeps its last value on the broker across a Home Assistant restart: the entity does not go to "unknown", it shows the value it last had until the AC's next report changes it.
 ```
 
-- [ ] **Step 3: Home Assistant discovery section** — replace the entity-count sentence with:
+- [ ] **Step 4: The dead handbook links** — the `hrponline.co.uk` PDF the docs point at is gone. Replace **every** occurrence with the handbook the error table came from, `https://mhi-hvac.co.uk/wp-content/uploads/MHI-Service-Support-Handbook-2021.11-1-1.pdf`, and **drop the `#page=7` fragment**: this is a different edition and its page numbering is not the same (its RAC fault codes are on PDF pages 16-17). Checked on 18 Sep, `grep -rn hrponline --include="*.md" .` finds exactly one, in the operating-data section (line 372): "You can find some hints related to the meaning of the operating data [here](…)"; leave the second link in that sentence, to MHI-AC-Trace, alone. If the working tree turns out to carry another one (an error-code link, in this file or another `.md`), replace that too. Check afterwards: `grep -rn hrponline --include="*.md" .` must print nothing.
+
+- [ ] **Step 5: Home Assistant discovery section** — replace the entity-count sentence with:
 
 ```markdown
-Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`, and with `USE_EXTENDED_FRAME_SIZE` the left/right louvers as swing_horizontal mode), a select for the vane position, a switch for `Silent`, two problem binary sensors, seven diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`, `FrameErrors`, `FrameTimeouts`) and a diagnostic `ErrorText` sensor, all under one device. With `USE_EXTENDED_FRAME_SIZE`, also a select for the left/right louvers and a switch for `3Dauto`. With `HA_OUTDOOR_DEVICE`, seven more entities for the shared outdoor unit's own device (temperature, current, energy, compressor frequency, defrost, compressor run time, protection text), linked with `via_device`, reading the publishing unit's own `OpData/` topics -- with two indoor units sharing one outdoor unit, only one of them should have `HA_OUTDOOR_DEVICE` on. 13 entities with neither option, up to 22 with both. Availability comes from `connected`.
+Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`, and with `USE_EXTENDED_FRAME_SIZE` the left/right louvers as swing_horizontal mode), a select for the vane position, a switch for `Silent`, two problem binary sensors and eight diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`, `FrameErrors`, `FrameTimeouts` and the `Errorcode` number), all under one device. With `USE_EXTENDED_FRAME_SIZE`, also a select for the left/right louvers and a switch for `3Dauto`. With `HA_OUTDOOR_DEVICE`, seven more entities for the shared outdoor unit's own device (temperature, current, energy, compressor frequency, defrost, compressor run time, compressor-protection number), linked with `via_device`, reading the publishing unit's own `OpData/` topics -- with two indoor units sharing one outdoor unit, only one of them should have `HA_OUTDOOR_DEVICE` on. 13 entities with neither option, up to 22 with both. Availability comes from `connected`.
 ```
 
 After `HA_RESET_REASON_TPL` in the code block, add:
@@ -1563,20 +1443,20 @@ After `HA_RESET_REASON_TPL` in the code block, add:
 #define HA_OUTDOOR_ID HA_ID_PREFIX "_outdoor"
 #define HA_OUTDOOR_NAME "AC outdoor unit"
 //#define HA_OUTDOOR_ENTITY_PREFIX "ac_outdoor"
-#define HA_NAME_VANES_LR "VanesLR"  // entity names; likewise HA_NAME_3DAUTO, _FRAME_ERRORS, _FRAME_TIMEOUTS, _ERROR_TEXT, _OU_OUTDOOR, _OU_CT, _OU_KWH, _OU_COMP, _OU_DEFROST, _OU_COMP_RUN, _OU_PROTECTION
+#define HA_NAME_VANES_LR "Vanes left/right"  // entity names; likewise HA_NAME_3DAUTO, _FRAME_ERRORS, _FRAME_TIMEOUTS, _ERROR_CODE, _OU_OUTDOOR, _OU_CT, _OU_KWH, _OU_COMP, _OU_DEFROST, _OU_COMP_RUN, _OU_PROTECTION
 ```
 
-- [ ] **Step 4: `Version.md`** — add a bullet under "Adaptions since version 2.8":
+- [ ] **Step 6: `Version.md`** — add a bullet under "Adaptions since version 2.8":
 
 ```markdown
-- left/right louvers, 3D auto, the outdoor device, frame counters, fan names and error/protection text (#20, #19, #21): `set_vanesLR()`/`set_3Dauto()` no longer step on each other's set flag; `VanesLR` publishes named positions (`Left`..`Spot`, `Swing`); with `HA_OUTDOOR_DEVICE` the shared outdoor unit gets its own Home Assistant device, linked by `via_device`, reading the publishing unit's own `OpData/` topics; new `FrameErrors`/`FrameTimeouts` counters; `Fan` accepts named levels via `PAYLOAD_FAN_1`..`_4` (default `"1"`..`"4"`, unchanged on the wire); new `ErrorText` and `OpData/PROTECTION-TEXT`, the error table shipped as a placeholder pending research
+- left/right louvers, 3D auto, the outdoor device, frame counters, fan names and error/protection text (#20, #19, #21): `set_vanesLR()`/`set_3Dauto()` no longer step on each other's set flag; `VanesLR` publishes named positions (`Left`..`Spot`, `Swing`); with `HA_OUTDOOR_DEVICE` the shared outdoor unit gets its own Home Assistant device, linked by `via_device`, reading the publishing unit's own `OpData/` topics; new `FrameErrors`/`FrameTimeouts` counters; `Fan` accepts named levels via `PAYLOAD_FAN_1`..`_4` (default `"1"`..`"4"`, unchanged on the wire); Home Assistant sensors for the `Errorcode` and `OpData/PROTECTION-NO` numbers, whose meanings are now tabulated in `SW-Configuration.md` (the firmware publishes numbers only)
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add SW-Configuration.md Version.md
-git commit -m "docs: batch C topics, options and OpData/ retention (#20, #19, #21)
+git commit -m "docs: batch C topics and options, the RAC error-code table, OpData/ retention, dead handbook link (#20, #19, #21)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
@@ -1604,5 +1484,6 @@ The toolkit outside the repo (`~/.config/hass/tools/mhi/`) and flashing Uitkijk/
 - `FrameTimeouts`' normal rate is unknown until the soak runs; do not treat a non-zero count as a fault before it sets a baseline.
 - The two real units keep `Fan`'s numeric texts (F6, decided 18 Sep): do not change the toolkit's fan names in the same step as this flash without also updating hass-config's automations, since Home Assistant rejects `climate.set_fan_mode` outside `fan_modes`.
 - `HA_OUTDOOR_DEVICE` must be on for at most one of the two units once both share the outdoor unit; two publishers would collide on the same `uniq_id`s.
-- Discovery buffer headroom: Task 6 records the longest row for all three contexts; if the real units' Dutch entity names run longer than these fixtures, re-check headroom against the 1024 B buffer before flashing.
+- Discovery buffer headroom: Task 6 records the longest row for all three contexts. The units now publish the repo's own English names, so the fixtures are the real thing; re-check the headroom against the 1024 B buffer only if a unit's config overrides a name with a longer one.
 - Flash budget: Task 9 reports the new sizes against the 349104 B baseline; investigate a disproportionate jump before shipping.
+- No `ErrorText` topic exists (design change of 18 Sep): the new `Error code` and `Protection state` entities show the AC's numbers. If Home Assistant should show words, hass-config maps them from `SW-Configuration.md`'s table — and the toolkit's `post-flash-check.sh` must not look for `ErrorText`.
