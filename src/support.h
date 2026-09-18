@@ -92,6 +92,54 @@
 #ifndef HA_NAME_WIFI_PHY
 #define HA_NAME_WIFI_PHY "Wi-Fi PHY"
 #endif
+#ifndef HA_NAME_VANES_LR
+#define HA_NAME_VANES_LR "Vanes left/right"
+#endif
+#ifndef HA_NAME_3DAUTO
+#define HA_NAME_3DAUTO "3D auto"
+#endif
+#ifndef HA_NAME_FRAME_ERRORS
+#define HA_NAME_FRAME_ERRORS "Frame errors"
+#endif
+#ifndef HA_NAME_FRAME_TIMEOUTS
+#define HA_NAME_FRAME_TIMEOUTS "Frame timeouts"
+#endif
+#ifndef HA_NAME_ERROR_CODE
+#define HA_NAME_ERROR_CODE "Error code"
+#endif
+// The outdoor device (fork #19): off by default -- only one indoor unit of a
+// multi-split should publish it (spec §3). Needs HA_DISCOVERY.
+//#define HA_OUTDOOR_DEVICE true
+#ifndef HA_OUTDOOR_ID
+#define HA_OUTDOOR_ID HA_ID_PREFIX "_outdoor"
+#endif
+#ifndef HA_OUTDOOR_NAME
+#define HA_OUTDOOR_NAME "AC outdoor unit"
+#endif
+//#define HA_OUTDOOR_ENTITY_PREFIX "ac_outdoor"       // same idea as HA_ENTITY_PREFIX, for the outdoor entities
+// The outdoor entities are named without "outdoor": the device already is
+// "AC outdoor unit", and Home Assistant shows "<device> <entity>".
+#ifndef HA_NAME_OU_OUTDOOR
+#define HA_NAME_OU_OUTDOOR "Temperature"
+#endif
+#ifndef HA_NAME_OU_CT
+#define HA_NAME_OU_CT "Current"
+#endif
+#ifndef HA_NAME_OU_KWH
+#define HA_NAME_OU_KWH "Energy"
+#endif
+#ifndef HA_NAME_OU_COMP
+#define HA_NAME_OU_COMP "Compressor frequency"
+#endif
+#ifndef HA_NAME_OU_DEFROST
+#define HA_NAME_OU_DEFROST "Defrost"
+#endif
+#ifndef HA_NAME_OU_COMP_RUN
+#define HA_NAME_OU_COMP_RUN "Compressor run time"
+#endif
+#ifndef HA_NAME_OU_PROTECTION
+#define HA_NAME_OU_PROTECTION "Protection state"
+#endif
 //#define HA_RESET_REASON_TPL "{{ value }}"         // when defined, the reset-reason sensor's value_template (a Jinja template, e.g. a translation table)
 
 #ifndef TELEMETRY_PERIOD

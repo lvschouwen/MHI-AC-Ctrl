@@ -1,0 +1,2 @@
+homeassistant/switch/ac_slaapkamer_3d_auto/config
+{"~":"airco/slaapkamer","name":"3D auto","uniq_id":"ac_slaapkamer_3d_auto","default_entity_id":"switch.ac_slaapkamer_3d_auto","stat_t":"~/3Dauto","cmd_t":"~/set/3Dauto","pl_on":"On","pl_off":"Off","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

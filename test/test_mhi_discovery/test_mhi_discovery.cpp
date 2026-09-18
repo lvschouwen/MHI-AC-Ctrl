@@ -27,7 +27,9 @@ static const MhiDiscoveryCtx kDefault = {
   .climate_id = "MHI-AC-Ctrl",
   .id_prefix = "MHI-AC-Ctrl",
   .entity_prefix = NULL,
-  .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY"},
+  .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
+            "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
+            "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -38,6 +40,18 @@ static const MhiDiscoveryCtx kDefault = {
   .connected_on = "1", .connected_off = "0",
   .silent_on = "On", .silent_off = "Off",
   .wiring_ok = "o.k.",
+  .has_lr = false,
+  .t_vaneslr = "VanesLR", .t_3dauto = "3Dauto",
+  .vanes_lr = {"Left", "LeftCenter", "Center", "CenterRight", "Right", "Wide", "Spot", "Swing"},
+  .threedauto_on = "On", .threedauto_off = "Off",
+  .has_outdoor = false,
+  .outdoor_id = "MHI-AC-Ctrl_outdoor", .outdoor_name = "AC outdoor unit", .outdoor_entity_prefix = NULL,
+  .op_prefix = "OpData/",
+  .t_op_outdoor = "OUTDOOR", .t_op_ct = "CT", .t_op_kwh = "KWH", .t_op_comp = "COMP", .t_op_defrost = "DEFROST",
+  .t_op_total_comp_run = "TOTAL-COMP-RUN", .t_op_protection_no = "PROTECTION-NO",
+  .defrost_on = "On", .defrost_off = "Off",
+  .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
+  .fan = {"1", "2", "3", "4"},
 };
 
 // Lucas's Uitkijk: the names hass-config uses, a template, an entity prefix,
@@ -52,7 +66,9 @@ static const MhiDiscoveryCtx kUitkijk = {
   .climate_id = "AC_Uitkijk",
   .id_prefix = "ac_uitkijk",
   .entity_prefix = "ac_uitkijk",
-  .names = {NULL, "lamellen", "stil", "storing", "bedrading", "tijd sinds opstart", "vrij geheugen", "wifi-signaal", "herstartreden", "wifi-standaard"},
+  .names = {NULL, "lamellen", "stil", "storing", "bedrading", "tijd sinds opstart", "vrij geheugen", "wifi-signaal", "herstartreden", "wifi-standaard",
+            "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
+            "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state"},
   .reset_reason_tpl = "{{ {'Power On': 'stroom ingeschakeld', 'Software/System restart': 'software-herstart (update of reset)', 'Hardware Watchdog': 'hardware-watchdog', 'Software Watchdog': 'software-watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'wakker uit diepe slaap', 'External System': 'externe reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -63,10 +79,41 @@ static const MhiDiscoveryCtx kUitkijk = {
   .connected_on = "1", .connected_off = "0",
   .silent_on = "On", .silent_off = "Off",
   .wiring_ok = "o.k.",
+  .has_lr = true,
+  .t_vaneslr = "VanesLR", .t_3dauto = "3Dauto",
+  .vanes_lr = {"Left", "LeftCenter", "Center", "CenterRight", "Right", "Wide", "Spot", "Swing"},
+  .threedauto_on = "On", .threedauto_off = "Off",
+  .has_outdoor = false,
+  .outdoor_id = "ac_uitkijk_outdoor", .outdoor_name = "AC outdoor unit", .outdoor_entity_prefix = NULL,
+  .op_prefix = "OpData/",
+  .t_op_outdoor = "OUTDOOR", .t_op_ct = "CT", .t_op_kwh = "KWH", .t_op_comp = "COMP", .t_op_defrost = "DEFROST",
+  .t_op_total_comp_run = "TOTAL-COMP-RUN", .t_op_protection_no = "PROTECTION-NO",
+  .defrost_on = "On", .defrost_off = "Off",
+  .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
+  .fan = {"1", "2", "3", "4"},
 };
 
+// Slaapkamer: has_lr and the outdoor device both on (spec §3).
+static MhiDiscoveryCtx make_slaapkamer() {
+  MhiDiscoveryCtx c = kUitkijk;
+  c.base = "airco/slaapkamer";
+  c.hostname = "airco-slaapkamer";
+  c.device_name = "AC Slaapkamer";
+  c.version = "batchc-fixture";
+  c.climate_id = "AC_Slaapkamer";
+  c.id_prefix = "ac_slaapkamer";
+  c.entity_prefix = "ac_slaapkamer";
+  c.has_outdoor = true;
+  c.outdoor_id = "ac_slaapkamer_outdoor";
+  c.outdoor_entity_prefix = "ac_outdoor";
+  return c;
+}
+static const MhiDiscoveryCtx kSlaapkamer = make_slaapkamer();
+
 static const char* const kFixtureName[MHI_DISCOVERY_ROWS] = {
-  "climate", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy"};
+  "climate", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
+  "vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_code",
+  "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection"};
 
 // Balanced braces and brackets outside strings, every string closed, no
 // printf conversion left over and no NULL argument printed.
@@ -135,6 +182,7 @@ static void every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
   size_t longest = 0;
   int longest_row = -1;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
+    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, ctx)) continue;
     char out[MHI_DISCOVERY_BUF];
     const size_t n = mhi_discovery_build((MhiDiscoveryRow)r, ctx, out, sizeof(out));
     char msg[64];
@@ -145,7 +193,14 @@ static void every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"uniq_id\":\""), msg);
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"avty_t\":\"~/connected\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\""), msg);
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"dev\":{\"ids\":[\""), msg);
-    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"MHI-AC-Ctrl\",\"sw\":\""), msg);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\""), msg);
+    // The blanket model/version check above can no longer name one model: the
+    // outdoor rows carry their own device. Each kind keeps its own full check,
+    // so nothing the ten-row version asserted is lost.
+    if (r >= MHI_DISCOVERY_OU_OUTDOOR)
+      TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"outdoor unit\",\"via_device\":\""), msg);
+    else
+      TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"MHI-AC-Ctrl\",\"sw\":\""), msg);
     if (n > longest) { longest = n; longest_row = r; }
   }
   printf("  %s: longest row %d, %u of %u bytes\n", label, longest_row, (unsigned)longest, (unsigned)MHI_DISCOVERY_BUF);
@@ -153,6 +208,7 @@ static void every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
 
 static void test_every_default_row_fits(void) { every_row_fits(&kDefault, "default"); }
 static void test_every_uitkijk_row_fits(void) { every_row_fits(&kUitkijk, "uitkijk"); }
+static void test_every_slaapkamer_row_fits(void) { every_row_fits(&kSlaapkamer, "slaapkamer"); }
 
 static void test_a_payload_that_does_not_fit_is_refused(void) {
   char out[200];
@@ -274,10 +330,107 @@ static void test_a_name_that_slugs_to_nothing_fails_the_row(void) {
   TEST_ASSERT_EQUAL_STRING("", out);
 }
 
+// --- batch C: the louvers, the counters, the error code, the outdoor device ---
+
+static void test_row_enabled_gates_vaneslr_3dauto_and_outdoor(void) {
+  TEST_ASSERT_FALSE(mhi_discovery_row_enabled(MHI_DISCOVERY_VANES_LR, &kDefault));
+  TEST_ASSERT_FALSE(mhi_discovery_row_enabled(MHI_DISCOVERY_3DAUTO, &kDefault));
+  TEST_ASSERT_FALSE(mhi_discovery_row_enabled(MHI_DISCOVERY_OU_PROTECTION, &kUitkijk));  // has_lr, not has_outdoor
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_VANES_LR, &kUitkijk));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_OU_PROTECTION, &kSlaapkamer));
+  for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
+    if (r == MHI_DISCOVERY_VANES_LR || r == MHI_DISCOVERY_3DAUTO || r >= MHI_DISCOVERY_OU_OUTDOOR) continue;
+    TEST_ASSERT_TRUE(mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault));
+  }
+}
+
+static void test_the_climate_gains_swing_horizontal_with_has_lr(void) {
+  char out[MHI_DISCOVERY_BUF];
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_CLIMATE, &kDefault, out, sizeof(out)) > 0);
+  TEST_ASSERT_NULL(strstr(out, "swing_h"));  // kDefault: has_lr false
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_CLIMATE, &kUitkijk, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"swing_h_mode_cmd_t\":\"~/set/VanesLR\",\"swing_h_mode_stat_t\":\"~/VanesLR\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"swing_h_modes\":[\"Left\",\"LeftCenter\",\"Center\",\"CenterRight\",\"Right\",\"Wide\",\"Spot\",\"Swing\"],"));
+}
+
+static void test_the_vaneslr_select_and_3dauto_switch(void) {
+  char out[MHI_DISCOVERY_BUF];
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_VANES_LR, &kUitkijk, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_uitkijk_vanes_lr\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/VanesLR\",\"cmd_t\":\"~/set/VanesLR\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"ops\":[\"Left\",\"LeftCenter\",\"Center\",\"CenterRight\",\"Right\",\"Wide\",\"Spot\",\"Swing\"],"));
+  TEST_ASSERT_NULL(strstr(out, "ent_cat"));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_3DAUTO, &kUitkijk, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_uitkijk_3d_auto\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/3Dauto\",\"cmd_t\":\"~/set/3Dauto\",\"pl_on\":\"On\",\"pl_off\":\"Off\","));
+  TEST_ASSERT_NULL(strstr(out, "ent_cat"));
+}
+
+static void test_frame_counters_and_error_code_are_diagnostic(void) {
+  char out[MHI_DISCOVERY_BUF];
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_FRAME_ERRORS, &kDefault, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/FrameErrors\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_FRAME_TIMEOUTS, &kDefault, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/FrameTimeouts\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_ERROR_CODE, &kDefault, out, sizeof(out)) > 0);
+  // The AC's own number, on the topic the Problem binary sensor also reads.
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Errorcode\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_NULL(strstr(out, "stat_cla"));  // a code, not a measurement
+}
+
+static void test_outdoor_rows_carry_their_own_device(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  // The topic carries the uniq_id (mhi_discovery.h): keyed by the outdoor
+  // device, not by the unit that publishes it, so moving the publisher to the
+  // other unit reuses this topic instead of orphaning it with a duplicate
+  // uniq_id.
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_OU_OUTDOOR, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_outdoor_outdoor_temp/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_OUTDOOR, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_outdoor_outdoor_temp\","));
+  TEST_ASSERT_NOT_NULL(strstr(
+      out, "\"dev\":{\"ids\":[\"ac_slaapkamer_outdoor\"],\"name\":\"AC outdoor unit\",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"outdoor unit\",\"via_device\":\"airco-slaapkamer\"}}"));
+  TEST_ASSERT_NULL(strstr(out, "\"sw\":"));  // the outdoor device has no firmware version of its own
+  // The device is already called "AC outdoor unit", so the entity name is just "Temperature".
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"default_entity_id\":\"sensor.ac_outdoor_temperature\","));
+}
+
+static void test_outdoor_rows_read_the_units_own_opdata_topics(void) {
+  char out[MHI_DISCOVERY_BUF];
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_OUTDOOR, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/OUTDOOR\",\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_KWH, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/KWH\",\"dev_cla\":\"energy\",\"unit_of_meas\":\"kWh\",\"stat_cla\":\"total_increasing\","));
+  TEST_ASSERT_NULL(strstr(out, "ent_cat"));  // OU_KWH is not diagnostic
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_COMP, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/COMP\",\"dev_cla\":\"frequency\",\"unit_of_meas\":\"Hz\",\"stat_cla\":\"measurement\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_DEFROST, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/DEFROST\",\"pl_on\":\"On\",\"pl_off\":\"Off\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_COMP_RUN, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/TOTAL-COMP-RUN\",\"dev_cla\":\"duration\",\"unit_of_meas\":\"h\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_PROTECTION, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/PROTECTION-NO\",\"ent_cat\":\"diagnostic\","));
+}
+
 // --- the committed reference payloads ---------------------------------------
+
+static void test_second_fixture_set_is_written(void) {
+  for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
+    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kSlaapkamer)) continue;
+    char path[96], topic[MHI_DISCOVERY_TOPIC_MAX], payload[MHI_DISCOVERY_BUF];
+    snprintf(path, sizeof(path), "test/fixtures/discovery_all/%s.txt", kFixtureName[r]);
+    TEST_ASSERT_TRUE(mhi_discovery_topic((MhiDiscoveryRow)r, &kSlaapkamer, topic, sizeof(topic)) > 0);
+    TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &kSlaapkamer, payload, sizeof(payload)) > 0);
+    FILE* f = fopen(path, "w");
+    TEST_ASSERT_NOT_NULL_MESSAGE(f, "cannot write test/fixtures/discovery_all/: run pio test from the project root");
+    fprintf(f, "%s\n%s\n", topic, payload);
+    fclose(f);
+  }
+}
 
 static void test_reference_fixtures_are_written(void) {
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
+    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) continue;
     char path[80], topic[MHI_DISCOVERY_TOPIC_MAX], payload[MHI_DISCOVERY_BUF];
     snprintf(path, sizeof(path), "test/fixtures/discovery/%s.txt", kFixtureName[r]);
     TEST_ASSERT_TRUE(mhi_discovery_topic((MhiDiscoveryRow)r, &kDefault, topic, sizeof(topic)) > 0);
@@ -297,6 +450,7 @@ int main(void) {
   RUN_TEST(test_a_topic_that_does_not_fit_is_refused);
   RUN_TEST(test_every_default_row_fits);
   RUN_TEST(test_every_uitkijk_row_fits);
+  RUN_TEST(test_every_slaapkamer_row_fits);
   RUN_TEST(test_a_payload_that_does_not_fit_is_refused);
   RUN_TEST(test_the_climate_is_the_device_and_lists_come_from_the_payload_texts);
   RUN_TEST(test_the_vanes_select_offers_the_names_and_the_unknown_state);
@@ -308,6 +462,13 @@ int main(void) {
   RUN_TEST(test_slug_is_home_assistants_own_derivation_of_a_name);
   RUN_TEST(test_slug_refuses_an_empty_name_or_a_small_buffer);
   RUN_TEST(test_a_name_that_slugs_to_nothing_fails_the_row);
+  RUN_TEST(test_row_enabled_gates_vaneslr_3dauto_and_outdoor);
+  RUN_TEST(test_the_climate_gains_swing_horizontal_with_has_lr);
+  RUN_TEST(test_the_vaneslr_select_and_3dauto_switch);
+  RUN_TEST(test_frame_counters_and_error_code_are_diagnostic);
+  RUN_TEST(test_outdoor_rows_carry_their_own_device);
+  RUN_TEST(test_outdoor_rows_read_the_units_own_opdata_topics);
   RUN_TEST(test_reference_fixtures_are_written);
+  RUN_TEST(test_second_fixture_set_is_written);
   return UNITY_END();
 }

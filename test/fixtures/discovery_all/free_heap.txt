@@ -1,0 +1,2 @@
+homeassistant/sensor/ac_slaapkamer_free_heap/config
+{"~":"airco/slaapkamer","name":"vrij geheugen","uniq_id":"ac_slaapkamer_free_heap","default_entity_id":"sensor.ac_slaapkamer_vrij_geheugen","stat_t":"~/FreeHeap","dev_cla":"data_size","unit_of_meas":"B","stat_cla":"measurement","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

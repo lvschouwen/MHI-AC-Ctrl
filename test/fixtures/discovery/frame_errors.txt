@@ -1,0 +1,2 @@
+homeassistant/sensor/MHI-AC-Ctrl_frame_errors/config
+{"~":"MHI-AC-Ctrl","name":"Frame errors","uniq_id":"MHI-AC-Ctrl_frame_errors","stat_t":"~/FrameErrors","stat_cla":"total_increasing","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["MHI-AC-Ctrl"],"name":"MHI-AC-Ctrl","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"fixture"}}

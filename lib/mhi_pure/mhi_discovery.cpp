@@ -18,9 +18,13 @@
 #endif
 
 static const char* const kComponent[MHI_DISCOVERY_ROWS] = {
-  "climate", "select", "switch", "binary_sensor", "binary_sensor", "sensor", "sensor", "sensor", "sensor", "sensor"};
+  "climate", "select", "switch", "binary_sensor", "binary_sensor", "sensor", "sensor", "sensor", "sensor", "sensor",
+  "select", "switch", "sensor", "sensor", "sensor",
+  "sensor", "sensor", "sensor", "sensor", "binary_sensor", "sensor", "sensor"};
 static const char* const kSuffix[MHI_DISCOVERY_ROWS] = {
-  "", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy"};
+  "", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
+  "vanes_lr", "3d_auto", "frame_errors", "frame_timeouts", "error_code",
+  "outdoor_temp", "current", "energy", "comp_freq", "defrost", "comp_run", "protection"};
 static const char* const kHaModes[6] = {"off", "auto", "dry", "cool", "fan_only", "heat"};
 
 struct Out {
@@ -74,6 +78,10 @@ static void put_list(Out* o, const char* key, const char* const* items, size_t c
   put(o, FMT("],"));
 }
 
+// The rows of the outdoor device (fork #19): their own dev block, and both the
+// uniq_id and the config topic keyed by outdoor_id instead of id_prefix.
+static bool is_outdoor_row(MhiDiscoveryRow row) { return row >= MHI_DISCOVERY_OU_OUTDOOR; }
+
 static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
   put(o, FMT("{\"~\":\"%s\","), c->base);
   if (row == MHI_DISCOVERY_CLIMATE) {
@@ -82,30 +90,47 @@ static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
     if (c->entity_prefix) put(o, FMT("\"default_entity_id\":\"climate.%s\","), c->entity_prefix);
     return;
   }
+  const char* id_prefix = is_outdoor_row(row) ? c->outdoor_id : c->id_prefix;
+  const char* entity_prefix = is_outdoor_row(row) ? c->outdoor_entity_prefix : c->entity_prefix;
   put(o, FMT("\"name\":"));
   put_str(o, c->names[row]);
-  put(o, FMT(",\"uniq_id\":\"%s_%s\","), c->id_prefix, kSuffix[row]);
-  if (c->entity_prefix) {
+  put(o, FMT(",\"uniq_id\":\"%s_%s\","), id_prefix, kSuffix[row]);
+  if (entity_prefix) {
     // The ID HA derives itself for a device without an area, pinned.
     char slug[48];
     if (mhi_discovery_slug(c->names[row], slug, sizeof(slug)) == 0) {
       o->overflow = true;
       return;
     }
-    put(o, FMT("\"default_entity_id\":\"%s.%s_%s\","), kComponent[row], c->entity_prefix, slug);
+    put(o, FMT("\"default_entity_id\":\"%s.%s_%s\","), kComponent[row], entity_prefix, slug);
   }
 }
 
-static void tail(Out* o, const MhiDiscoveryCtx* c, bool diagnostic) {
+static void tail(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row, bool diagnostic) {
   if (diagnostic) put(o, FMT("\"ent_cat\":\"diagnostic\","));
-  put(o, FMT("\"avty_t\":\"~/%s\",\"pl_avail\":\"%s\",\"pl_not_avail\":\"%s\",\"dev\":{\"ids\":[\"%s\"],\"name\":"),
-      c->t_connected, c->connected_on, c->connected_off, c->hostname);
-  put_str(o, c->device_name);
-  put(o, FMT(",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"MHI-AC-Ctrl\",\"sw\":\"%s\"}}"), c->version);
+  put(o, FMT("\"avty_t\":\"~/%s\",\"pl_avail\":\"%s\",\"pl_not_avail\":\"%s\",\"dev\":{\"ids\":[\""),
+      c->t_connected, c->connected_on, c->connected_off);
+  if (is_outdoor_row(row)) {
+    // The outdoor unit is its own HA device, seen through the unit that polls
+    // it (via_device) and available while that unit is: no sw of its own.
+    put(o, FMT("%s\"],\"name\":"), c->outdoor_id);
+    put_str(o, c->outdoor_name);
+    put(o, FMT(",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"outdoor unit\",\"via_device\":\"%s\"}}"), c->hostname);
+  }
+  else {
+    put(o, FMT("%s\"],\"name\":"), c->hostname);
+    put_str(o, c->device_name);
+    put(o, FMT(",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"MHI-AC-Ctrl\",\"sw\":\"%s\"}}"), c->version);
+  }
 }
 
 static void state_topic(Out* o, const char* topic) {
   put(o, FMT("\"stat_t\":\"~/%s\","), topic);
+}
+
+// An operating-data topic: the unit's own MQTT_OP_PREFIX, below the same "~".
+static void op_state_topic(Out* o, const MhiDiscoveryCtx* c, const char* topic) {
+  put(o, FMT("\"stat_t\":\"~/%s%s\","), c->op_prefix, topic);
 }
 
 size_t mhi_discovery_slug(const char* name, char* out, size_t out_len) {
@@ -141,13 +166,20 @@ bool mhi_discovery_modes_valid(const MhiDiscoveryCtx* c) {
   return true;
 }
 
+bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* c) {
+  if (row == MHI_DISCOVERY_VANES_LR || row == MHI_DISCOVERY_3DAUTO) return c->has_lr;
+  if (is_outdoor_row(row)) return c->has_outdoor;
+  return true;
+}
+
 size_t mhi_discovery_topic(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* out, size_t out_len) {
   if (!out || out_len == 0 || row >= MHI_DISCOVERY_ROWS) return 0;
   int r;
   if (row == MHI_DISCOVERY_CLIMATE)
     r = snprintf(out, out_len, "%s/%s/%s/config", c->discovery_prefix, kComponent[row], c->climate_id);
   else
-    r = snprintf(out, out_len, "%s/%s/%s_%s/config", c->discovery_prefix, kComponent[row], c->id_prefix, kSuffix[row]);
+    r = snprintf(out, out_len, "%s/%s/%s_%s/config", c->discovery_prefix, kComponent[row],
+                 is_outdoor_row(row) ? c->outdoor_id : c->id_prefix, kSuffix[row]);
   if (r < 0 || (size_t)r >= out_len) {
     out[0] = '\0';
     return 0;
@@ -164,7 +196,7 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
   switch (row) {
     case MHI_DISCOVERY_CLIMATE: {
       diagnostic = false;
-      const char* fan_modes[5] = {"1", "2", "3", "4", c->fan_auto};
+      const char* fan_modes[5] = {c->fan[0], c->fan[1], c->fan[2], c->fan[3], c->fan_auto};
       put(&o, FMT("\"mode_cmd_t\":\"~/%s%s\",\"mode_stat_t\":\"~/%s\",\"temp_cmd_t\":\"~/%s%s\",\"temp_stat_t\":\"~/%s\","),
           c->set_prefix, c->t_mode, c->t_mode, c->set_prefix, c->t_tsetpoint, c->t_tsetpoint);
       put(&o, FMT("\"fan_mode_cmd_t\":\"~/%s%s\",\"fan_mode_stat_t\":\"~/%s\",\"swing_mode_cmd_t\":\"~/%s%s\",\"swing_mode_stat_t\":\"~/%s\","),
@@ -173,6 +205,11 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
       put_list(&o, "modes", c->modes, 6);
       put_list(&o, "fan_modes", fan_modes, 5);
       put_list(&o, "swing_modes", c->vanes, 6);
+      if (c->has_lr) {
+        put(&o, FMT("\"swing_h_mode_cmd_t\":\"~/%s%s\",\"swing_h_mode_stat_t\":\"~/%s\","),
+            c->set_prefix, c->t_vaneslr, c->t_vaneslr);
+        put_list(&o, "swing_h_modes", c->vanes_lr, 8);
+      }
       put(&o, FMT("\"min_temp\":18,\"max_temp\":30,\"temp_step\":0.5,"));
       break;
     }
@@ -220,11 +257,63 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
       state_topic(&o, c->t_wifi_phy);
       put(&o, FMT("\"ic\":\"mdi:wifi-cog\","));
       break;
+    case MHI_DISCOVERY_VANES_LR:
+      diagnostic = false;
+      put(&o, FMT("\"stat_t\":\"~/%s\",\"cmd_t\":\"~/%s%s\","), c->t_vaneslr, c->set_prefix, c->t_vaneslr);
+      put_list(&o, "ops", c->vanes_lr, 8);
+      break;
+    case MHI_DISCOVERY_3DAUTO:
+      diagnostic = false;
+      put(&o, FMT("\"stat_t\":\"~/%s\",\"cmd_t\":\"~/%s%s\",\"pl_on\":\"%s\",\"pl_off\":\"%s\","),
+          c->t_3dauto, c->set_prefix, c->t_3dauto, c->threedauto_on, c->threedauto_off);
+      break;
+    case MHI_DISCOVERY_FRAME_ERRORS:
+      state_topic(&o, c->t_frame_errors);
+      put(&o, FMT("\"stat_cla\":\"total_increasing\","));
+      break;
+    case MHI_DISCOVERY_FRAME_TIMEOUTS:
+      state_topic(&o, c->t_frame_timeouts);
+      put(&o, FMT("\"stat_cla\":\"total_increasing\","));
+      break;
+    case MHI_DISCOVERY_ERROR_CODE:
+      // The AC's own number; SW-Configuration.md and hass-config carry the meanings.
+      state_topic(&o, c->t_errorcode);
+      break;
+    case MHI_DISCOVERY_OU_OUTDOOR:
+      diagnostic = false;
+      op_state_topic(&o, c, c->t_op_outdoor);
+      put(&o, FMT("\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\","));
+      break;
+    case MHI_DISCOVERY_OU_CT:
+      diagnostic = false;
+      op_state_topic(&o, c, c->t_op_ct);
+      put(&o, FMT("\"dev_cla\":\"current\",\"unit_of_meas\":\"A\",\"stat_cla\":\"measurement\","));
+      break;
+    case MHI_DISCOVERY_OU_KWH:
+      diagnostic = false;
+      op_state_topic(&o, c, c->t_op_kwh);
+      put(&o, FMT("\"dev_cla\":\"energy\",\"unit_of_meas\":\"kWh\",\"stat_cla\":\"total_increasing\","));
+      break;
+    case MHI_DISCOVERY_OU_COMP:
+      op_state_topic(&o, c, c->t_op_comp);
+      put(&o, FMT("\"dev_cla\":\"frequency\",\"unit_of_meas\":\"Hz\",\"stat_cla\":\"measurement\","));
+      break;
+    case MHI_DISCOVERY_OU_DEFROST:
+      op_state_topic(&o, c, c->t_op_defrost);
+      put(&o, FMT("\"pl_on\":\"%s\",\"pl_off\":\"%s\","), c->defrost_on, c->defrost_off);
+      break;
+    case MHI_DISCOVERY_OU_COMP_RUN:
+      op_state_topic(&o, c, c->t_op_total_comp_run);
+      put(&o, FMT("\"dev_cla\":\"duration\",\"unit_of_meas\":\"h\",\"stat_cla\":\"total_increasing\","));
+      break;
+    case MHI_DISCOVERY_OU_PROTECTION:
+      op_state_topic(&o, c, c->t_op_protection_no);  // the number, not a text
+      break;
     case MHI_DISCOVERY_ROWS:  // excluded above; keeps -Wswitch exhaustive
       out[0] = '\0';
       return 0;
   }
-  tail(&o, c, diagnostic);
+  tail(&o, c, row, diagnostic);
   if (o.overflow) {
     out[0] = '\0';
     return 0;

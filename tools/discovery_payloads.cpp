@@ -20,7 +20,10 @@
 
 static const char* kNameOption[MHI_DISCOVERY_ROWS] = {
   NULL, "--name-vanes", "--name-silent", "--name-problem", "--name-wiring", "--name-uptime",
-  "--name-free-heap", "--name-rssi", "--name-reset-reason", "--name-wifi-phy"};
+  "--name-free-heap", "--name-rssi", "--name-reset-reason", "--name-wifi-phy",
+  "--name-vanes-lr", "--name-3dauto", "--name-frame-errors", "--name-frame-timeouts", "--name-error-code",
+  "--name-ou-outdoor", "--name-ou-ct", "--name-ou-kwh", "--name-ou-comp", "--name-ou-defrost",
+  "--name-ou-comp-run", "--name-ou-protection"};
 
 // Splits "a,b,c" in place into exactly n items; fewer or more is an error.
 static bool split(char* list, const char** items, size_t n) {
@@ -43,7 +46,9 @@ int main(int argc, char** argv) {
     .climate_id = "MHI-AC-Ctrl",
     .id_prefix = "MHI-AC-Ctrl",
     .entity_prefix = NULL,
-    .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY"},
+    .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
+              "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
+              "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state"},
     .reset_reason_tpl = NULL,
     .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
     .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -54,6 +59,18 @@ int main(int argc, char** argv) {
     .connected_on = "1", .connected_off = "0",
     .silent_on = "On", .silent_off = "Off",
     .wiring_ok = "o.k.",
+    .has_lr = false,
+    .t_vaneslr = "VanesLR", .t_3dauto = "3Dauto",
+    .vanes_lr = {"Left", "LeftCenter", "Center", "CenterRight", "Right", "Wide", "Spot", "Swing"},
+    .threedauto_on = "On", .threedauto_off = "Off",
+    .has_outdoor = false,
+    .outdoor_id = "MHI-AC-Ctrl_outdoor", .outdoor_name = "AC outdoor unit", .outdoor_entity_prefix = NULL,
+    .op_prefix = "OpData/",
+    .t_op_outdoor = "OUTDOOR", .t_op_ct = "CT", .t_op_kwh = "KWH", .t_op_comp = "COMP", .t_op_defrost = "DEFROST",
+    .t_op_total_comp_run = "TOTAL-COMP-RUN", .t_op_protection_no = "PROTECTION-NO",
+    .defrost_on = "On", .defrost_off = "Off",
+    .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
+    .fan = {"1", "2", "3", "4"},
   };
   for (int i = 1; i + 1 < argc; i += 2) {
     const char* opt = argv[i];
@@ -93,6 +110,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
+    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &c)) continue;
     char topic[MHI_DISCOVERY_TOPIC_MAX], payload[MHI_DISCOVERY_BUF];
     if (mhi_discovery_topic((MhiDiscoveryRow)r, &c, topic, sizeof(topic)) == 0 ||
         mhi_discovery_build((MhiDiscoveryRow)r, &c, payload, sizeof(payload)) == 0) {

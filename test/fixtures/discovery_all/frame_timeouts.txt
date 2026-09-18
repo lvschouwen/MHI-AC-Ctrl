@@ -1,0 +1,2 @@
+homeassistant/sensor/ac_slaapkamer_frame_timeouts/config
+{"~":"airco/slaapkamer","name":"Frame timeouts","uniq_id":"ac_slaapkamer_frame_timeouts","default_entity_id":"sensor.ac_slaapkamer_frame_timeouts","stat_t":"~/FrameTimeouts","stat_cla":"total_increasing","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}
