@@ -258,7 +258,8 @@ int mhi_vanes_lr_parse(const MhiVanesLrNames* names, const char* payload) {
 git add lib/mhi_pure/mhi_vanes_lr.h lib/mhi_pure/mhi_vanes_lr.cpp test/test_mhi_vanes_lr/test_mhi_vanes_lr.cpp
 git commit -m "feat: decoupled VanesLR/3Dauto commands and decode, and VanesLR names, host-tested (#20)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
@@ -378,7 +379,8 @@ Replace the `set/VanesLR` branch (lines 170-183):
 git add src/MHI-AC-Ctrl-core.cpp src/MHI-AC-Ctrl.h src/main.cpp
 git commit -m "feat: VanesLR and 3Dauto commands no longer step on each other's set flag; VanesLR publishes named positions (#20)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
@@ -545,7 +547,8 @@ Extend `publishTelemetryNow()` (line 207-215), appending after the `FreeHeap` pu
 git add lib/mhi_pure/mhi_frame_stats.h lib/mhi_pure/mhi_frame_stats.cpp test/test_mhi_frame_stats/test_mhi_frame_stats.cpp src/MHI-AC-Ctrl.h src/support.h src/support.cpp src/main.cpp
 git commit -m "feat: FrameErrors/FrameTimeouts counters, published with the periodic telemetry (#21)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
@@ -740,7 +743,8 @@ Replace the `status_fan` case (lines 362-385):
 git add lib/mhi_pure/mhi_fan.h lib/mhi_pure/mhi_fan.cpp test/test_mhi_fan/test_mhi_fan.cpp src/MHI-AC-Ctrl.h src/main.cpp
 git commit -m "feat: named fan levels via PAYLOAD_FAN_1..4, defaulting to the numeric texts (#21)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
@@ -966,7 +970,8 @@ After `TOPIC_PROTECTION_NO`:
 git add lib/mhi_pure/mhi_error_text.h lib/mhi_pure/mhi_error_text.cpp test/test_mhi_error_text/test_mhi_error_text.cpp src/MHI-AC-Ctrl.h src/main.cpp
 git commit -m "feat: ErrorText and OpData/PROTECTION-TEXT, error table shipped as a placeholder pending research (#21)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
@@ -1329,7 +1334,8 @@ git commit -m "feat: discovery rows for VanesLR, 3D auto, the frame counters, er
 
 Longest rows: default <n> B, uitkijk <n> B, slaapkamer <n> B, of the 1024 B buffer.
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
@@ -1504,7 +1510,8 @@ In `[env:ci-all-options]`, add `-D HA_OUTDOOR_DEVICE=true` next to `-D HA_DISCOV
 git add src/support.h src/discovery.cpp tools/discovery_payloads.cpp platformio.ini .github/workflows/ci.yml
 git commit -m "feat: HA_OUTDOOR_DEVICE and the new HA_NAME_* options, discovery_payloads.cpp options, CI coverage for both on at once (#20, #19, #21)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
@@ -1571,7 +1578,8 @@ After `HA_RESET_REASON_TPL` in the code block, add:
 git add SW-Configuration.md Version.md
 git commit -m "docs: batch C topics, options and OpData/ retention (#20, #19, #21)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KYBzXU6ciProQ7qkoN43Jk"
 ```
 
 ---
