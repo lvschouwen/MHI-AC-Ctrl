@@ -85,16 +85,16 @@ topic|r/w|value|comment
 Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected: `set/Power` then answers `unknown command`, switch off with `set/Mode` "Off" instead.
 Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
 Tsetpoint|r/w|18 ... 30|Target room temperature (float) in °C, resolution is 0.5°C
-Fan|r/w|1,2,3,4,"Auto"|Fan level
+Fan|r/w|1,2,3,4,"Auto"|Fan level; define PAYLOAD_FAN_1..PAYLOAD_FAN_4 for named levels (default "1".."4", unchanged on the wire)
 Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing","?"|Vanes up/down position, top to bottom; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>; define `PAYLOAD_VANES_1` .. `PAYLOAD_VANES_4` as `"1"` .. `"4"` in `config_defaults.h` to keep v2.8's texts
 Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
 Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C; readings outside this range are ignored <sup>3</sup>
-Errorcode|r|0 .. 255|error code (unsigned int)
+Errorcode|r|0 .. 255|error code (unsigned int), 0 when there is none; what a code means is in [Error codes](#error-codes)
 Action|r|"off", "idle", "cooling", "heating", "drying", "fan"|what the AC is doing <sup>5</sup>
 Silent|r/w|"On", "Off"|Silent operation of the outdoor unit, read from the AC and settable <sup>6</sup>
 Discovery|r|"ok", "modes"|Only with `HA_DISCOVERY`: the Home Assistant discovery configs were published; "modes" means the climate config was skipped because the mode texts are not Home Assistant's, see [Home Assistant discovery](#home-assistant-discovery-supporth)
 ErrOpData|w||triggers the reading of last error operating data
-VanesLR|r/w|1,2,3,4,5,6,7,"Swing"|Vanes left/right position <sup>4</sup>
+VanesLR|r/w|"Left","LeftCenter","Center","CenterRight","Right","Wide","Spot","Swing"|Vanes left/right position, as seen on the unit: 1 leftmost .. 7 spot; writing 1..7 or 8 (="Swing") still works; define `PAYLOAD_VANESLR_1`..`PAYLOAD_VANESLR_7` as `"1"`..`"7"` to keep the numeric texts <sup>4</sup>
 3Dauto|r/w|"On", "Off"|3D auto only works for mode Auto, Cool and heat <sup>4</sup>
 
 <sup>1</sup> When the last command was received via the infrared remote control then the Vanes status is unknown and the `?` is published.
@@ -119,6 +119,8 @@ reset|w|"reset"|resets the ESP8266
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
 Uptime   |r  |integer         |seconds since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; keeps counting past the 49.7-day `millis()` wrap
 FreeHeap |r  |integer         |free heap in bytes, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
+FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; saturates, never wraps
+FrameTimeouts|r|integer         |SCK timeouts since boot, same publishing rhythm; what is normal (boot, OTA, Wi-Fi scans) is unknown until a unit has run with it for a while
 ResetReason|r|string          |why the ESP8266 last started, at MQTT (re-)connect: `Power On`, `Software/System restart` (also after an OTA flash or `set/reset`), `Hardware Watchdog`, `Software Watchdog`, `Exception`, `External System`
 WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
 WIFI_PHY |r  |"11b", "11g", "11n"|802.11 mode the unit joined with, after MQTT (re-)connect. `11n` unless the [PHY mode fallback](#wifi-phy-mode-fallback) had to switch to `11g`
@@ -158,6 +160,41 @@ The readout of last error operating data is triggered by publishing `ErrOpData` 
 
 Note: The topic and the payload text is adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h).
 
+### Error codes
+
+The `Errorcode` topic carries the AC's own byte, and `OpData/PROTECTION-NO` the compressor-protection number. The firmware publishes the numbers and nothing else: what they mean belongs to whatever reads them, e.g. a Home Assistant template sensor that maps the number to a text. That way a correction needs no flash.
+
+Value |meaning
+------|-----
+0  |no error
+1  |Wired remote control communication error
+3  |Indoor-outdoor signal transmission error
+5  |Indoor-outdoor signal transmission error
+7  |Room temperature sensor fault
+9  |Drain fault (float switch or pump)
+16 |Indoor fan motor fault
+21 |Limit switch fault (air inlet panel)
+35 |Cooling high pressure protection
+36 |Compressor overheat
+37 |Outdoor heat exchanger sensor fault
+38 |Outdoor air temperature sensor fault
+39 |Discharge pipe temperature sensor fault
+40 |Service valve closed or outdoor PCB fault
+42 |Current cut (compressor overcurrent)
+47 |Active filter voltage error
+48 |Outdoor fan motor fault
+51 |Power transistor fault
+53 |Suction temperature sensor fault
+54 |High pressure sensor fault
+57 |Refrigerant shortage or service valve closed
+58 |Current safe stop (overload)
+59 |Outdoor unit fault (compressor, PCB or wiring)
+60 |Compressor rotor lock
+
+The meanings come from MHI / Beijer Ref's *Service Support Handbook 2021.11*, "RAC INDICATION & FAULT CODES" (PDF pages 16-17) plus the RAC multisplit table for codes 53 and 54, https://mhi-hvac.co.uk/wp-content/uploads/MHI-Service-Support-Handbook-2021.11-1-1.pdf, cross-checked row for row against the *SRK-ZSP-S Service Support Handbook*, page 14. The same handbook's PAC (FD\*) and KX (VRF) tables give some of these numbers other meanings and are deliberately not used, so a code that is not in the table above is simply not known here.
+
+Note that "byte n means E n" is MHI's numbering taken at face value: nobody, upstream included, has published a captured non-zero code next to the number a unit displayed. One observation supports it: the AC reports `1` exactly when the controller stops answering it for about two minutes ([Passive Mode](#passive-mode)), and E1 is the wired remote control communication error -- which is what this controller is to the AC.
+
 ### MQTT operating data PROTECTION-NO topic
 This is the Protection state number of the compressor (Compressor protection status).
 The meaning of this numeric value is:
@@ -182,6 +219,12 @@ Value |meaning
 15 |Current safe control of inverter secondary current
 16 |Stop by compressor rotor lock
 17 |Stop by compressor startup failure
+
+The same rule holds here: the topic carries the number, the table above it is the meaning, and nothing in the firmware turns one into the other.
+
+## OpData/ topics and retention
+
+Every `OpData/` topic, like every other status topic, is published retained (`output_P()`, `src/support.cpp`). A retained topic keeps its last value on the broker across a Home Assistant restart: the entity does not go to "unknown", it shows the value it last had until the AC's next report changes it.
 
 ## OTA Settings ([support.h](src/support.h))
 OTA (Over the Air) update is the process of loading the firmware to ESP module using Wi-Fi connection rather than a serial port.
@@ -296,7 +339,7 @@ Worked example (16 Sep 2026, `airco/uitkijk/#` captured while pressing the remot
 
 ## Home Assistant discovery ([support.h](src/support.h))
 
-With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`), a select for the vane position, a switch for `Silent`, two problem binary sensors (`Errorcode` ≠ 0, `Wiring` ≠ `o.k.`) and five diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`), all under one device. Availability comes from `connected`.
+With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`, and with `USE_EXTENDED_FRAME_SIZE` the left/right louvers as swing_horizontal mode), a select for the vane position, a switch for `Silent`, two problem binary sensors and eight diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`, `FrameErrors`, `FrameTimeouts` and the `Errorcode` number), all under one device. With `USE_EXTENDED_FRAME_SIZE`, also a select for the left/right louvers and a switch for `3Dauto`. With `HA_OUTDOOR_DEVICE`, seven more entities for the shared outdoor unit's own device (temperature, current, energy, compressor frequency, defrost, compressor run time, compressor-protection number), linked with `via_device`, reading the publishing unit's own `OpData/` topics -- with two indoor units sharing one outdoor unit, only one of them should have `HA_OUTDOOR_DEVICE` on. 13 entities with neither option, up to 22 with both. Availability comes from `connected`.
 
 Home Assistant's climate accepts only its own mode names, so a discovery build also needs `POWERON_WHEN_CHANGING_MODE` (the climate's `off` mode is `set/Mode off`; the build refuses `HA_DISCOVERY` without the option) and the `PAYLOAD_MODE_*` texts of [Topic and payload text](#topic-and-payload-text-mhi-ac-ctrlh). The `PAYLOAD_ACTION_*` texts must stay Home Assistant's `hvac_action` names as well: the climate reads `Action` without a template. The firmware checks them at boot: with other texts the climate config is skipped, Serial says so and the retained `Discovery` topic reads `modes` instead of `ok`.
 
@@ -309,6 +352,11 @@ Home Assistant's climate accepts only its own mode names, so a discovery build a
 //#define HA_ENTITY_PREFIX "ac_bedroom"   // optional: pins the entity IDs to climate.ac_bedroom and <domain>.ac_bedroom_<slug of the entity name> (select.ac_bedroom_vanes, sensor.ac_bedroom_free_heap, ...), what Home Assistant derives itself for a device without an area, so an area or a lost registry never changes them (lower case a-z 0-9 _; needs Home Assistant 2025.10 or newer, which knows default_entity_id)
 #define HA_NAME_VANES "Vanes"             // entity names; likewise HA_NAME_SILENT, _PROBLEM, _WIRING, _UPTIME, _FREE_HEAP, _RSSI, _RESET_REASON, _WIFI_PHY
 //#define HA_RESET_REASON_TPL "{{ value }}" // optional value_template of the reset-reason sensor
+//#define HA_OUTDOOR_DEVICE true            // also publish the outdoor unit's device; on for at most one of the units sharing it
+#define HA_OUTDOOR_ID HA_ID_PREFIX "_outdoor"
+#define HA_OUTDOOR_NAME "AC outdoor unit"
+//#define HA_OUTDOOR_ENTITY_PREFIX "ac_outdoor"
+#define HA_NAME_VANES_LR "Vanes left/right"  // entity names; likewise HA_NAME_3DAUTO, _FRAME_ERRORS, _FRAME_TIMEOUTS, _ERROR_CODE, _OU_OUTDOOR, _OU_CT, _OU_KWH, _OU_COMP, _OU_DEFROST, _OU_COMP_RUN, _OU_PROTECTION
 ```
 
 The `unique_id`s never change once entities exist: Home Assistant keys entities by them and keeps their entity IDs, history and automations across firmware updates and renames. A config with a `unique_id` that a YAML entity still uses is rejected as a duplicate, so remove the YAML entity (and reload the MQTT YAML) before the unit's first discovery build connects.
@@ -369,7 +417,7 @@ Currently the following operating data in double quotes are supported
 
 Note 1: If you are not interested in these operating modes (e.g. to reduce the MQTT load) you can comment out the according lines. But at least 1 line has to stay.
 For `THI-R2`, `THO-R1` and `TDSH` the formula for calculation is not known yet; `THI-R1` and `THI-R3` use a rough approximation and the `COMP` formula is unconfirmed.
-You can find some hints related to the meaning of the operating data [here](https://www.hrponline.co.uk/media/pdf/41/42/ed/Beijer-Ref-Service-Support-Handbook-19cWKESQUhzVIy5.pdf#page=7). Addtional opdata information is available [here](https://github.com/absalom-muc/MHI-AC-Trace/blob/main/SPI.md#operation-data-details).
+You can find some hints related to the meaning of the operating data [here](https://mhi-hvac.co.uk/wp-content/uploads/MHI-Service-Support-Handbook-2021.11-1-1.pdf). Addtional opdata information is available [here](https://github.com/absalom-muc/MHI-AC-Trace/blob/main/SPI.md#operation-data-details).
 
 Note 2: The MQTT topic names are the `TOPIC_*` defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), not the comment text above: `SET-TEMP` is published as `OpData/Tsetpoint`, `energy-used` as `OpData/KWH`, `OU-EEV` as `OpData/OU-EEV1`, `PROTECTION-No` as `OpData/PROTECTION-NO` and `MODE` as `OpData/Mode`. An opcode the program does not know is published on `OpData/unknown`. `OpData/TD` publishes the text `<=30` for values below 41 °C. `SILENT` is published on the status topic `Silent`, not under `OpData/`.
 
