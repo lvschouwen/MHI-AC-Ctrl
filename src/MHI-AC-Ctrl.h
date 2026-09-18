@@ -278,6 +278,30 @@
 #ifndef PAYLOAD_VANESLR_SWING
 #define PAYLOAD_VANESLR_SWING "Swing"
 #endif
+// Left/right louver positions, as seen on the unit: 1 leftmost .. 7 spot
+// (fork #20). set/VanesLR also accepts 1..7 and 8 (= swing) whatever these
+// say; define them as "1".."7" to keep the numeric texts.
+#ifndef PAYLOAD_VANESLR_1
+#define PAYLOAD_VANESLR_1 "Left"
+#endif
+#ifndef PAYLOAD_VANESLR_2
+#define PAYLOAD_VANESLR_2 "LeftCenter"
+#endif
+#ifndef PAYLOAD_VANESLR_3
+#define PAYLOAD_VANESLR_3 "Center"
+#endif
+#ifndef PAYLOAD_VANESLR_4
+#define PAYLOAD_VANESLR_4 "CenterRight"
+#endif
+#ifndef PAYLOAD_VANESLR_5
+#define PAYLOAD_VANESLR_5 "Right"
+#endif
+#ifndef PAYLOAD_VANESLR_6
+#define PAYLOAD_VANESLR_6 "Wide"
+#endif
+#ifndef PAYLOAD_VANESLR_7
+#define PAYLOAD_VANESLR_7 "Spot"
+#endif
 #ifndef PAYLOAD_3DAUTO_ON
 #define PAYLOAD_3DAUTO_ON "On"
 #endif

@@ -19,6 +19,7 @@
 #include "mhi_temp.h"
 #include "mhi_troom_filter.h"
 #include "mhi_vanes.h"
+#include "mhi_vanes_lr.h"
 #include "support.h"
 
 MHI_AC_Ctrl_Core mhi_ac_ctrl_core;
@@ -44,6 +45,17 @@ static bool diag_on = DIAG_DEFAULT;
 static const MhiVanesNames vanes_names = {{PAYLOAD_VANES_1, PAYLOAD_VANES_2, PAYLOAD_VANES_3, PAYLOAD_VANES_4},
                                           PAYLOAD_VANES_SWING, PAYLOAD_VANES_UNKNOWN};
 static_assert(MHI_VANES_SWING == vanes_swing && MHI_VANES_UNKNOWN == vanes_unknown, "mhi_vanes numbers the positions as the core's ACVanes does");
+
+#ifdef USE_EXTENDED_FRAME_SIZE
+// The texts on the VanesLR topic; set/VanesLR accepts these and 1..8 (fork #20).
+// Only the 33-byte frame reports or accepts them, so a 20-byte build does not
+// carry the table at all.
+static const MhiVanesLrNames vanes_lr_names = {
+  {PAYLOAD_VANESLR_1, PAYLOAD_VANESLR_2, PAYLOAD_VANESLR_3, PAYLOAD_VANESLR_4, PAYLOAD_VANESLR_5, PAYLOAD_VANESLR_6,
+   PAYLOAD_VANESLR_7},
+  PAYLOAD_VANESLR_SWING};
+static_assert(MHI_VANES_LR_SWING == vanesLR_swing, "mhi_vanes_lr numbers swing as the core's ACVanesLR does");
+#endif
 
 static void publish_diag_state() {
   if (diag_on)
@@ -168,18 +180,13 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
 #ifdef USE_EXTENDED_FRAME_SIZE  
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_VANESLR)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_VANESLR_SWING)) == 0) {
-      mhi_ac_ctrl_core.set_vanesLR(vanesLR_swing);
+    const int vaneslr = mhi_vanes_lr_parse(&vanes_lr_names, payload_str);
+    if (vaneslr != MHI_VANES_LR_UNKNOWN) {
+      mhi_ac_ctrl_core.set_vanesLR(vaneslr);
       publish_cmd_ok();
     }
-    else {
-      if ((atoi(payload_str) >= 1) & (atoi(payload_str) <= 7)) {
-        mhi_ac_ctrl_core.set_vanesLR(atoi(payload_str));
-        publish_cmd_ok();
-      }
-      else
-        publish_cmd_invalidparameter();
-    }
+    else
+      publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_3DAUTO)) == 0) {
     if (strcmp_P(payload_str, PSTR(PAYLOAD_3DAUTO_ON)) == 0) {
@@ -391,13 +398,12 @@ class StatusHandler : public CallbackInterface_Status {
         // With the 20-byte frame the AC never reports these.
         case status_vanesLR:
 #ifdef USE_EXTENDED_FRAME_SIZE
-          switch (value) {
-            case vanesLR_swing:
-              output_P(status, PSTR(TOPIC_VANESLR), PSTR(PAYLOAD_VANESLR_SWING));
-              break;
-            default:
-              itoa(value, strtmp, 10);
-              output_P(status, PSTR(TOPIC_VANESLR), strtmp);
+          {
+            // NULL outside 1..8, which the core's decode cannot produce today;
+            // output_P would hand publish_P a NULL payload, so check anyway.
+            const char* vaneslr_text = mhi_vanes_lr_text(&vanes_lr_names, value);
+            if (vaneslr_text != NULL)
+              output_P(status, PSTR(TOPIC_VANESLR), vaneslr_text);
           }
 #endif
           break;

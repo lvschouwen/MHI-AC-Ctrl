@@ -3,6 +3,7 @@
 
 #include "MHI-AC-Ctrl-core.h"
 #include "mhi_action.h"
+#include "mhi_vanes_lr.h"
 #include "mhi_status.h"
 
 // The checksum helpers moved to lib/mhi_pure/mhi_frame.cpp, where they can be
@@ -72,7 +73,7 @@ void MHI_AC_Ctrl_Core::set_fan(uint fan) {
 }
 
 void MHI_AC_Ctrl_Core::set_3Dauto(AC3Dauto Dauto) {
-  new_3Dauto = 0b00001010 | Dauto;
+  new_3Dauto = mhi_3dauto_command(Dauto == Dauto_on);
 }
 
 void MHI_AC_Ctrl_Core::set_vanes(uint vanes) {
@@ -86,13 +87,10 @@ void MHI_AC_Ctrl_Core::set_vanes(uint vanes) {
 }
 
 void MHI_AC_Ctrl_Core::set_vanesLR(uint vanesLR) {
-  if (vanesLR == vanesLR_swing) {
-    new_VanesLR0 = 0b00001011; // enable swing
-  }
-  else {
-    new_VanesLR0 = 0b00001010; // disable swing
-    new_VanesLR1 = 0b00010000 | (vanesLR - 1);
-  }
+  uint8_t db16, db17;
+  mhi_vanes_lr_command((int)vanesLR, &db16, &db17);
+  new_VanesLR1 = db16;  // ORed into MISO_frame[DB16] in loop()
+  new_VanesLR0 = db17;  // ORed into MISO_frame[DB17] in loop()
 }
 
 void MHI_AC_Ctrl_Core::set_passive_mode(bool newPassiveMode) {
@@ -312,19 +310,16 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   if (new_datapacket_received) {
 
     if (frameSize == 33 ) { // Only for framesize 33 (WF-RAC)
-      byte vanesLRtmp = (MOSI_frame[DB16] & 0x07) + ((MOSI_frame[DB17] & 0x01) << 4);
-      if (vanesLRtmp != status_vanesLR_old) { // Vanes Left Right
-        if ((vanesLRtmp & 0x10) != 0) // Vanes LR status swing
-          m_cbiStatus->cbiStatusFunction(status_vanesLR, vanesLR_swing);
-        else {
-          m_cbiStatus->cbiStatusFunction(status_vanesLR, (vanesLRtmp & 0x07) + 1 );
-        }
+      const byte vanesLRtmp = (byte)mhi_vanes_lr_decode(MOSI_frame[DB16], MOSI_frame[DB17]);
+      if (vanesLRtmp != status_vanesLR_old) {
         status_vanesLR_old = vanesLRtmp;
+        m_cbiStatus->cbiStatusFunction(status_vanesLR, vanesLRtmp);  // 1..7, or MHI_VANES_LR_SWING == vanesLR_swing
       }
 
-      if ((MOSI_frame[DB17] & 0x04) != status_3Dauto_old) { // 3D auto
-        status_3Dauto_old = MOSI_frame[DB17] & 0x04;
-        m_cbiStatus->cbiStatusFunction(status_3Dauto, status_3Dauto_old);
+      const byte dauto_tmp = mhi_3dauto_decode(MOSI_frame[DB17]) ? Dauto_on : Dauto_off;
+      if (dauto_tmp != status_3Dauto_old) {
+        status_3Dauto_old = dauto_tmp;
+        m_cbiStatus->cbiStatusFunction(status_3Dauto, dauto_tmp);
       }
     }
     // evaluate status. Power and Mode go out in the order mhi_status.h explains.
