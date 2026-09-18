@@ -82,6 +82,11 @@ static void put_list(Out* o, const char* key, const char* const* items, size_t c
 // uniq_id and the config topic keyed by outdoor_id instead of id_prefix.
 static bool is_outdoor_row(MhiDiscoveryRow row) { return row >= MHI_DISCOVERY_OU_OUTDOOR; }
 
+// The test above is open-ended, and MhiDiscoveryRow is append-only: a row added
+// after the outdoor block would become an outdoor row without anyone saying so.
+static_assert(MHI_DISCOVERY_OU_PROTECTION + 1 == MHI_DISCOVERY_ROWS,
+              "a row appended after the outdoor rows must be classified in is_outdoor_row() first");
+
 static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
   put(o, FMT("{\"~\":\"%s\","), c->base);
   if (row == MHI_DISCOVERY_CLIMATE) {
@@ -167,6 +172,7 @@ bool mhi_discovery_modes_valid(const MhiDiscoveryCtx* c) {
 }
 
 bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* c) {
+  if (row >= MHI_DISCOVERY_ROWS) return false;  // not a row of the table, like mhi_discovery_topic()
   if (row == MHI_DISCOVERY_VANES_LR || row == MHI_DISCOVERY_3DAUTO) return c->has_lr;
   if (is_outdoor_row(row)) return c->has_outdoor;
   return true;

@@ -126,7 +126,8 @@ size_t mhi_discovery_slug(const char* name, char* out, size_t out_len);
 
 // Whether a row is part of this build: false for MHI_DISCOVERY_VANES_LR and
 // MHI_DISCOVERY_3DAUTO when !has_lr, false for every OU_* row when
-// !has_outdoor, true otherwise. Callers must skip a disabled row entirely.
+// !has_outdoor, false for a row that is not in the table, true otherwise.
+// Callers must skip a disabled row entirely.
 bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx);
 
 // One row's JSON. Returns the length, 0 (and an empty string) when it does
