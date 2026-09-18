@@ -36,6 +36,13 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
+      # The tests rewrite every fixture the code still produces, but they never
+      # delete one, so the gate below cannot see a committed fixture the code no
+      # longer writes. Removing them first turns that into a deletion the gate
+      # catches; every fixture that is still produced is written back.
+      - name: Drop the committed discovery fixtures
+        run: rm -f test/fixtures/discovery/*.txt test/fixtures/discovery_all/*.txt
+
       - name: Run tests
         run: pio test -e native
 
