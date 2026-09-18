@@ -232,6 +232,21 @@
 #ifndef PAYLOAD_FAN_AUTO
 #define PAYLOAD_FAN_AUTO "Auto"
 #endif
+// Fan levels (fork #21 F6). set/Fan also accepts 1..4 whatever these say;
+// default to the numeric texts because the two real units' Home Assistant
+// automations already use them (decided 18 Sep 2026).
+#ifndef PAYLOAD_FAN_1
+#define PAYLOAD_FAN_1 "1"
+#endif
+#ifndef PAYLOAD_FAN_2
+#define PAYLOAD_FAN_2 "2"
+#endif
+#ifndef PAYLOAD_FAN_3
+#define PAYLOAD_FAN_3 "3"
+#endif
+#ifndef PAYLOAD_FAN_4
+#define PAYLOAD_FAN_4 "4"
+#endif
 // Action carries Home Assistant's hvac_action names, so action_topic needs no template.
 #ifndef PAYLOAD_ACTION_OFF
 #define PAYLOAD_ACTION_OFF "off"

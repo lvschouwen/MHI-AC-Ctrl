@@ -13,6 +13,7 @@
 #include "mhi_action.h"
 #include "mhi_diag.h"
 #include "mhi_diag_frame.h"
+#include "mhi_fan.h"
 #include "mhi_link.h"
 #include "mhi_mqtt.h"
 #include "mhi_status.h"
@@ -56,6 +57,9 @@ static const MhiVanesLrNames vanes_lr_names = {
   PAYLOAD_VANESLR_SWING};
 static_assert(MHI_VANES_LR_SWING == vanesLR_swing, "mhi_vanes_lr numbers swing as the core's ACVanesLR does");
 #endif
+
+// The texts on the Fan topic; set/Fan accepts these and 1..4 (fork #21 F6).
+static const MhiFanNames fan_names = {{PAYLOAD_FAN_1, PAYLOAD_FAN_2, PAYLOAD_FAN_3, PAYLOAD_FAN_4}, PAYLOAD_FAN_AUTO};
 
 static void publish_diag_state() {
   if (diag_on)
@@ -146,24 +150,14 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_FAN)) == 0) {
-    if (strcmp_P(payload_str, PAYLOAD_FAN_AUTO) == 0){
+    static const byte kCoreFan[4] = {0, 1, 2, 6};  // the core's set_fan() values for levels 1..4
+    const int fanlevel = mhi_fan_parse(&fan_names, payload_str);
+    if (fanlevel == MHI_FAN_AUTO) {
       mhi_ac_ctrl_core.set_fan(7);
       publish_cmd_ok();
     }
-    else if (strcmp_P(payload_str, "1") == 0){
-      mhi_ac_ctrl_core.set_fan(0);
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, "2") == 0){
-      mhi_ac_ctrl_core.set_fan(1);
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, "3") == 0){
-      mhi_ac_ctrl_core.set_fan(2);
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, "4") == 0){
-      mhi_ac_ctrl_core.set_fan(6);
+    else if (fanlevel >= 1 && fanlevel <= 4) {
+      mhi_ac_ctrl_core.set_fan(kCoreFan[fanlevel - 1]);
       publish_cmd_ok();
     }
     else
@@ -366,30 +360,24 @@ class StatusHandler : public CallbackInterface_Status {
           itoa(value, strtmp, 10);
           output_P(status, PSTR(TOPIC_UNKNOWN), strtmp);
           break;
-        case status_fan:
+        case status_fan: {
+          int fanlevel = MHI_FAN_NONE;
           switch (value) {
-            case 0:
-              output_P(status, TOPIC_FAN, "1");
-              break;
-            case 1:
-              output_P(status, TOPIC_FAN, "2");
-              break;
-            case 2:
-              output_P(status, TOPIC_FAN, "3");
-              break;
-            case 6:
-              output_P(status, TOPIC_FAN, "4");
-              break;
-            case 7: 
-              output_P(status, TOPIC_FAN, PAYLOAD_FAN_AUTO);
-              break;
-            default: // invalid values
-              itoa(value, strtmp, 10);
-              strcat(strtmp, "?");
-              output_P(status, TOPIC_FAN, strtmp);
-              break;              
+            case 0: fanlevel = 1; break;
+            case 1: fanlevel = 2; break;
+            case 2: fanlevel = 3; break;
+            case 6: fanlevel = 4; break;
+            case 7: fanlevel = MHI_FAN_AUTO; break;
+          }
+          if (fanlevel != MHI_FAN_NONE)
+            output_P(status, TOPIC_FAN, mhi_fan_text(&fan_names, fanlevel));
+          else { // invalid values
+            itoa(value, strtmp, 10);
+            strcat(strtmp, "?");
+            output_P(status, TOPIC_FAN, strtmp);
           }
           break;
+        }
         case status_vanes:
           output_P(status, PSTR(TOPIC_VANES), mhi_vanes_text(&vanes_names, value));
           break;
