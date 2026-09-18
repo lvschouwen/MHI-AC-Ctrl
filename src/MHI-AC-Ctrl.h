@@ -35,6 +35,12 @@
 #ifndef TOPIC_FREE_HEAP
 #define TOPIC_FREE_HEAP "FreeHeap"
 #endif
+#ifndef TOPIC_FRAME_ERRORS
+#define TOPIC_FRAME_ERRORS "FrameErrors"       // invalid-signature/checksum frames since boot (fork #21)
+#endif
+#ifndef TOPIC_FRAME_TIMEOUTS
+#define TOPIC_FRAME_TIMEOUTS "FrameTimeouts"   // SCK timeouts since boot (fork #21)
+#endif
 #ifndef TOPIC_RESET_REASON
 #define TOPIC_RESET_REASON "ResetReason"
 #endif

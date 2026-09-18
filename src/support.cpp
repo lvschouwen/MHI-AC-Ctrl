@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "mhi_diag.h"
+#include "mhi_frame_stats.h"
 #include "mhi_link.h"
 #include "mhi_phy.h"
 #include "mhi_temp.h"
@@ -203,6 +204,7 @@ void setupWiFi(int& WiFiStatusParam) {
 // every pass while connected, so it never misses the millis() wrap.
 static MhiUptime uptime_counter = {0, 0, 0};
 static MhiRetryPacer telemetry_pacer = {0, false};
+static MhiFrameStats frame_stats = {0, 0};
 
 static void publishTelemetryNow(uint32_t uptime_s) {
   char strtmp[12];
@@ -212,6 +214,21 @@ static void publishTelemetryNow(uint32_t uptime_s) {
   output_P((ACStatus)type_status, PSTR(TOPIC_UPTIME), strtmp);
   ultoa(ESP.getFreeHeap(), strtmp, 10);
   output_P((ACStatus)type_status, PSTR(TOPIC_FREE_HEAP), strtmp);
+  ultoa(frame_stats.errors, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_FRAME_ERRORS), strtmp);
+  ultoa(frame_stats.timeouts, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_FRAME_TIMEOUTS), strtmp);
+}
+
+// mhi_frame_stats classifies loop()'s return by value, because lib/mhi_pure
+// cannot include MHI-AC-Ctrl-core.h (it pulls in Arduino.h). support.cpp sees
+// both, so this is where the two spellings are tied together.
+static_assert(err_msg_invalid_signature == -1 && err_msg_invalid_checksum == -2 && err_msg_timeout_SCK_low == -3 &&
+                  err_msg_timeout_SCK_high == -4,
+              "mhi_frame_stats classifies loop()'s ErrMsg by value");
+
+void note_frame_result(int ret) {
+  mhi_frame_stats_count(&frame_stats, ret);
 }
 
 // Called on every loop() pass, connected or not: an outage longer than the

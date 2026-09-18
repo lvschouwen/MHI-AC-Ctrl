@@ -204,6 +204,7 @@ void publish_cmd_ok();                                        // last MQTT cmd w
 void publish_cmd_unknown();                                   // last MQTT cmd was unknown
 void publish_cmd_invalidparameter();                          // a paramter of the last MQTT was wrong
 void output_P(ACStatus status, PGM_P topic, PGM_P payload);   // publish via MQTT
+void note_frame_result(int ret);  // count mhi_ac_ctrl_core.loop()'s return towards FrameErrors/FrameTimeouts (fork #21)
 
 void setupOTA();                                              // initialize and start OTA
 void setup_ds18x20();                                         // setup the temperature measurement

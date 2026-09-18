@@ -708,6 +708,7 @@ void loop() {
 #endif    
     //Serial.println("MQTT connected in main loop");
     int ret = mhi_ac_ctrl_core.loop(80);
+    note_frame_result(ret);
     if (ret < 0)
       Serial.printf_P(PSTR("mhi_ac_ctrl_core.loop error: %i\n"), ret);
 #ifndef CONTINUE_WITHOUT_MQTT 
