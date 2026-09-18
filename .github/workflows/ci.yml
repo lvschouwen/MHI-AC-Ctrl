@@ -41,8 +41,8 @@ jobs:
 
       - name: Discovery fixtures match the code
         run: |
-          git diff --exit-code -- test/fixtures/discovery
-          test -z "$(git status --porcelain -- test/fixtures/discovery)"
+          git diff --exit-code -- test/fixtures/discovery test/fixtures/discovery_all
+          test -z "$(git status --porcelain -- test/fixtures/discovery test/fixtures/discovery_all)"
 
   build:
     name: Build ${{ matrix.environment }}
@@ -63,6 +63,7 @@ jobs:
           - ci-continue-without-mqtt
           - ci-custom-payloads
           - ci-ha-discovery
+          - ci-ha-discovery-outdoor
           - ci-config-defaults
           - ci-all-options
     steps:

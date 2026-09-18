@@ -91,6 +91,16 @@ int main(int argc, char** argv) {
     else if (strcmp(opt, "--silent-off") == 0) c.silent_off = val;
     else if (strcmp(opt, "--modes") == 0) known = split(val, c.modes, 6);
     else if (strcmp(opt, "--vanes") == 0) known = split(val, c.vanes, 6);
+    else if (strcmp(opt, "--lr") == 0) c.has_lr = strcmp(val, "1") == 0;
+    else if (strcmp(opt, "--vanes-lr") == 0) known = split(val, c.vanes_lr, 8);
+    else if (strcmp(opt, "--outdoor") == 0) c.has_outdoor = strcmp(val, "1") == 0;
+    else if (strcmp(opt, "--outdoor-id") == 0) c.outdoor_id = val;
+    else if (strcmp(opt, "--outdoor-name") == 0) c.outdoor_name = val;
+    else if (strcmp(opt, "--outdoor-entity-prefix") == 0) c.outdoor_entity_prefix = val;
+    else if (strcmp(opt, "--fan-1") == 0) c.fan[0] = val;
+    else if (strcmp(opt, "--fan-2") == 0) c.fan[1] = val;
+    else if (strcmp(opt, "--fan-3") == 0) c.fan[2] = val;
+    else if (strcmp(opt, "--fan-4") == 0) c.fan[3] = val;
     else {
       known = false;
       for (int r = 1; r < MHI_DISCOVERY_ROWS; r++)
