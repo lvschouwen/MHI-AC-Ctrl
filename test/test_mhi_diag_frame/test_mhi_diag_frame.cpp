@@ -222,9 +222,9 @@ static void test_an_extended_frame_names_its_extra_bytes(void) {
   uint8_t frame[33] = {0};
   memcpy(frame, kFrame, 20);
   mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out));
-  frame[DB15] = 0x04;  // 3D auto
+  frame[DB17] = 0x04;  // 3D auto, as the core reads it
   TEST_ASSERT_GREATER_THAN_size_t(0, mhi_diag_frame_changes(&d, frame, 33, mask, out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING_LEN("DB15 00>04 |", out, 12);
+  TEST_ASSERT_EQUAL_STRING_LEN("DB17 00>04 |", out, 12);
   TEST_ASSERT_LESS_THAN_size_t(MHI_DIAG_TEXT_MAX, strlen(out));
 }
 
