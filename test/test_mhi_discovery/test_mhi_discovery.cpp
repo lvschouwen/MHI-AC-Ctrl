@@ -54,8 +54,11 @@ static const MhiDiscoveryCtx kDefault = {
   .fan = {"1", "2", "3", "4"},
 };
 
-// Lucas's Uitkijk: the names hass-config uses, a template, an entity prefix,
-// and a quote in the device name to exercise the escaping.
+// Lucas's Uitkijk: custom names throughout, a template, an entity prefix, and a
+// quote in the device name to exercise the escaping. Every name here is
+// deliberately unlike both the repo default and its own uniq_id suffix, so the
+// assertions below can tell a default_entity_id built from the slug of the name
+// apart from one built from the uniq_id (the bug fixed in 7bc7879).
 static const MhiDiscoveryCtx kUitkijk = {
   .discovery_prefix = "homeassistant",
   .base = "airco/uitkijk",
@@ -66,10 +69,10 @@ static const MhiDiscoveryCtx kUitkijk = {
   .climate_id = "AC_Uitkijk",
   .id_prefix = "ac_uitkijk",
   .entity_prefix = "ac_uitkijk",
-  .names = {NULL, "lamellen", "stil", "storing", "bedrading", "tijd sinds opstart", "vrij geheugen", "wifi-signaal", "herstartreden", "wifi-standaard",
+  .names = {NULL, "louvers", "quiet mode", "fault", "wiring fault", "time since boot", "heap free", "wifi-signal", "restart reason", "wifi-standard",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state"},
-  .reset_reason_tpl = "{{ {'Power On': 'stroom ingeschakeld', 'Software/System restart': 'software-herstart (update of reset)', 'Hardware Watchdog': 'hardware-watchdog', 'Software Watchdog': 'software-watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'wakker uit diepe slaap', 'External System': 'externe reset'}.get(value, value) }}",
+  .reset_reason_tpl = "{{ {'Power On': 'power applied', 'Software/System restart': 'software restart (update or reset)', 'Hardware Watchdog': 'hardware watchdog', 'Software Watchdog': 'software watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'woke from deep sleep', 'External System': 'external reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
   .t_uptime = "Uptime", .t_free_heap = "FreeHeap", .t_rssi = "RSSI", .t_reset_reason = "ResetReason", .t_wifi_phy = "WIFI_PHY",
@@ -178,7 +181,8 @@ static void test_a_topic_that_does_not_fit_is_refused(void) {
 
 // --- every row builds, fits and is well-formed ------------------------------
 
-static void every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
+// Returns the longest enabled row, so a caller can gate the headroom too.
+static size_t every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
   size_t longest = 0;
   int longest_row = -1;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
@@ -204,11 +208,18 @@ static void every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
     if (n > longest) { longest = n; longest_row = r; }
   }
   printf("  %s: longest row %d, %u of %u bytes\n", label, longest_row, (unsigned)longest, (unsigned)MHI_DISCOVERY_BUF);
+  return longest;
 }
 
 static void test_every_default_row_fits(void) { every_row_fits(&kDefault, "default"); }
 static void test_every_uitkijk_row_fits(void) { every_row_fits(&kUitkijk, "uitkijk"); }
-static void test_every_slaapkamer_row_fits(void) { every_row_fits(&kSlaapkamer, "slaapkamer"); }
+static void test_every_slaapkamer_row_fits(void) {
+  // Everything on, custom names and the reset-reason template: the worst case
+  // the firmware builds. It measures about 921-928 B today, and 980 is the
+  // headroom gate the plan checked by hand -- a name or a template that eats
+  // the remaining 44 B of MHI_DISCOVERY_BUF fails here, not on the unit.
+  TEST_ASSERT_LESS_OR_EQUAL_size_t(980, every_row_fits(&kSlaapkamer, "slaapkamer"));
+}
 
 static void test_a_payload_that_does_not_fit_is_refused(void) {
   char out[200];
@@ -241,7 +252,7 @@ static void test_the_climate_is_the_device_and_lists_come_from_the_payload_texts
 static void test_the_vanes_select_offers_the_names_and_the_unknown_state(void) {
   char out[MHI_DISCOVERY_BUF];
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_VANES, &kUitkijk, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"name\":\"lamellen\",\"uniq_id\":\"ac_uitkijk_vanes\",\"default_entity_id\":\"select.ac_uitkijk_lamellen\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"name\":\"louvers\",\"uniq_id\":\"ac_uitkijk_vanes\",\"default_entity_id\":\"select.ac_uitkijk_louvers\","));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Vanes\",\"cmd_t\":\"~/set/Vanes\","));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"ops\":[\"Up\",\"UpCenter\",\"CenterDown\",\"Down\",\"Swing\",\"?\"],"));
   TEST_ASSERT_NULL(strstr(out, "ent_cat"));
@@ -250,23 +261,23 @@ static void test_the_vanes_select_offers_the_names_and_the_unknown_state(void) {
 static void test_the_silent_switch_uses_the_payload_texts(void) {
   char out[MHI_DISCOVERY_BUF];
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_SILENT, &kUitkijk, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_uitkijk_silent\",\"default_entity_id\":\"switch.ac_uitkijk_stil\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_uitkijk_silent\",\"default_entity_id\":\"switch.ac_uitkijk_quiet_mode\","));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Silent\",\"cmd_t\":\"~/set/Silent\",\"pl_on\":\"On\",\"pl_off\":\"Off\",\"ic\":\"mdi:volume-low\","));
 }
 
 static void test_the_problem_sensors_are_diagnostic_and_template_the_topics(void) {
   char out[MHI_DISCOVERY_BUF];
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_PROBLEM, &kUitkijk, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"default_entity_id\":\"binary_sensor.ac_uitkijk_storing\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"default_entity_id\":\"binary_sensor.ac_uitkijk_fault\","));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Errorcode\",\"val_tpl\":\"{{ 'ON' if value|int(0) != 0 else 'OFF' }}\",\"dev_cla\":\"problem\",\"ent_cat\":\"diagnostic\","));
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_WIRING, &kUitkijk, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Wiring\",\"val_tpl\":\"{{ 'OFF' if value == 'o.k.' else 'ON' }}\",\"dev_cla\":\"problem\",\"ent_cat\":\"diagnostic\","));
 }
 
-static void test_the_five_sensors_match_hass_config_304(void) {
+static void test_the_five_diagnostic_sensors_carry_their_custom_names_classes_and_units(void) {
   char out[MHI_DISCOVERY_BUF];
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_UPTIME, &kUitkijk, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"name\":\"tijd sinds opstart\",\"uniq_id\":\"ac_uitkijk_uptime\",\"default_entity_id\":\"sensor.ac_uitkijk_tijd_sinds_opstart\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"name\":\"time since boot\",\"uniq_id\":\"ac_uitkijk_uptime\",\"default_entity_id\":\"sensor.ac_uitkijk_time_since_boot\","));
   // Plain seconds, no state class: hass-config's reboot counter compares the raw state.
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Uptime\",\"dev_cla\":\"duration\",\"unit_of_meas\":\"s\",\"sug_dsp_prc\":0,\"ent_cat\":\"diagnostic\","));
   TEST_ASSERT_NULL(strstr(out, "stat_cla"));
@@ -275,7 +286,7 @@ static void test_the_five_sensors_match_hass_config_304(void) {
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_RSSI, &kUitkijk, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/RSSI\",\"dev_cla\":\"signal_strength\",\"unit_of_meas\":\"dBm\",\"stat_cla\":\"measurement\",\"ent_cat\":\"diagnostic\","));
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_RESET_REASON, &kUitkijk, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/ResetReason\",\"val_tpl\":\"{{ {'Power On': 'stroom ingeschakeld', "));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/ResetReason\",\"val_tpl\":\"{{ {'Power On': 'power applied', "));
   TEST_ASSERT_NOT_NULL(strstr(out, "}.get(value, value) }}\",\"ic\":\"mdi:restart-alert\",\"ent_cat\":\"diagnostic\","));
   TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_WIFI_PHY, &kUitkijk, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/WIFI_PHY\",\"ic\":\"mdi:wifi-cog\",\"ent_cat\":\"diagnostic\","));
@@ -299,13 +310,13 @@ static void test_quotes_in_a_name_are_escaped(void) {
 // --- entity-ID slugs ---------------------------------------------------------
 
 static void test_slug_is_home_assistants_own_derivation_of_a_name(void) {
-  // What HA makes of "AC Slaapkamer" + "tijd sinds opstart" without an area:
+  // What HA makes of "AC Slaapkamer" + "time since boot" without an area:
   // lower case, every run of non-alphanumerics one underscore, none at the ends.
   char out[48];
-  TEST_ASSERT_EQUAL_size_t(18, mhi_discovery_slug("tijd sinds opstart", out, sizeof(out)));
-  TEST_ASSERT_EQUAL_STRING("tijd_sinds_opstart", out);
-  TEST_ASSERT_TRUE(mhi_discovery_slug("wifi-signaal", out, sizeof(out)) > 0);
-  TEST_ASSERT_EQUAL_STRING("wifi_signaal", out);
+  TEST_ASSERT_EQUAL_size_t(15, mhi_discovery_slug("time since boot", out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("time_since_boot", out);
+  TEST_ASSERT_TRUE(mhi_discovery_slug("wifi-signal", out, sizeof(out)) > 0);
+  TEST_ASSERT_EQUAL_STRING("wifi_signal", out);
   TEST_ASSERT_TRUE(mhi_discovery_slug("Wi-Fi PHY", out, sizeof(out)) > 0);
   TEST_ASSERT_EQUAL_STRING("wi_fi_phy", out);
   TEST_ASSERT_TRUE(mhi_discovery_slug("  Free  heap. ", out, sizeof(out)) > 0);
@@ -317,7 +328,7 @@ static void test_slug_refuses_an_empty_name_or_a_small_buffer(void) {
   TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_slug("", out, sizeof(out)));
   TEST_ASSERT_EQUAL_STRING("", out);
   TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_slug("---", out, sizeof(out)));
-  TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_slug("tijd sinds opstart", out, sizeof(out)));
+  TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_slug("time since boot", out, sizeof(out)));
   TEST_ASSERT_EQUAL_STRING("", out);
   TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_slug(NULL, out, sizeof(out)));
 }
@@ -459,7 +470,7 @@ int main(void) {
   RUN_TEST(test_the_vanes_select_offers_the_names_and_the_unknown_state);
   RUN_TEST(test_the_silent_switch_uses_the_payload_texts);
   RUN_TEST(test_the_problem_sensors_are_diagnostic_and_template_the_topics);
-  RUN_TEST(test_the_five_sensors_match_hass_config_304);
+  RUN_TEST(test_the_five_diagnostic_sensors_carry_their_custom_names_classes_and_units);
   RUN_TEST(test_without_a_template_or_entity_prefix_those_keys_are_absent);
   RUN_TEST(test_quotes_in_a_name_are_escaped);
   RUN_TEST(test_slug_is_home_assistants_own_derivation_of_a_name);
