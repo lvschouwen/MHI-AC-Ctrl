@@ -348,7 +348,7 @@ Home Assistant's climate accepts only its own mode names, so a discovery build a
 #define HA_DISCOVERY_PREFIX "homeassistant"
 #define HA_DEVICE_NAME HOSTNAME           // the device; Home Assistant shows every entity as "<device> <entity name>"
 #define HA_CLIMATE_ID HOSTNAME            // unique_id of the climate
-#define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy
+#define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code
 //#define HA_ENTITY_PREFIX "ac_bedroom"   // optional: pins the entity IDs to climate.ac_bedroom and <domain>.ac_bedroom_<slug of the entity name> (select.ac_bedroom_vanes, sensor.ac_bedroom_free_heap, ...), what Home Assistant derives itself for a device without an area, so an area or a lost registry never changes them (lower case a-z 0-9 _; needs Home Assistant 2025.10 or newer, which knows default_entity_id)
 #define HA_NAME_VANES "Vanes"             // entity names; likewise HA_NAME_SILENT, _PROBLEM, _WIRING, _UPTIME, _FREE_HEAP, _RSSI, _RESET_REASON, _WIFI_PHY
 //#define HA_RESET_REASON_TPL "{{ value }}" // optional value_template of the reset-reason sensor

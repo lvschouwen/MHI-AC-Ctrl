@@ -299,8 +299,9 @@
 #ifndef PAYLOAD_VANESLR_SWING
 #define PAYLOAD_VANESLR_SWING "Swing"
 #endif
-// Left/right louver positions, as seen on the unit: 1 leftmost .. 7 spot
-// (fork #20). set/VanesLR also accepts 1..7 and 8 (= swing) whatever these
+// Left/right louver positions, as seen on the unit: 1 leftmost .. 5 rightmost,
+// 6 wide, 7 spot -- 6 and 7 are spread modes, not positions (fork #20).
+// set/VanesLR also accepts 1..7 and 8 (= swing) whatever these
 // say; define them as "1".."7" to keep the numeric texts.
 #ifndef PAYLOAD_VANESLR_1
 #define PAYLOAD_VANESLR_1 "Left"
