@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 void group_setup();      // once at boot
-void group_connected();  // after every MQTT connect: clears the peer table, starts the 5 s grace period
+void group_connected();  // after every MQTT connect: clears the peer table, starts the 5 s grace period, and cancels a pending outdoor discovery pass
 void group_loop();       // every loop() pass: the election, and what it asks for, while connected
 
 // Offered every MQTT message first. True when the topic was the group's (a

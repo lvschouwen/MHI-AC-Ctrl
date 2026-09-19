@@ -365,7 +365,8 @@ static void test_row_enabled_gates_vaneslr_3dauto_and_outdoor(void) {
   TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_VANES_LR, &kUitkijk));
   TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_OU_PROTECTION, &kSlaapkamer));
   // A row past the end of the table belongs to no build, even in the context
-  // that enables everything: is_outdoor_row() would otherwise call it outdoor.
+  // that enables everything: mhi_discovery_is_outdoor_row(), the public
+  // closed-range check, would otherwise call it outdoor.
   TEST_ASSERT_FALSE(mhi_discovery_row_enabled(MHI_DISCOVERY_ROWS, &kSlaapkamer));
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
     if (r == MHI_DISCOVERY_VANES_LR || r == MHI_DISCOVERY_3DAUTO || mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) continue;

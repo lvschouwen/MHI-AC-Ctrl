@@ -1,5 +1,5 @@
 // Home Assistant MQTT discovery on the unit (fork #4 batch B, spec §4.4).
-// Real code only with HA_DISCOVERY; otherwise three empty functions, so
+// Real code only with HA_DISCOVERY; otherwise five empty functions, so
 // main.cpp needs no #ifdef.
 
 #pragma once

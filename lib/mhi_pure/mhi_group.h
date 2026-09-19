@@ -180,7 +180,7 @@ struct MhiGroup {
   bool configs_pending;
   uint32_t configs_ms;      // when the 30 s before the configs started
   bool resend_pending;
-  uint32_t resend_ms;       // when the 5 s before the re-send started
+  uint32_t resend_ms;       // when the 35 s before the re-send started
   MhiGroupPeer peers[MHI_GROUP_MAX_PEERS];
 };
 
@@ -192,10 +192,16 @@ enum : uint8_t {
   MHI_GROUP_ACT_CONFIGS = 0x10,  // call discovery_start_outdoor()
 };
 
-// What one tick asks the glue to do, in this order: subscribe, then the flags
-// in the order they are listed above, DEMOTE first. There is no unsubscribe:
-// an old peer topic goes at the next connect (clean session), and a message on
-// it matches no peer (spec §6.1 step 2).
+// What one tick asks the glue to do. The glue (group.cpp's group_loop()) runs
+// them in this fixed order, not the bit order above: subscribe, then DEMOTE,
+// RECORD, STATE, START, CONFIGS. There is no unsubscribe: an old peer topic
+// goes at the next connect (clean session), and a message on it matches no
+// peer (spec §6.1 step 2).
+//
+// Contract: `now` must never go backwards between calls into mhi_group. Every
+// elapsed-time check here is an unsigned subtraction from a stored uint32_t
+// timestamp, so a `now` that regresses (not just the millis() wrap, which
+// wraps forward) can make an elapsed time appear huge and fire early.
 struct MhiGroupActions {
   uint8_t flags;
   uint8_t state;                            // with MHI_GROUP_ACT_STATE: 0 member, 1 publisher, 2 ID mismatch, 3 version mismatch
