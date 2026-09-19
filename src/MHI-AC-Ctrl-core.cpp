@@ -30,20 +30,28 @@ void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection t
   op_return_air_old = 0xff;
   op_iu_fanspeed_old = 0xff;
   op_thi_r1_old = 0x00;
-  op_thi_r2_old = 0x00;
   op_thi_r3_old = 0x00;
   op_total_iu_run_old = 0;
-  op_outdoor_old = 0xff;
-  op_tho_r1_old = 0x00;
-  op_total_comp_run_old = 0;
-  op_ct_old = 0xff;
-  op_tdsh_old = 0xff;
-  op_protection_no_old = 0xff;
-  op_ou_fanspeed_old = 0xff;
-  op_defrost_old = 0x00;
-  op_comp_old = 0xffff;
-  op_td_old  = 0x00;
   op_ou_eev1_old = 0xffff;
+  reset_system_values();
+}
+
+// The group root starts empty and a new publisher must fill it in its first
+// operating-data cycle (fork #22 spec §4.3). The old sentinels were valid
+// readings for several of these (DEFROST "Off" was 0x00, OUTDOOR 0xff is
+// 40.25 degC), so those values were never republished after a connect.
+void MHI_AC_Ctrl_Core::reset_system_values() {
+  op_outdoor_old = 0xffff;
+  op_ct_old = 0xffff;
+  op_comp_old = 0xffff;
+  op_defrost_old = 0xffff;
+  op_total_comp_run_old = 0xffff;
+  op_protection_no_old = 0xffff;
+  op_td_old = 0xffff;
+  op_tdsh_old = 0xffff;
+  op_tho_r1_old = 0xffff;
+  op_thi_r2_old = 0xffff;
+  op_ou_fanspeed_old = 0xffff;
 }
 
 void MHI_AC_Ctrl_Core::init(bool drive_miso) {

@@ -115,20 +115,22 @@ class MHI_AC_Ctrl_Core {
     byte op_return_air_old;
     byte op_iu_fanspeed_old;
     byte op_thi_r1_old;
-    byte op_thi_r2_old;
     byte op_thi_r3_old;
     byte op_total_iu_run_old;
-    byte op_outdoor_old;
-    byte op_tho_r1_old;
-    byte op_total_comp_run_old;
-    byte op_ct_old;
-    byte op_tdsh_old;
-    byte op_protection_no_old;
-    byte op_ou_fanspeed_old;
-    byte op_defrost_old;
-    uint16_t op_comp_old;
-    byte op_td_old;
     uint16_t op_ou_eev1_old;
+    // The 11 system values (fork #22 spec §4.1): 16 bits wide, so the
+    // sentinel 0xFFFF equals no one-byte reading (reset_system_values()).
+    uint16_t op_outdoor_old;
+    uint16_t op_ct_old;
+    uint16_t op_comp_old;
+    uint16_t op_defrost_old;
+    uint16_t op_total_comp_run_old;
+    uint16_t op_protection_no_old;
+    uint16_t op_td_old;
+    uint16_t op_tdsh_old;
+    uint16_t op_tho_r1_old;
+    uint16_t op_thi_r2_old;
+    uint16_t op_ou_fanspeed_old;
 
     // for writing to AC
     byte new_Power = 0;
@@ -169,6 +171,7 @@ class MHI_AC_Ctrl_Core {
 
     void init(bool drive_miso = true);    // initialization called once after boot
     void reset_old_values();              // resets the 'old' variables ensuring that all status information are resend
+    void reset_system_values();           // the same for the 11 system values only: each is published at its next reading (fork #22)
     int loop(uint max_time_ms);           // receive / transmit a frame of 20 bytes; returns an ErrMsg
     uint get_call_counter();              // how often loop() has run since boot
     void set_power(boolean power);        // power on/off the AC
