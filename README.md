@@ -10,6 +10,7 @@ a qualified professional because faulty handling may cause leakage of water, ele
 # Prerequisites:
 For use of the program you have to connect your ESP8266 (I use a LOLIN(WEMOS) D1 R2 & mini at 160 MHz) via a
 cable connector to your air conditioner. This has to be a split device (separated indoor and outdoor unit).
+With several indoor units on one outdoor unit, the units elect one of them to publish the outdoor unit's values and its Home Assistant device; see `GROUP_ROOT` in [SW-Configuration.md](SW-Configuration.md#several-indoor-units-on-one-outdoor-unit).
 I assume that all AC units of the type "SRK xx ZS-S" / "SRC xx ZS-S" are supported. I use the indoor unit SRK 35 ZS-S and the outdoor unit SRC 35 ZS-S. Users reported that additionally the following models are supported:
 
 - [SRF xx ZJX-S1](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/17#issue-632187165)

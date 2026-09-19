@@ -92,10 +92,11 @@ Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C
 Errorcode|r|0 .. 255|error code (unsigned int), 0 when there is none; what a code means is in [Error codes](#error-codes)
 Action|r|"off", "idle", "cooling", "heating", "drying", "fan"|what the AC is doing <sup>5</sup>
 Silent|r/w|"On", "Off"|Silent operation of the outdoor unit, read from the AC and settable <sup>6</sup>
-Discovery|r|"ok", "modes"|Only with `HA_DISCOVERY`: the Home Assistant discovery configs were published; "modes" means the climate config was skipped because the mode texts are not Home Assistant's, see [Home Assistant discovery](#home-assistant-discovery-supporth)
+Discovery|r|"ok", "modes", "skipped"|Only with `HA_DISCOVERY`: the Home Assistant discovery configs were published; "modes" means the climate config was skipped because the mode texts are not Home Assistant's; "skipped" means a config did not fit its buffer and was not published: after the unit rows, and after the outdoor rows when one of those did not fit. See [Home Assistant discovery](#home-assistant-discovery-supporth)
+Group|r|0, 1, 2, 3|this unit's part in the outdoor election: `0` member, `1` publisher, `2` its outdoor ID differs from the group's, `3` a unit with another group protocol version leads the group; see [Several indoor units on one outdoor unit](#several-indoor-units-on-one-outdoor-unit)
 ErrOpData|w||triggers the reading of last error operating data
 VanesLR|r/w|"Left","LeftCenter","Center","CenterRight","Right","Wide","Spot","Swing"|Vanes left/right position, as seen on the unit: 1 leftmost .. 7 spot; writing 1..7 or 8 (="Swing") still works; define `PAYLOAD_VANESLR_1`..`PAYLOAD_VANESLR_7` as `"1"`..`"7"` to keep the numeric texts <sup>4</sup>
-3Dauto|r/w|"On", "Off"|3D auto only works for mode Auto, Cool and heat <sup>4</sup>
+3Dauto|r/w|"On", "Off"|3D auto only works for mode Auto, Cool and heat; choosing a left/right louver position leaves it on (seen 18 Sep 2026: `DB17 0f>0e`) <sup>4</sup>
 
 <sup>1</sup> When the last command was received via the infrared remote control then the Vanes status is unknown and the `?` is published.
 <sup>2</sup> Please compare with section [Room temperature](#room-temperature) for writing.
@@ -115,13 +116,14 @@ fMISO    |r  |unsigned integer|frequency of the MISO pin in Hz during boot
 fMOSI    |r  |unsigned integer|frequency of the MOSI pin in Hz during boot
 fSCK     |r  |unsigned integer|frequency of the SCK pin in Hz during boot
 Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `MISO` or `SCK,MOSI`. A fault is reported and the unit keeps running so it stays reachable over OTA. After a `MISO` fault the MISO pin stays an input: the AC status is still read, but no commands reach the AC <sup>5</sup>
-reset|w|"reset"|resets the ESP8266
+reset|w|"reset", "crash"|"reset" restarts the ESP8266; "crash" raises one deliberate exception (reset reason 2), the proof of [crash-loop safe mode](#crash-loop-safe-mode). Never send it retained, see there
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
 Uptime   |r  |integer         |seconds since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; keeps counting past the 49.7-day `millis()` wrap
 FreeHeap |r  |integer         |free heap in bytes, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
-FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; saturates, never wraps
-FrameTimeouts|r|integer         |SCK timeouts since boot, same publishing rhythm; what is normal (boot, OTA, Wi-Fi scans) is unknown until a unit has run with it for a while
+FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; saturates, never wraps. 0 on both units over the batch C soak (18-19 Sep 2026)
+FrameTimeouts|r|integer         |SCK timeouts since boot, same publishing rhythm. Over the batch C soak only at boot, 0 or 1 per boot, and none after
 ResetReason|r|string          |why the ESP8266 last started, at MQTT (re-)connect: `Power On`, `Software/System restart` (also after an OTA flash or `set/reset`), `Hardware Watchdog`, `Software Watchdog`, `Exception`, `External System`
+SafeMode |r  |integer         |boots into [crash-loop safe mode](#crash-loop-safe-mode) since power-on, at MQTT (re-)connect; `0` on a healthy unit
 WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
 WIFI_PHY |r  |"11b", "11g", "11n"|802.11 mode the unit joined with, after MQTT (re-)connect. `11n` unless the [PHY mode fallback](#wifi-phy-mode-fallback) had to switch to `11g`
 Version  |r  |string          |Short git commit hash the firmware was built from, e.g. `9d8886d`; `-dirty` is appended when the build had uncommitted changes, `unknown` when built without git
@@ -135,7 +137,7 @@ Note: The topic and the payload text of the status data is adaptable by defines 
 
 `RSSI`, `Uptime` and `FreeHeap` are published at MQTT (re-)connect and then periodically, so a unit can be watched without waiting for a reconnect: a live signal strength, an uptime that shows a reboot, a heap that shows a leak. `ResetReason` is published at connect only, since it does not change.
 ```cpp
-#define TELEMETRY_PERIOD 300   // seconds between the periodic publishes; 0 publishes them at MQTT connect only
+#define TELEMETRY_PERIOD 300   // seconds between the periodic publishes, 1..86400; the group record goes out at the same rhythm, so the build refuses 0
 ```
 
 ### MQTT operating data
@@ -149,6 +151,39 @@ The path to the operating data topic can be adapted.
 Without changes of the path, subscribe to `MHI-AC-Ctrl/OpData/#` for receiving all operating data. Please see section [Operating data](#operating-data-mhi-ac-ctrl-coreh) to find all supported operating data.
 
 Note: The topic and the payload text is adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h).
+
+### Several indoor units on one outdoor unit
+
+On a multi-split every indoor unit reads the same outdoor unit, so eleven operating values are the same on all of them. The indoor units of one outdoor unit elect one of them, the publisher, to write those eleven values under a topic root they share; everything else stays under each unit. A single split needs no configuration: its root is its own `MQTT_PREFIX`, so it elects itself and its topics stay where they are.
+
+```cpp
+#define GROUP_ROOT "airco/outdoor/"             // topic root shared by the units of one outdoor unit; default MQTT_PREFIX. 1..64 characters, ends in "/", no + # ;
+//#define GROUP_OP_PREFIX GROUP_ROOT "OpData/"  // where the publisher writes the eleven values; without a GROUP_ROOT the default is MQTT_OP_PREFIX
+```
+
+Give every unit of one outdoor unit the same `GROUP_ROOT`, and the same `TOPIC_CONNECTED`, `PAYLOAD_CONNECTED_TRUE` and `PAYLOAD_CONNECTED_FALSE`: each unit watches the others' `<prefix>connected`. `GROUP_ROOT` is at most 64 characters so that the largest record message (5 bytes of header, 2 of topic length, the root, `members/`, a 32-character hostname and a 140-byte record: 251 bytes) fits PubSubClient's 256-byte receive buffer, which drops a larger message whole: with a longer root the units would never see each other's records, and two of them could publish at once. The build refuses a longer root, and a `HOSTNAME` longer than 32 characters.
+
+Which values go where, measured on 17 Sep 2026 with two indoor units cooling on one outdoor unit:
+- written by the publisher only, under `GROUP_OP_PREFIX`: `OUTDOOR`, `CT`, `COMP`, `DEFROST`, `TOTAL-COMP-RUN`, `PROTECTION-NO`, `TD`, `TDSH`, `THO-R1`, `THI-R2`, `OU-FANSPEED`;
+- written by every unit under its own `MQTT_OP_PREFIX`, as before: `RETURN-AIR`, `THI-R1`, `THI-R3`, `IU-FANSPEED`, `TOTAL-IU-RUN`, `Tsetpoint`, `Mode`, `unknown`, `OU-EEV1` (each indoor circuit has its own valve: 97 and 164 on 17 Sep) and `KWH`;
+- `ErrOpData/` stays per unit, the eleven included: it is the snapshot the unit read from its own indoor unit.
+
+`KWH` is the outdoor unit's energy counted while *this* indoor unit is on, and it starts from 0 again when this unit is switched on (measured 18-19 Sep 2026: it followed the integral of `CT` × 230 V only while the unit was on). For the whole outdoor unit's energy, integrate the power, `CT` × 230 V, in Home Assistant.
+
+The election in short:
+- Every unit keeps a retained record at `<GROUP_ROOT>members/<HOSTNAME>`: `<proto>;<role>;<term>;<uptime>;<period>;<outdoor_id>;<prefix>`, e.g. `1;1;1;41382;60;ac_outdoor;airco/slaapkamer/`. That is the group protocol version (1), the role (0 member, 1 publisher), the publisher generation, the unit's `Uptime` in seconds, its `TELEMETRY_PERIOD`, its outdoor ID and its `MQTT_PREFIX`. The unit sends it again every `TELEMETRY_PERIOD`, which is why `TELEMETRY_PERIOD` must be 1..86400.
+- Each unit publishes its part on `<MQTT_PREFIX>Group`: `0` member, `1` publisher, `2` outdoor ID mismatch, `3` protocol version mismatch.
+- After every MQTT connect a unit only listens for 5 s. A publisher that rebooted finds its own record then and carries on without a handover.
+- A unit counts as gone when its record has not changed for 3 of its own periods, or when its `connected` has read 0 for 30 s.
+- When no publisher has been left for 5 s, the live unit with the lowest hostname takes over with a new generation. A takeover therefore takes 30 s + 5 s after the publisher's `connected` went to 0.
+- A live publisher is never replaced, so a unit that comes back stays a member. When two units take over at the same moment, the newer generation keeps the role, and at equal generations the lower hostname.
+- The live unit with the lowest hostname sets the group's outdoor ID and protocol version. A unit that differs stays out (`Group` `2` or `3`).
+- The new publisher writes the eleven values within one operating-data cycle (20 s), and sends the outdoor device's Home Assistant configs 30 s after it took over.
+
+Limits:
+- A publisher that stays connected but cannot read its AC keeps the role: the others still see its `connected` 1 and its record changing.
+- A dead unit whose retained `connected` still reads 1 (it died while the broker was down, so no will was sent) counts as gone only after 3 of its periods of continuous connection. A unit that reconnects more often than that keeps finding it fresh: if the dead unit has the lowest hostname, or was the publisher, it holds off a takeover for as long as the reconnects go on.
+- To remove a unit from the group for good, delete its record: `mosquitto_pub -h <broker> -r -n -t <GROUP_ROOT>members/<HOSTNAME>`.
 
 ### MQTT last error operating data
 When an error in the AC occurs, some operating data of this error are stored in the AC and can be read out.
@@ -233,6 +268,27 @@ The OTA hostname can be adapted, per default it is the hostname used by WiFi.
 #define OTA_HOSTNAME HOSTNAME     // default for the OTA_HOSTNAME is the HOSTNAME
 #define OTA_PASSWORD ""           // Enter an OTA password if required
 ```
+
+## Crash-loop safe mode
+
+OTA is the only way to reach a unit inside an AC without tools. A build that crashes shortly after it connects reboots every few seconds and is never up long enough for an OTA upload, which takes about 15-20 s for a 350 KB image. So the unit counts crashes:
+- a boot after a hardware watchdog, an exception or a software watchdog reset counts one up;
+- so does a boot after `abort()`, `panic()`, a failed `assert`, a failed `new` or a stack overflow. The SDK reports those as a plain restart (`ResetReason` `Software/System restart`), so the firmware defines the core's crash hook, which sets a crashed bit in the record; the next boot counts the bit once, unless it is a power-on, and every boot clears it;
+- any other boot sets the count to 0: power-on, `ESP.restart()` (which is also how an OTA update and `set/reset` end), deep-sleep wake, external reset;
+- once the unit has been up for 120 s, it sets the count back to 0. So only crashes within 120 s of a boot count towards a loop.
+
+The count lives in three words of RTC user memory, which survive a reset but not a power loss. They sit at user block 32, right after the 128 bytes where the bootloader keeps an OTA update's command, so an OTA update leaves them alone.
+
+After three such crashes in a row the unit starts in **safe mode**:
+- it joins Wi-Fi and serves OTA, and does nothing else: no MQTT, no AC communication (MISO is never driven; the AC runs on its remote meanwhile), no discovery, no DS18x20;
+- after 10 minutes it restarts normally. If the fault is still there, three more crashes bring it back: about 11 minutes a cycle, 10 of them reachable over OTA;
+- a crash in safe mode counts as a crash, so the unit stays in safe mode.
+
+In safe mode Home Assistant shows the unit unavailable: its will set `connected` to 0 when the crashed session dropped. Afterwards the retained `SafeMode` topic, published at every connect, says how many times the unit entered safe mode since it was powered on; `0` on a healthy unit. It goes back to 0 only at a power-on.
+
+`set/reset` with the payload `crash` raises one deliberate exception, reset reason 2 (`ResetReason` `Exception`). Sent three times, each within 120 s of the unit's boot, it puts the unit in safe mode: the controlled proof that the path works. Every crash is one you send; if safe mode did not engage, the unit would simply boot normally again.
+
+Never send `set/reset` with retain, whatever the payload. The broker hands a retained message over again at every connect: `reset` would restart the unit after every connect, and `crash` would crash it after every normal boot, so safe mode would come back every 11 minutes. To clear one sent retained by mistake, send an empty retained message to the same topic: `mosquitto_pub -h <broker> -r -n -t <MQTT_PREFIX>set/reset`. [Troubleshooting](Troubleshooting.md#fire-the-unit-is-unavailable-for-10-minutes-safe-mode) says how to recognise safe mode and use it.
 
 ## External Temperature Sensor Settings ([support.h](src/support.h))
 When an external temperature sensor is connected, you can configure the pin where DQ of the the DS18x20 is connected, default is Pin 4 (D2)
@@ -339,24 +395,23 @@ Worked example (16 Sep 2026, `airco/uitkijk/#` captured while pressing the remot
 
 ## Home Assistant discovery ([support.h](src/support.h))
 
-With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`, and with `USE_EXTENDED_FRAME_SIZE` the left/right louvers as swing_horizontal mode), a select for the vane position, a switch for `Silent`, two problem binary sensors and eight diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`, `FrameErrors`, `FrameTimeouts` and the `Errorcode` number), all under one device. With `USE_EXTENDED_FRAME_SIZE`, also a select for the left/right louvers and a switch for `3Dauto`. With `HA_OUTDOOR_DEVICE`, seven more entities for the shared outdoor unit's own device (temperature, current, energy, compressor frequency, defrost, compressor run time, compressor-protection number), linked with `via_device`, reading the publishing unit's own `OpData/` topics -- with two indoor units sharing one outdoor unit, only one of them should have `HA_OUTDOOR_DEVICE` on. 13 entities with neither option, up to 22 with both. Availability comes from `connected`.
+With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`, and with `USE_EXTENDED_FRAME_SIZE` the left/right louvers as swing_horizontal mode), a select for the vane position, a switch for `Silent`, two problem binary sensors and eight diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`, `FrameErrors`, `FrameTimeouts` and the `Errorcode` number), all under one device, a diagnostic sensor for `Group` (fork #22) and a Restart button (fork #24: it sends `set/reset` `reset`, entity category config). With `USE_EXTENDED_FRAME_SIZE`, also a select for the left/right louvers and a switch for `3Dauto`: 15 entities per unit without that option, 17 with it. The outdoor unit has a device of its own with six entities (temperature, current, compressor frequency, defrost, compressor run time, compressor-protection number), linked with `via_device` to the unit that publishes them: only the group's publisher sends these configs, 30 s after it took over, reading the group root's `OpData/` topics and available while the publisher is (see [Several indoor units on one outdoor unit](#several-indoor-units-on-one-outdoor-unit)). There is no energy entity: `KWH` counts per indoor unit. Availability comes from `connected`. `HA_OUTDOOR_DEVICE` is gone: a build that still defines it stops with an error; give the units of one outdoor unit the same `GROUP_ROOT` instead.
 
-Home Assistant's climate accepts only its own mode names, so a discovery build also needs `POWERON_WHEN_CHANGING_MODE` (the climate's `off` mode is `set/Mode off`; the build refuses `HA_DISCOVERY` without the option) and the `PAYLOAD_MODE_*` texts of [Topic and payload text](#topic-and-payload-text-mhi-ac-ctrlh). The `PAYLOAD_ACTION_*` texts must stay Home Assistant's `hvac_action` names as well: the climate reads `Action` without a template. The firmware checks them at boot: with other texts the climate config is skipped, Serial says so and the retained `Discovery` topic reads `modes` instead of `ok`.
+Home Assistant's climate accepts only its own mode names, so a discovery build also needs `POWERON_WHEN_CHANGING_MODE` (the climate's `off` mode is `set/Mode off`; the build refuses `HA_DISCOVERY` without the option) and the `PAYLOAD_MODE_*` texts of [Topic and payload text](#topic-and-payload-text-mhi-ac-ctrlh). The `PAYLOAD_ACTION_*` texts must stay Home Assistant's `hvac_action` names as well: the climate reads `Action` without a template. The firmware checks them at boot: with other texts the climate config is skipped, Serial says so and the retained `Discovery` topic reads `modes` instead of `ok`. A config that does not fit its 1024-byte buffer is not published either: Serial says so, and `Discovery` reads `skipped`, after the unit rows, and after the outdoor rows only when one of those did not fit.
 
 ```cpp
 #define HA_DISCOVERY true                 // publish the discovery configs
 #define HA_DISCOVERY_PREFIX "homeassistant"
 #define HA_DEVICE_NAME HOSTNAME           // the device; Home Assistant shows every entity as "<device> <entity name>"
 #define HA_CLIMATE_ID HOSTNAME            // unique_id of the climate
-#define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code
+#define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart
 //#define HA_ENTITY_PREFIX "ac_bedroom"   // optional: pins the entity IDs to climate.ac_bedroom and <domain>.ac_bedroom_<slug of the entity name> (select.ac_bedroom_vanes, sensor.ac_bedroom_free_heap, ...), what Home Assistant derives itself for a device without an area, so an area or a lost registry never changes them (lower case a-z 0-9 _; needs Home Assistant 2025.10 or newer, which knows default_entity_id)
 #define HA_NAME_VANES "Vanes"             // entity names; likewise HA_NAME_SILENT, _PROBLEM, _WIRING, _UPTIME, _FREE_HEAP, _RSSI, _RESET_REASON, _WIFI_PHY
 //#define HA_RESET_REASON_TPL "{{ value }}" // optional value_template of the reset-reason sensor
-//#define HA_OUTDOOR_DEVICE true            // also publish the outdoor unit's device; on for at most one of the units sharing it
-#define HA_OUTDOOR_ID HA_ID_PREFIX "_outdoor"
+//#define HA_OUTDOOR_ID "ac_outdoor"        // the outdoor device's id and unique_id prefix, 1..40 characters; default <slug of GROUP_ROOT>_outdoor, derived at boot so every unit of the group derives the same
 #define HA_OUTDOOR_NAME "AC outdoor unit"
 //#define HA_OUTDOOR_ENTITY_PREFIX "ac_outdoor"
-#define HA_NAME_VANES_LR "Vanes left/right"  // entity names; likewise HA_NAME_3DAUTO, _FRAME_ERRORS, _FRAME_TIMEOUTS, _ERROR_CODE, _OU_OUTDOOR, _OU_CT, _OU_KWH, _OU_COMP, _OU_DEFROST, _OU_COMP_RUN, _OU_PROTECTION
+#define HA_NAME_VANES_LR "Vanes left/right"  // entity names; likewise HA_NAME_3DAUTO, _FRAME_ERRORS, _FRAME_TIMEOUTS, _ERROR_CODE, _GROUP_ROLE, _RESTART, _OU_OUTDOOR, _OU_CT, _OU_COMP, _OU_DEFROST, _OU_COMP_RUN, _OU_PROTECTION
 ```
 
 The `unique_id`s never change once entities exist: Home Assistant keys entities by them and keeps their entity IDs, history and automations across firmware updates and renames. A config with a `unique_id` that a YAML entity still uses is rejected as a duplicate, so remove the YAML entity (and reload the MQTT YAML) before the unit's first discovery build connects.
@@ -421,7 +476,7 @@ You can find some hints related to the meaning of the operating data [here](http
 
 Note 2: The MQTT topic names are the `TOPIC_*` defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), not the comment text above: `SET-TEMP` is published as `OpData/Tsetpoint`, `energy-used` as `OpData/KWH`, `OU-EEV` as `OpData/OU-EEV1`, `PROTECTION-No` as `OpData/PROTECTION-NO` and `MODE` as `OpData/Mode`. An opcode the program does not know is published on `OpData/unknown`. `OpData/TD` publishes the text `<=30` for values below 41 °C. `SILENT` is published on the status topic `Silent`, not under `OpData/`.
 
-Note 3: The energy-used is the energy in kWh counting from power on the AC. If you power off the AC, the value (in kWh) will keep the last value. When you power on the AC again, it will start from 0 again.
+Note 3: The energy-used (`KWH`) is the outdoor unit's energy in kWh counted while this indoor unit is on. It starts from 0 again when this indoor unit is switched on, and it is not the outdoor unit's total when several indoor units share it, see [Several indoor units on one outdoor unit](#several-indoor-units-on-one-outdoor-unit).
 
 Hint: The error operating data is usually a sub-set of the operating data above. If user requests error operating data, all available error operating data is provided independent from the list above.
 
@@ -491,7 +546,7 @@ The following sections describe the usage of these functions.
 Configures the input /output state of the SPI pins. Resets old values. Pass `false` when the boot-time wiring check found a signal on MISO: the pin then stays an input, so the ESP8266 never drives against it. Frames are still received, but none are sent.
 
 ### `reset_old_values()`
-This should be called if you want to ensure that the receiver of the status data has the latest data. E.g. in case of a MQTT broker disconnect it should be called.
+This should be called if you want to ensure that the receiver of the status data has the latest data. E.g. in case of a MQTT broker disconnect it should be called. It calls `reset_system_values()`, which does the same for the eleven values the group's publisher writes; the group also calls that one when a unit becomes the publisher, so each of the eleven goes out at its next reading.
 
 ### `int loop(uint max_time_ms)`
 For receiving / transmitting a frame of 20 bytes.

@@ -31,7 +31,7 @@ To find out which bytes a remote function changes on your unit, see [Finding out
 Connecting the MHI-AC-Ctrl controller will **disable** the RC timer functionality. This also apply to the standard MHI WiFi (or other) controller. See [#148](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/148) for more information and [Passive Mode](SW-Configuration.md#passive-mode) for a workaround.
 
 ## :fire: ESP8266 crashes periodically
-The `ResetReason` topic says how the last start came about, and `Uptime` shows how long ago that was. `Hardware Watchdog`, `Software Watchdog` and `Exception` are crashes; `Power On`, `Software/System restart` (an OTA flash, `set/reset`) and `External System` are not. A unit that keeps reporting a crash reason with a short uptime is the case below.
+The `ResetReason` topic says how the last start came about, and `Uptime` shows how long ago that was. `Hardware Watchdog`, `Software Watchdog` and `Exception` are crashes; `Power On`, `Software/System restart` (an OTA flash, `set/reset`) and `External System` are not. A unit that keeps reporting a crash reason with a short uptime is the case below. Three crashes in a row, each within 120 s of the boot, start [safe mode](#fire-the-unit-is-unavailable-for-10-minutes-safe-mode). `abort()`, `panic()`, a failed `assert` or `new` and a stack overflow show as `Software/System restart`, but safe mode counts them as crashes too.
 
 For a periodic crash there are different causes possible:
 
@@ -94,6 +94,17 @@ However, this does not appear to be critical and is usually not noticed by the u
 
 ## :fire: Room temperature is toggling
 This effect occurs with some AC models. The cause is unclear.
+
+## :fire: The unit is unavailable for 10 minutes: safe mode
+After three crashes in a row, each within 120 s of the boot before, the unit starts in [crash-loop safe mode](SW-Configuration.md#crash-loop-safe-mode): Wi-Fi and OTA only, for 10 minutes. You recognise it by:
+- Home Assistant shows the unit unavailable (`connected` 0) for about 10 minutes, while the AC still works on its remote;
+- the serial log starts with `Safe mode check: reset reason 2, crashes in a row 3, ...` (reason 4 when the last crash was an `abort()`, a failed `assert` or a stack overflow) and then `SAFE MODE: three crashes in a row; Wi-Fi and OTA only, a normal boot in 10 min`;
+- the unit still answers OTA: it is on the network as `<hostname>._arduino._tcp` (`avahi-browse -rt _arduino._tcp` lists it);
+- once it boots normally again, the retained `SafeMode` topic reads 1 or more, and `ResetReason` reads `Software/System restart`.
+
+Use the 10 minutes to flash a build that works, as below in [OTA cannot find the device](#fire-ota-cannot-find-the-device). If you do nothing, the unit boots normally after 10 minutes, and a fault that is still there brings it back to safe mode after three more crashes.
+
+If safe mode comes back after every normal boot while the build is known to be good, look for a retained `set/reset` (`mosquitto_sub -h <broker> -v -W 2 -t <MQTT_PREFIX>set/reset` prints it) and clear it: `mosquitto_pub -h <broker> -r -n -t <MQTT_PREFIX>set/reset`.
 
 ## :fire: OTA cannot find the device
 The Arduino IDE is no longer used for this project. Flash over OTA with `pio run -t upload --upload-port <hostname>.local`, as described in the [README](README.md#building); that runs [espota.py](https://github.com/esp8266/Arduino/blob/master/tools/espota.py) underneath. If the hostname does not resolve, pass the unit's IP address instead.
