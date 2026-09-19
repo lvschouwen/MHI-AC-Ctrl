@@ -22,7 +22,7 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
 
 **Visible:**
 - In safe mode: Serial lines, the OTA service on the network, and in HA the unit reads unavailable, because its will set `connected 0` when the crashed session dropped.
-- Afterwards: the record also counts **safe-mode entries** since power-on. The first normal connect publishes that as a new retained topic `SafeMode` (a number; `0` on a healthy unit). It gets no HA entity; `health-check.sh` prints it. Without it, a unit that had crash-looped would show nothing once it booted normally again.
+- Afterwards: the record also counts **safe-mode entries** since power-on. Every normal connect publishes that as a new retained topic `SafeMode`: a bare integer, `0` on a healthy unit. hass-config logs every increase. It gets no HA entity; `health-check.sh` prints it. Without it, a unit that had crash-looped would show nothing once it booted normally again.
 
 **The AC** runs on its own remote meanwhile. The bus is silent, as it already is during a crash loop or an OTA upload.
 
@@ -95,5 +95,5 @@ The `ci-custom-payloads` env adds `-D PAYLOAD_FAN_1=\"Low\"` … `PAYLOAD_FAN_4=
 ## 3. Rollout
 Everything rides the #22 flash (#22 spec §11). Additions:
 - After the Slaapkamer flash: `SafeMode 0` retained, and the restart button present.
-- The safe-mode proof on Slaapkamer (§1.5), after the #22 reconnect and takeover tests. The takeover test must end first, because safe mode takes Slaapkamer off the network for 10 min, which is itself a takeover. Uitkijk takes over (term n+1), and Slaapkamer returns as a member.
+- The safe-mode proof on Slaapkamer (§1.5). Conditions from hass-config: daytime, not near Bedtijd, HI POWER/ECO off on Slaapkamer, zonnekoeling not running that room, ideally Slaapkamer off. No push fires, only log lines. The proof comes after the #22 reconnect and takeover tests. The takeover test must end first, because safe mode takes Slaapkamer off the network for 10 min, which is itself a takeover. Uitkijk takes over (term n+1), and Slaapkamer returns as a member.
 - hass-config: fixtures with 17 rows per unit, the `skipped` value, and the `button` entity (`button.ac_<unit>_restart`).
