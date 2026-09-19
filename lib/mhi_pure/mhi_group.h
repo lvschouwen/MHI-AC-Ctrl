@@ -131,3 +131,105 @@ size_t mhi_group_format_record(const MhiGroupRecord* rec, char* out, size_t out_
 // "outdoor" for a root that slugs to nothing. Returns the length, 0 (and "")
 // for a root longer than 64 characters or a result that does not fit out_len.
 size_t mhi_group_default_outdoor_id(const char* group_root, char* out, size_t out_len);
+
+// --- the election (spec §5.2-§6.3) ---------------------------------------------
+
+#define MHI_GROUP_MAX_PEERS 6
+#define MHI_GROUP_GRACE_MS 5000        // after a connect: only collect (§6.1)
+#define MHI_GROUP_SETTLE_MS 5000       // no incumbent for this long before a claim (§6.2 rule 4)
+#define MHI_GROUP_DOWN_GONE_MS 30000   // connected 0 for this long: gone (§5.3)
+#define MHI_GROUP_CONFIGS_MS 30000     // claim or publisher start -> outdoor configs (§6.3)
+#define MHI_GROUP_RESEND_MS 35000      // a beaten claim -> the configs again, after the loser's (§6.2 rule 3)
+
+enum MhiGroupKind : uint8_t { MHI_GROUP_KIND_MEMBER, MHI_GROUP_KIND_FOREIGN };
+enum MhiGroupLink : uint8_t { MHI_GROUP_LINK_UNKNOWN, MHI_GROUP_LINK_UP, MHI_GROUP_LINK_DOWN };
+
+struct MhiGroupPeer {
+  bool used;
+  bool subscribed;           // the glue subscribed <rec.prefix><TOPIC_CONNECTED>
+  MhiGroupKind kind;
+  MhiGroupLink connected;    // the peer's <prefix><TOPIC_CONNECTED>
+  bool stale;                // latched by the tick: no refresh for 3 periods, until the payload changes
+  bool down_gone;            // latched by the tick: connected 0 for 30 s, until connected 1 or another prefix
+  char host[MHI_GROUP_HOST_MAX + 1];
+  MhiGroupRecord rec;        // foreign: rec.proto only
+  uint32_t hash;             // of the whole payload: a change is a refresh
+  uint32_t refreshed_ms;     // first seen, or when the payload last changed
+  uint32_t down_since_ms;    // while connected is MHI_GROUP_LINK_DOWN
+};
+
+struct MhiGroup {
+  // This unit, from mhi_group_init().
+  char host[MHI_GROUP_HOST_MAX + 1];
+  char outdoor_id[MHI_GROUP_ID_MAX + 1];
+  char prefix[MHI_GROUP_ROOT_MAX + 1];
+  uint32_t period;          // TELEMETRY_PERIOD, s
+  // Kept across connects.
+  uint8_t role;             // 0 member, 1 publisher; 0 at boot
+  uint32_t term;            // 0 at boot
+  uint32_t max_term_seen;   // never decreases (§5.3)
+  bool connected;           // mhi_group_connect() has run at least once
+  // Reset at every connect.
+  bool in_grace;
+  uint32_t connect_ms;
+  uint8_t state;            // the Group number as of the last tick
+  uint8_t published_state;  // the Group number last asked for; 0xff: none since the connect
+  uint32_t record_ms;       // when the record was last asked for
+  bool settling;
+  uint32_t settle_ms;
+  bool configs_pending;
+  uint32_t configs_ms;      // when the 30 s before the configs started
+  bool resend_pending;
+  uint32_t resend_ms;       // when the 5 s before the re-send started
+  MhiGroupPeer peers[MHI_GROUP_MAX_PEERS];
+};
+
+enum : uint8_t {
+  MHI_GROUP_ACT_RECORD = 0x01,   // publish this unit's record, retained, on <GROUP_ROOT>members/<HOSTNAME>
+  MHI_GROUP_ACT_STATE = 0x02,    // publish MhiGroupActions.state, retained, on <MQTT_PREFIX><TOPIC_GROUP>
+  MHI_GROUP_ACT_START = 0x04,    // call reset_system_values(): a claim or a publisher start
+  MHI_GROUP_ACT_DEMOTE = 0x08,   // call discovery_cancel_outdoor()
+  MHI_GROUP_ACT_CONFIGS = 0x10,  // call discovery_start_outdoor()
+};
+
+// What one tick asks the glue to do, in this order: subscribe, then the flags
+// in the order they are listed above, DEMOTE first. There is no unsubscribe:
+// an old peer topic goes at the next connect (clean session), and a message on
+// it matches no peer (spec §6.1 step 2).
+struct MhiGroupActions {
+  uint8_t flags;
+  uint8_t state;                            // with MHI_GROUP_ACT_STATE: 0 member, 1 publisher, 2 ID mismatch, 3 version mismatch
+  char subscribe[MHI_GROUP_ROOT_MAX + 1];   // "" or a prefix: subscribe <prefix><TOPIC_CONNECTED>
+};
+
+enum MhiGroupResult : uint8_t {
+  MHI_GROUP_REC_OK,       // taken, or deliberately ignored (this unit's own record after the grace period)
+  MHI_GROUP_REC_INVALID,  // ignored: say so with one Serial line
+  MHI_GROUP_REC_FULL,     // a new unit and no gone entry to replace: say so with one Serial line
+};
+
+// At boot: role 0, term 0. The texts are this unit's HOSTNAME, outdoor ID and
+// MQTT_PREFIX; support.h checks them at compile time.
+void mhi_group_init(MhiGroup* g, const char* host, const char* outdoor_id, const char* prefix, uint32_t period_s);
+
+// After every MQTT connect: clears the peer table and starts the grace period.
+void mhi_group_connect(MhiGroup* g, uint32_t now);
+
+// A message on <GROUP_ROOT>members/<host>. payload is NUL-terminated; len is
+// the length the broker sent, so a payload the glue's copy truncated is refused.
+MhiGroupResult mhi_group_on_record(MhiGroup* g, const char* host, const char* payload, size_t len, uint32_t now);
+
+// A peer's connected topic said 1 (up) or 0 (down).
+void mhi_group_on_connected(MhiGroup* g, const char* host, bool up, uint32_t now);
+
+// The member peer whose <prefix><t_connected> is topic, or NULL.
+const char* mhi_group_host_of_connected_topic(const MhiGroup* g, const char* topic, const char* t_connected);
+
+// Every loop() pass while connected: the rules of §6.1-§6.3.
+void mhi_group_tick(MhiGroup* g, uint32_t now, MhiGroupActions* act);
+
+// The system-value gate (§6.4): past the grace period, role 1 and state 1.
+bool mhi_group_may_publish_system(const MhiGroup* g);
+
+// This unit's record with the given uptime. Returns the length, 0 when it does not fit.
+size_t mhi_group_own_record(const MhiGroup* g, uint32_t uptime_s, char* out, size_t out_len);
