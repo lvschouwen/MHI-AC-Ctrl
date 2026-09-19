@@ -293,6 +293,7 @@ void MeasureFrequency();                                      // measures the fr
 void initWiFi();                                              // basic WiFi initialization
 void setupWiFi(int& WiFiStatus);                              // setup WIFi connection to AP
 int MQTTreconnect();                                          // (re)connect to MQTT broker
+void mqtt_drop_connection();                                  // close the TCP connection (not MQTTclient.disconnect(), which suppresses the will) so the next pass reconnects and resubscribes everything (fork #22)
 void publishTelemetry();                                      // call every loop() pass: advances the uptime counter; publishes RSSI, Uptime, FreeHeap every TELEMETRY_PERIOD s while connected
 void publish_cmd_ok();                                        // last MQTT cmd was o.k.
 void publish_cmd_unknown();                                   // last MQTT cmd was unknown

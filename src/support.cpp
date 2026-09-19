@@ -266,6 +266,14 @@ void publishTelemetry() {
     publishTelemetryNow(uptime_s);
 }
 
+// Closes the TCP connection without sending MQTT's DISCONNECT, so the broker
+// publishes the will (retained "connected" 0) instead of suppressing it. Used
+// when this unit must force a fresh reconnect, e.g. after a failed subscribe
+// (fork #22): group.cpp calls this instead of touching espClient itself.
+void mqtt_drop_connection() {
+  espClient.stop();
+}
+
 int MQTTreconnect() {
   char strtmp[50];
   static int reconnect_trials=0;
@@ -329,8 +337,19 @@ int MQTTreconnect() {
       output_P((ACStatus)type_status, PSTR(TOPIC_WIRING), strtmp);
 
 
-      MQTTclient.subscribe(MQTT_SET_PREFIX "#");
-      MQTTclient.subscribe(GROUP_ROOT "members/+");  // every unit's record, this one's included (fork #22)
+      const bool sub_set = MQTTclient.subscribe(MQTT_SET_PREFIX "#");
+      const bool sub_members = MQTTclient.subscribe(GROUP_ROOT "members/+");  // every unit's record, this one's included (fork #22)
+      if (!sub_set || !sub_members) {
+        // PubSubClient3 returns false on a short write without dropping the
+        // client: left alone, this unit would stay "connected" with some
+        // topics never subscribed (e.g. no members/+, so it never sees the
+        // other publisher and never demotes). Drop the TCP connection so the
+        // next pass sees !connected(), reconnects after the 5 s pacing and
+        // subscribes everything again from scratch.
+        Serial.println(F("MQTTreconnect(): a subscribe failed, dropping the connection so the next pass reconnects and resubscribes"));
+        mqtt_drop_connection();
+        return MQTT_NOT_CONNECTED;
+      }
       return MQTT_RECONNECTED;
     }
     else {

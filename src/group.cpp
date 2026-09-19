@@ -46,8 +46,15 @@ static void publish_state(uint8_t state) {
 static void subscribe_connected(const char* prefix) {
   char topic[MHI_GROUP_ROOT_MAX + sizeof(TOPIC_CONNECTED)];
   snprintf(topic, sizeof(topic), "%s%s", prefix, TOPIC_CONNECTED);
-  if (!MQTTclient.subscribe(topic))
-    Serial.printf_P(PSTR("Group: subscribe %s failed\n"), topic);
+  if (!MQTTclient.subscribe(topic)) {
+    // The pure layer has already marked this peer subscribed (it does not see
+    // MQTT's return value), so without dropping the connection this topic is
+    // never retried. Force a reconnect through support.cpp's helper, never
+    // espClient directly: the next mhi_group_connect() clears the peer table,
+    // so the peer is re-learned from its retained record and subscribed again.
+    Serial.printf_P(PSTR("Group: subscribe %s failed, dropping the connection so it is retried\n"), topic);
+    mqtt_drop_connection();
+  }
 }
 
 void group_loop() {
