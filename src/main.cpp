@@ -17,16 +17,22 @@
 #include "mhi_fan.h"
 #include "mhi_link.h"
 #include "mhi_mqtt.h"
+#include "mhi_safe_mode.h"
 #include "mhi_status.h"
 #include "mhi_temp.h"
 #include "mhi_troom_filter.h"
 #include "mhi_vanes.h"
 #include "mhi_vanes_lr.h"
+#include "safe_mode.h"
 #include "support.h"
 
 MHI_AC_Ctrl_Core mhi_ac_ctrl_core;
 
 POWER_STATUS power_status = unknown;
+
+// Fork #23: decided first thing in setup(). In safe mode loop() runs only
+// Wi-Fi and OTA, and restarts after 10 minutes.
+static bool safe_mode = false;
 
 unsigned long room_temp_set_timeout_Millis = millis();
 bool troom_was_set_by_MQTT = false;
@@ -223,6 +229,13 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       publish_cmd_ok();
       delay(500);
       ESP.restart();
+    }
+    else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET_CRASH)) == 0) {
+      // The safe-mode proof (fork #23 spec §1.5): three of these, each within
+      // 120 s of the boot before, start safe mode. Every crash is one we send.
+      publish_cmd_ok();
+      delay(500);
+      safe_mode_test_crash();
     }
     else
       publish_cmd_invalidparameter();
@@ -568,9 +581,21 @@ StatusHandler mhiStatusHandler;
 
 void setup() {
   Serial.begin(115200);
+  // Fork #23: before anything that crashed on the last boots can run again.
+  // RTC reads, a pure function and one RTC write: nothing that blocks or
+  // needs the network.
+  safe_mode = safe_mode_boot();
   delay(100);
   Serial.println();
   Serial.println(F("Starting MHI-AC-Ctrl build " VERSION));
+  if (safe_mode) {
+    // Wi-Fi and OTA only: no pin measurement, no DS18x20, no MQTT, no AC core
+    // (MISO is never driven), no discovery, no group.
+    Serial.println(F("SAFE MODE: three crashes in a row; Wi-Fi and OTA only, a normal boot in 10 min"));
+    initWiFi();
+    setupOTA();
+    return;
+  }
   Serial.printf_P(PSTR("CPU frequency[Hz]=%lu\n"), F_CPU);
   Serial.printf("ESP.getCoreVersion()=%s\n", ESP.getCoreVersion().c_str());
   Serial.printf("ESP.getSdkVersion()=%s\n", ESP.getSdkVersion());
@@ -607,6 +632,18 @@ void loop() {
   static int MQTTStatus = MQTT_NOT_CONNECTED;
   static unsigned long previousMillis = millis();
 
+  if (safe_mode) {  // fork #23: Wi-Fi and OTA only, then ESP.restart(), reason 4: a normal boot
+    if (WiFi.status() != WL_CONNECTED || WiFiStatus != WIFI_CONNECT_OK)
+      setupWiFi(WiFiStatus);
+    else
+      ArduinoOTA.handle();
+    if (millis() >= MHI_SAFE_RESTART_MS) {
+      Serial.println(F("SAFE MODE: 10 min are up, restarting"));
+      ESP.restart();
+    }
+    return;
+  }
+
   if (((WiFi.status() != WL_CONNECTED)  || 
        (WiFiStatus != WIFI_CONNECT_OK)) || 
        (WiFI_SEARCHStrongestAP && (millis() - previousMillis >= WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL*60*1000))) {
@@ -632,6 +669,7 @@ void loop() {
     group_loop();
   }
   publishTelemetry();  // every pass, connected or not, so the uptime counter never misses a millis() wrap
+  safe_mode_clear_after_boot(millis());  // fork #23: up 120 s, so the crashes before do not count towards a loop
 
 #if TEMP_MEASURE_PERIOD > 0
   // A reading has come back since setup or since the last fault. Decides

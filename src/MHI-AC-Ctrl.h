@@ -44,6 +44,9 @@
 #ifndef TOPIC_RESET_REASON
 #define TOPIC_RESET_REASON "ResetReason"
 #endif
+#ifndef TOPIC_SAFE_MODE
+#define TOPIC_SAFE_MODE "SafeMode"             // boots into safe mode since power-on, a bare integer, at every connect (fork #23)
+#endif
 #ifndef TOPIC_CMD_RECEIVED
 #define TOPIC_CMD_RECEIVED "cmd_received"
 #endif
@@ -298,6 +301,9 @@
 #endif
 #ifndef PAYLOAD_REQUEST_RESET
 #define PAYLOAD_REQUEST_RESET "reset"
+#endif
+#ifndef PAYLOAD_REQUEST_RESET_CRASH
+#define PAYLOAD_REQUEST_RESET_CRASH "crash"    // set/reset: one deliberate exception, reset reason 2; the safe-mode proof (fork #23)
 #endif
 #ifndef PAYLOAD_VANESLR_SWING
 #define PAYLOAD_VANESLR_SWING "Swing"

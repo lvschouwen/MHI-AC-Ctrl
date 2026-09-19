@@ -9,6 +9,7 @@
 #include "mhi_phy.h"
 #include "mhi_temp.h"
 #include "mhi_uptime.h"
+#include "safe_mode.h"
 
 WiFiClient espClient;
 PubSubClient MQTTclient(espClient);
@@ -290,6 +291,8 @@ int MQTTreconnect() {
       output_P((ACStatus)type_status, PSTR(TOPIC_CONNECTED), PSTR(PAYLOAD_CONNECTED_TRUE));
       output_P((ACStatus)type_status, PSTR(TOPIC_VERSION), PSTR(VERSION));
       output_P((ACStatus)type_status, PSTR(TOPIC_RESET_REASON), ESP.getResetReason().c_str());
+      itoa(safe_mode_entries(), strtmp, 10);  // fork #23: 0 on a healthy unit
+      output_P((ACStatus)type_status, PSTR(TOPIC_SAFE_MODE), strtmp);
       publishTelemetryNow(mhi_uptime_advance(&uptime_counter, millis()));
       telemetry_pacer.last_ms = millis();  // the first periodic publish is one period after this one
       telemetry_pacer.attempted = true;
