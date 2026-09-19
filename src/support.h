@@ -62,7 +62,7 @@
 #define HA_CLIMATE_ID HOSTNAME                      // unique_id of the climate entity
 #endif
 #ifndef HA_ID_PREFIX
-#define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart
+#define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart, _run_time
 #endif
 //#define HA_ENTITY_PREFIX "ac_slaapkamer"          // when defined, every entity gets default_entity_id: climate.<prefix>, and <domain>.<prefix>_<slug of its name> for the rest (what HA derives itself); lower case a-z 0-9 _
 #ifndef HA_NAME_VANES
@@ -142,6 +142,9 @@
 #endif
 #ifndef HA_NAME_RESTART
 #define HA_NAME_RESTART "Restart"                   // the button that sends set/reset reset (fork #24)
+#endif
+#ifndef HA_NAME_RUN_TIME
+#define HA_NAME_RUN_TIME "Run time"                 // the indoor unit's own run hours, OpData/TOTAL-IU-RUN (fork #27)
 #endif
 //#define HA_RESET_REASON_TPL "{{ value }}"         // when defined, the reset-reason sensor's value_template (a Jinja template, e.g. a translation table)
 

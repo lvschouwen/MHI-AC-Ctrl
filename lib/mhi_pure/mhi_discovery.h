@@ -45,6 +45,7 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_OU_PROTECTION,  // sensor        <outdoor_id>_protection
   MHI_DISCOVERY_GROUP_ROLE,     // sensor   <id_prefix>_group_role, on the Group topic (fork #22): a unit row
   MHI_DISCOVERY_RESTART,        // button   <id_prefix>_restart, set/reset (fork #24): a unit row
+  MHI_DISCOVERY_RUN_TIME,       // sensor   <id_prefix>_run_time, the unit's own TOTAL-IU-RUN (fork #27): a unit row
   MHI_DISCOVERY_ROWS
 };
 
@@ -115,6 +116,9 @@ struct MhiDiscoveryCtx {
   // Fork #24 (the Restart button).
   const char* t_request_reset;        // TOPIC_REQUEST_RESET, relative to the set prefix
   const char* request_reset;          // PAYLOAD_REQUEST_RESET
+  // Fork #27 (the indoor unit's run hours).
+  const char* unit_op_prefix;         // what MQTT_OP_PREFIX adds to MQTT_PREFIX, "OpData/": the unit's own operating data
+  const char* t_op_total_iu_run;      // TOPIC_TOTAL_IU_RUN, relative to unit_op_prefix
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,

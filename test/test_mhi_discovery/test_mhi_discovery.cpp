@@ -30,7 +30,7 @@ static const MhiDiscoveryCtx kDefault = {
   .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart"},
+            "Group role", "Restart", "Run time"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -55,6 +55,7 @@ static const MhiDiscoveryCtx kDefault = {
   .fan = {"1", "2", "3", "4"},
   .group_base = "MHI-AC-Ctrl", .avty_topic = "MHI-AC-Ctrl/connected", .t_group = "Group",  // a single split: GROUP_ROOT = MQTT_PREFIX
   .t_request_reset = "reset", .request_reset = "reset",
+  .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
 };
 
 // Lucas's Uitkijk: custom names throughout, a template, an entity prefix, and a
@@ -75,7 +76,7 @@ static const MhiDiscoveryCtx kUitkijk = {
   .names = {NULL, "louvers", "quiet mode", "fault", "wiring fault", "time since boot", "heap free", "wifi-signal", "restart reason", "wifi-standard",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart"},
+            "Group role", "Restart", "Run time"},
   .reset_reason_tpl = "{{ {'Power On': 'power applied', 'Software/System restart': 'software restart (update or reset)', 'Hardware Watchdog': 'hardware watchdog', 'Software Watchdog': 'software watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'woke from deep sleep', 'External System': 'external reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -100,6 +101,7 @@ static const MhiDiscoveryCtx kUitkijk = {
   .fan = {"1", "2", "3", "4"},
   .group_base = "airco/uitkijk", .avty_topic = "airco/uitkijk/connected", .t_group = "Group",
   .t_request_reset = "reset", .request_reset = "reset",
+  .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
 };
 
 // Slaapkamer: has_lr and the outdoor device both on (batch C spec §3), as the
@@ -128,7 +130,7 @@ static const char* const kFixtureName[MHI_DISCOVERY_ROWS] = {
   "climate", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_code",
   "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection",
-  "group_role", "restart"};
+  "group_role", "restart", "run_time"};
 
 // Balanced braces and brackets outside strings, every string closed, no
 // printf conversion left over and no NULL argument printed.
@@ -572,15 +574,47 @@ static void test_the_restart_button_presses_set_reset(void) {
   TEST_ASSERT_NULL(strstr(out, "stat_t"));  // a button has no state
 }
 
-static void test_a_unit_has_17_entities_with_the_33_byte_frame(void) {
+// --- fork #27: the indoor unit's run hours ---------------------------------------
+
+// The AC's own counter of the indoor unit, in hours (100 h steps): a unit row on
+// the unit's own OpData topic, never the group root's.
+static void test_the_run_time_row_reads_the_units_own_run_hours(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_RUN_TIME));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_RUN_TIME, &kDefault));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_RUN_TIME, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_run_time/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_RUN_TIME, &kSlaapkamer, out, sizeof(out)) > 0);
+  // "~" is the unit's prefix although Slaapkamer's group root is airco/outdoor.
+  TEST_ASSERT_NOT_NULL(strstr(out, "{\"~\":\"airco/slaapkamer\",\"name\":\"Run time\",\"uniq_id\":\"ac_slaapkamer_run_time\",\"default_entity_id\":\"sensor.ac_slaapkamer_run_time\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/TOTAL-IU-RUN\",\"dev_cla\":\"duration\",\"unit_of_meas\":\"h\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\",\"avty_t\":\"~/connected\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"dev\":{\"ids\":[\"airco-slaapkamer\"],\"name\":\"AC Slaapkamer\","));
+  // Without an entity prefix, no default_entity_id.
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_RUN_TIME, &kDefault, out, sizeof(out)) > 0);
+  TEST_ASSERT_NULL(strstr(out, "default_entity_id"));
+}
+
+// The unit's own operating data may sit under another prefix than the group's.
+static void test_the_run_time_row_uses_the_unit_op_prefix_not_the_groups(void) {
+  char out[MHI_DISCOVERY_BUF];
+  MhiDiscoveryCtx c = kSlaapkamer;
+  c.op_prefix = "GroupOp/";
+  c.unit_op_prefix = "Op/";
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_RUN_TIME, &c, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Op/TOTAL-IU-RUN\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_COMP_RUN, &c, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/GroupOp/TOTAL-COMP-RUN\","));
+}
+
+static void test_a_unit_has_18_entities_with_the_33_byte_frame(void) {
   int with_lr = 0, without_lr = 0;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
     if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) continue;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kUitkijk)) with_lr++;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) without_lr++;
   }
-  TEST_ASSERT_EQUAL_INT(17, with_lr);
-  TEST_ASSERT_EQUAL_INT(15, without_lr);
+  TEST_ASSERT_EQUAL_INT(18, with_lr);
+  TEST_ASSERT_EQUAL_INT(16, without_lr);
 }
 
 // --- the committed reference payloads ---------------------------------------
@@ -650,7 +684,9 @@ int main(void) {
   RUN_TEST(test_no_expanded_topic_contains_a_double_slash);
   RUN_TEST(test_no_row_builds_an_empty_payload);
   RUN_TEST(test_the_restart_button_presses_set_reset);
-  RUN_TEST(test_a_unit_has_17_entities_with_the_33_byte_frame);
+  RUN_TEST(test_the_run_time_row_reads_the_units_own_run_hours);
+  RUN_TEST(test_the_run_time_row_uses_the_unit_op_prefix_not_the_groups);
+  RUN_TEST(test_a_unit_has_18_entities_with_the_33_byte_frame);
   RUN_TEST(test_reference_fixtures_are_written);
   RUN_TEST(test_second_fixture_set_is_written);
   return UNITY_END();

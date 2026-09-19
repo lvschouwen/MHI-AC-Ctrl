@@ -26,6 +26,9 @@ static_assert(starts_with(MQTT_SET_PREFIX, MQTT_PREFIX), "HA_DISCOVERY needs MQT
 // The outdoor rows read "~/<op_prefix><topic>" with the group root as "~"
 // (fork #22), so the publisher's prefix must sit under the group root.
 static_assert(starts_with(GROUP_OP_PREFIX, GROUP_ROOT), "HA_DISCOVERY needs GROUP_OP_PREFIX to start with GROUP_ROOT");
+// The run-time row reads "~/<unit_op_prefix><topic>" with the unit's own
+// prefix as "~" (fork #27).
+static_assert(starts_with(MQTT_OP_PREFIX, MQTT_PREFIX), "HA_DISCOVERY needs MQTT_OP_PREFIX to start with MQTT_PREFIX");
 static_assert(sizeof(MQTT_PREFIX) > 1, "HA_DISCOVERY needs a non-empty MQTT_PREFIX");
 // Every topic in the configs is "~/<name>", so the prefix must end in "/".
 static_assert(MQTT_PREFIX[sizeof(MQTT_PREFIX) - 2] == '/', "HA_DISCOVERY needs MQTT_PREFIX to end with /");
@@ -54,7 +57,7 @@ static MhiDiscoveryCtx ctx = {
             HA_NAME_RSSI, HA_NAME_RESET_REASON, HA_NAME_WIFI_PHY,
             HA_NAME_VANES_LR, HA_NAME_3DAUTO, HA_NAME_FRAME_ERRORS, HA_NAME_FRAME_TIMEOUTS, HA_NAME_ERROR_CODE,
             HA_NAME_OU_OUTDOOR, HA_NAME_OU_CT, HA_NAME_OU_KWH, HA_NAME_OU_COMP, HA_NAME_OU_DEFROST,
-            HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION, HA_NAME_GROUP_ROLE, HA_NAME_RESTART},
+            HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION, HA_NAME_GROUP_ROLE, HA_NAME_RESTART, HA_NAME_RUN_TIME},
 #ifdef HA_RESET_REASON_TPL
   .reset_reason_tpl = HA_RESET_REASON_TPL,
 #else
@@ -96,6 +99,7 @@ static MhiDiscoveryCtx ctx = {
   .avty_topic = MQTT_PREFIX TOPIC_CONNECTED,
   .t_group = TOPIC_GROUP,
   .t_request_reset = TOPIC_REQUEST_RESET, .request_reset = PAYLOAD_REQUEST_RESET,
+  .unit_op_prefix = MQTT_OP_PREFIX + (sizeof(MQTT_PREFIX) - 1), .t_op_total_iu_run = TOPIC_TOTAL_IU_RUN,
 };
 
 static bool modes_ok = false;
