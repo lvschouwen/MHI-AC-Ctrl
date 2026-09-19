@@ -107,12 +107,9 @@
 #ifndef HA_NAME_ERROR_CODE
 #define HA_NAME_ERROR_CODE "Error code"
 #endif
-// The outdoor device (fork #19): off by default -- only one indoor unit of a
-// multi-split should publish it (spec §3). Needs HA_DISCOVERY.
-//#define HA_OUTDOOR_DEVICE true
-#ifndef HA_OUTDOOR_ID
-#define HA_OUTDOOR_ID HA_ID_PREFIX "_outdoor"
-#endif
+// The outdoor device (fork #19). Every unit is a candidate publisher since
+// fork #22: the group's publisher sends it (GROUP_ROOT below).
+//#define HA_OUTDOOR_ID "ac_outdoor"                // default: derived at boot from GROUP_ROOT, <slug of GROUP_ROOT>_outdoor, so every member of the group derives the same
 #ifndef HA_OUTDOOR_NAME
 #define HA_OUTDOOR_NAME "AC outdoor unit"
 #endif
@@ -146,10 +143,10 @@
 //#define HA_RESET_REASON_TPL "{{ value }}"         // when defined, the reset-reason sensor's value_template (a Jinja template, e.g. a translation table)
 
 #ifndef TELEMETRY_PERIOD
-#define TELEMETRY_PERIOD 300                        // seconds between publishes of RSSI, Uptime and FreeHeap while MQTT is connected; 0 publishes them at MQTT connect only
+#define TELEMETRY_PERIOD 300                        // seconds between publishes of RSSI, Uptime, FreeHeap and the group record while MQTT is connected, 1..86400
 #endif
-#if TELEMETRY_PERIOD * 1000UL > 0xFFFFFFFFUL
-#error "TELEMETRY_PERIOD must be below 4294967 seconds (49.7 days): the interval is kept in 32-bit milliseconds"
+#if TELEMETRY_PERIOD < 1 || TELEMETRY_PERIOD > 86400
+#error "TELEMETRY_PERIOD must be 1..86400 seconds: the group record is re-sent every period and a unit counts as gone after 3 of them, in 32-bit milliseconds (fork #22)"
 #endif
 
 #ifndef MQTT_SERVER
@@ -253,6 +250,34 @@
 #endif
 #endif
 
+#ifdef HA_OUTDOOR_DEVICE
+#error "HA_OUTDOOR_DEVICE was removed (fork #22): every unit is a candidate publisher now; give the units of one outdoor unit the same GROUP_ROOT"
+#endif
+
+// The group's configuration (fork #22 spec §2), checked with the rules the
+// units apply to each other's records.
+#include "mhi_group.h"
+static_assert(mhi_group_root_valid(GROUP_ROOT), "GROUP_ROOT must be 1..64 characters, end in / and contain no + # ;");
+// PubSubClient3 drops a received packet larger than its buffer whole, and the
+// firmware never enlarges it: a longer root would make every unit drop the
+// others' records, and two publishers would never see each other.
+static_assert(mhi_group_record_packet_max(sizeof(GROUP_ROOT) - 1) <= MQTT_MAX_PACKET_SIZE,
+              "the largest group record packet does not fit PubSubClient's receive buffer: shorten GROUP_ROOT");
+static_assert(!mhi_group_starts_with(GROUP_ROOT "members/", MQTT_SET_PREFIX),
+              "<GROUP_ROOT>members/ must not start with MQTT_SET_PREFIX: the records would be read as commands");
+static_assert(mhi_group_host_valid(HOSTNAME), "HOSTNAME must be 1..32 characters without / + # ; \" \\");
+// Every record carries MQTT_PREFIX and the outdoor ID, and a peer rejects a
+// record whose fields break the record's rules (spec §5.1): check them here.
+static_assert(mhi_group_prefix_valid(MQTT_PREFIX),
+              "MQTT_PREFIX must be 1..64 characters, end in / and contain no ; + # \" \\, space or control character");
+#ifdef HA_OUTDOOR_ID
+static_assert(mhi_group_id_valid(HA_OUTDOOR_ID),
+              "HA_OUTDOOR_ID must be 1..40 characters without ; / + # \" \\, space or control character");
+#else
+static_assert(mhi_group_default_outdoor_id_len(GROUP_ROOT) <= MHI_GROUP_ID_MAX,
+              "the outdoor ID derived from GROUP_ROOT is longer than 40 characters: define HA_OUTDOOR_ID");
+#endif
+
 extern PubSubClient MQTTclient;
 
 // Result of the boot-time wiring check: 0 when all three pins looked right,
@@ -271,6 +296,7 @@ void publish_cmd_unknown();                                   // last MQTT cmd w
 void publish_cmd_invalidparameter();                          // a paramter of the last MQTT was wrong
 void output_P(ACStatus status, PGM_P topic, PGM_P payload);   // publish via MQTT
 void note_frame_result(int ret);  // count mhi_ac_ctrl_core.loop()'s return towards FrameErrors/FrameTimeouts (fork #21)
+const char* outdoor_id();                                     // HA_OUTDOOR_ID, or the one derived from GROUP_ROOT (fork #22)
 
 void setupOTA();                                              // initialize and start OTA
 void setup_ds18x20();                                         // setup the temperature measurement

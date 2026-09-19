@@ -3,6 +3,7 @@
 
 #include "mhi_diag.h"
 #include "mhi_frame_stats.h"
+#include "mhi_group.h"
 #include "mhi_link.h"
 #include "mhi_phy.h"
 #include "mhi_temp.h"
@@ -231,12 +232,26 @@ void note_frame_result(int ret) {
   mhi_frame_stats_count(&frame_stats, ret);
 }
 
+// Derived once, on first use: every member of a group derives the same ID from
+// the same GROUP_ROOT (fork #22 spec §2). support.h checks both at compile time.
+const char* outdoor_id() {
+  static char id[MHI_GROUP_ID_MAX + 1];
+  if (id[0] == '\0') {
+#ifdef HA_OUTDOOR_ID
+    strncpy(id, HA_OUTDOOR_ID, sizeof(id) - 1);
+#else
+    mhi_group_default_outdoor_id(GROUP_ROOT, id, sizeof(id));
+#endif
+  }
+  return id;
+}
+
 // Called on every loop() pass, connected or not: an outage longer than the
 // millis() wrap must not cost the counter a wrap.
 void publishTelemetry() {
   const unsigned long now = millis();
   const uint32_t uptime_s = mhi_uptime_advance(&uptime_counter, now);
-  if (TELEMETRY_PERIOD > 0 && MQTTclient.connected() && mhi_retry_due(&telemetry_pacer, now, TELEMETRY_PERIOD * 1000UL))
+  if (MQTTclient.connected() && mhi_retry_due(&telemetry_pacer, now, TELEMETRY_PERIOD * 1000UL))
     publishTelemetryNow(uptime_s);
 }
 

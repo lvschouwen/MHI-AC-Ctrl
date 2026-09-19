@@ -8,11 +8,6 @@
 #include "mhi_discovery.h"
 #include "support.h"
 
-// Outside the #ifdef below: inside it this could never fire.
-#if defined(HA_OUTDOOR_DEVICE) && !defined(HA_DISCOVERY)
-#error "HA_OUTDOOR_DEVICE needs HA_DISCOVERY"
-#endif
-
 #ifdef HA_DISCOVERY
 
 // The climate's "off" mode is set/Mode <PAYLOAD_MODE_OFF>, which the firmware
@@ -40,7 +35,8 @@ static char base_topic[sizeof(MQTT_PREFIX)];
 // GROUP_ROOT without its trailing slash: the outdoor rows' "~" (fork #22).
 static char group_base_topic[sizeof(GROUP_ROOT)];
 
-static const MhiDiscoveryCtx ctx = {
+// Not const: discovery_setup() fills in outdoor_id, which is derived at boot.
+static MhiDiscoveryCtx ctx = {
   .discovery_prefix = HA_DISCOVERY_PREFIX,
   .base = base_topic,
   .set_prefix = MQTT_SET_PREFIX + (sizeof(MQTT_PREFIX) - 1),
@@ -83,12 +79,8 @@ static const MhiDiscoveryCtx ctx = {
   .vanes_lr = {PAYLOAD_VANESLR_1, PAYLOAD_VANESLR_2, PAYLOAD_VANESLR_3, PAYLOAD_VANESLR_4, PAYLOAD_VANESLR_5,
                PAYLOAD_VANESLR_6, PAYLOAD_VANESLR_7, PAYLOAD_VANESLR_SWING},
   .threedauto_on = PAYLOAD_3DAUTO_ON, .threedauto_off = PAYLOAD_3DAUTO_OFF,
-#ifdef HA_OUTDOOR_DEVICE
-  .has_outdoor = true,
-#else
-  .has_outdoor = false,
-#endif
-  .outdoor_id = HA_OUTDOOR_ID, .outdoor_name = HA_OUTDOOR_NAME,
+  .has_outdoor = true,  // every unit is a candidate publisher; the group starts the outdoor cursor (fork #22)
+  .outdoor_id = NULL, .outdoor_name = HA_OUTDOOR_NAME,  // outdoor_id: discovery_setup()
 #ifdef HA_OUTDOOR_ENTITY_PREFIX
   .outdoor_entity_prefix = HA_OUTDOOR_ENTITY_PREFIX,
 #else
@@ -106,7 +98,8 @@ static const MhiDiscoveryCtx ctx = {
 };
 
 static bool modes_ok = false;
-static uint8_t next_row = MHI_DISCOVERY_ROWS;  // nothing to publish until a connect
+static uint8_t next_row = MHI_DISCOVERY_ROWS;          // the unit rows; nothing to publish until a connect
+static uint8_t next_outdoor_row = MHI_DISCOVERY_ROWS;  // the outdoor rows; only the group starts it
 
 // A prefix without its trailing slash, for a payload's "~".
 static void strip_slash(char* dst, size_t size, const char* prefix) {
@@ -119,6 +112,7 @@ static void strip_slash(char* dst, size_t size, const char* prefix) {
 void discovery_setup() {
   strip_slash(base_topic, sizeof(base_topic), MQTT_PREFIX);
   strip_slash(group_base_topic, sizeof(group_base_topic), GROUP_ROOT);
+  ctx.outdoor_id = outdoor_id();
   modes_ok = mhi_discovery_modes_valid(&ctx);
   if (!modes_ok)
     Serial.println(F("HA_DISCOVERY: the PAYLOAD_MODE_* texts are not Home Assistant's mode names, the climate config will not be published (Discovery: modes)"));
@@ -128,31 +122,53 @@ void discovery_restart() {
   next_row = 0;
 }
 
-void discovery_loop() {
+void discovery_start_outdoor() {
+  next_outdoor_row = MHI_DISCOVERY_OU_OUTDOOR;
+}
+
+void discovery_cancel_outdoor() {
+  next_outdoor_row = MHI_DISCOVERY_ROWS;
+}
+
+// One row, retained. A row that is not part of this build is skipped, one that
+// does not fit is refused, so a discovery topic never gets an empty payload.
+static void publish_row(MhiDiscoveryRow row) {
   // Static, not on the stack: loop() runs on the ESP8266's 4 KB cont stack and
   // the publish path runs below this frame.
   static char payload[MHI_DISCOVERY_BUF];
   char topic[MHI_DISCOVERY_TOPIC_MAX];
-  if (next_row >= MHI_DISCOVERY_ROWS || !MQTTclient.connected()) return;
-  const MhiDiscoveryRow row = (MhiDiscoveryRow)next_row++;
-  if (row == MHI_DISCOVERY_CLIMATE && !modes_ok) {
-    // skipped: said so at boot, and the Discovery topic says "modes"
-  }
-  else if (!mhi_discovery_row_enabled(row, &ctx)) {
-    // skipped: has_lr or has_outdoor is off in this build
-  }
-  else if (mhi_discovery_topic(row, &ctx, topic, sizeof(topic)) == 0 ||
-           mhi_discovery_build(row, &ctx, payload, sizeof(payload)) == 0) {
+  if (!mhi_discovery_row_enabled(row, &ctx)) return;  // has_lr off, or the retired energy row
+  if (mhi_discovery_topic(row, &ctx, topic, sizeof(topic)) == 0 ||
+      mhi_discovery_build(row, &ctx, payload, sizeof(payload)) == 0) {
     Serial.printf_P(PSTR("HA_DISCOVERY: row %u does not fit, not published\n"), (unsigned)row);
+    return;
   }
-  else {
-    MQTTclient.publish(topic, payload, true);
+  MQTTclient.publish(topic, payload, true);
+}
+
+void discovery_loop() {
+  if (!MQTTclient.connected()) return;
+  if (next_row < MHI_DISCOVERY_ROWS) {
+    const MhiDiscoveryRow row = (MhiDiscoveryRow)next_row++;
+    if (row == MHI_DISCOVERY_CLIMATE && !modes_ok) {
+      // skipped: said so at boot, and the Discovery topic says "modes"
+    }
+    else if (!mhi_discovery_is_outdoor_row(row)) {  // the outdoor rows are the group's
+      publish_row(row);
+    }
+    if (next_row == MHI_DISCOVERY_ROWS) {
+      if (modes_ok)
+        output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_OK));
+      else
+        output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_MODES));
+    }
   }
-  if (next_row == MHI_DISCOVERY_ROWS) {
-    if (modes_ok)
-      output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_OK));
+  else if (next_outdoor_row < MHI_DISCOVERY_ROWS) {  // after the unit rows, one per pass
+    const MhiDiscoveryRow row = (MhiDiscoveryRow)next_outdoor_row++;
+    if (mhi_discovery_is_outdoor_row(row))
+      publish_row(row);
     else
-      output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_MODES));
+      next_outdoor_row = MHI_DISCOVERY_ROWS;  // past the outdoor block: done
   }
 }
 
@@ -161,5 +177,7 @@ void discovery_loop() {
 void discovery_setup() {}
 void discovery_restart() {}
 void discovery_loop() {}
+void discovery_start_outdoor() {}
+void discovery_cancel_outdoor() {}
 
 #endif
