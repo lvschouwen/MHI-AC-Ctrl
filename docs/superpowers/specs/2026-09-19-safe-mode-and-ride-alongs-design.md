@@ -27,8 +27,11 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
 **The AC** runs on its own remote meanwhile. The bus is silent, as it already is during a crash loop or an OTA upload.
 
 ### 1.3 RTC record
-- Three 32-bit words at RTC **user block 0** (`ESP.rtcUserMemoryRead/Write`, offset 0, 12 bytes): `magic` (`0x4D484953`), `data` (count in the low byte, safe-mode entries in the next byte), and `check` (`magic ^ data ^ 0xFFFFFFFF`).
-- User blocks 0-2 are clear of the OTA boot command: `eboot_command` lives at `0x60001200`, which is user block 64 onwards (`system_rtc_mem_*` offset 64 + user offset), in the pinned core (`platform espressif8266@4.2.1`).
+- Three 32-bit words at RTC **user block 32** (`ESP.rtcUserMemoryRead/Write`, offset 32, 12 bytes): `magic` (`0x4D484953`), `data` (count in the low byte, safe-mode entries in the next byte), and `check` (`magic ^ data ^ 0xFFFFFFFF`).
+- **Why block 32** (corrected on 19 Sep during planning; this spec first said block 0).
+  - In the pinned core (framework 3.30102.0, `platform espressif8266@4.2.1`), `ESP.rtcUserMemory*(offset)` maps to `system_rtc_mem_*(64 + offset)`. System block 0 is `0x60001100`, so user block 0 is `0x60001200`: exactly where eboot keeps its 128-byte OTA command, user blocks 0-31. `Esp.cpp` says so itself: "the eboot command will be stored into the first 128 bytes of user data".
+  - A record there could not break an OTA, because eboot checks its own magic and CRC. But every OTA would wipe the record, including the OTA that rescues a unit from safe mode.
+  - Block 32 is the first word after the command. Nothing else in the core, its libraries or this project uses RTC user memory.
 - The plan checks the core once more for any other user of RTC user memory.
 
 ### 1.4 Code
