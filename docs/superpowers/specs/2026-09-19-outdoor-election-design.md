@@ -367,7 +367,7 @@ Lucas authorized Claude on 19 Sep to flash this build. hass-config acks each syn
 8. Day-after `health-check.sh 1`.
 9. **Cleanup**, after hass-config's ack: empty retained payloads on `airco/slaapkamer/OpData/<11>` and `airco/uitkijk/OpData/<11>`.
 
-**Rollback:** in reverse order, Uitkijk first, then Slaapkamer, to the kept `8a2c82d` images. Slaapkamer's `8a2c82d` sends the seven batch C configs again (an in-place update back). Afterwards, empty retained payloads on the records and `Group` topics.
+**Rollback:** in reverse order, Uitkijk first, then Slaapkamer, to the kept `8a2c82d` images. Slaapkamer's `8a2c82d` sends the seven batch C configs again: the six are an in-place update back, and Energy comes back as a new entity if hass-config had already cleared it. Afterwards, empty retained payloads on the records and `Group` topics.
 
 ## 12. Refinements beyond the approved design (for Lucas's review)
 
