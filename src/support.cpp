@@ -236,15 +236,20 @@ void note_frame_result(int ret) {
 // Derived once, on first use: every member of a group derives the same ID from
 // the same GROUP_ROOT (fork #22 spec §2). support.h checks both at compile time.
 const char* outdoor_id() {
+#ifdef HA_OUTDOOR_ID
+  // A literal, already validated by support.h's static_assert (1..40
+  // characters): return it directly. strncpy() into a 40-byte buffer here
+  // trips -Wstringop-truncation for a 40-character ID (GCC 10, -Os): the
+  // truncation it warns about can never happen, since the assert already
+  // refused anything longer, but the compiler cannot see that.
+  return HA_OUTDOOR_ID;
+#else
   static char id[MHI_GROUP_ID_MAX + 1];
   if (id[0] == '\0') {
-#ifdef HA_OUTDOOR_ID
-    strncpy(id, HA_OUTDOOR_ID, sizeof(id) - 1);
-#else
     mhi_group_default_outdoor_id(GROUP_ROOT, id, sizeof(id));
-#endif
   }
   return id;
+#endif
 }
 
 uint32_t uptime_seconds() {
