@@ -27,7 +27,8 @@ On Lucas's units: `GROUP_ROOT "airco/outdoor/"` and `HA_OUTDOOR_ID "ac_outdoor"`
 - `HA_OUTDOOR_NAME` and `HA_OUTDOOR_ENTITY_PREFIX` stay as they are.
 - `TELEMETRY_PERIOD` must be 1..86400. The build refuses 0: the member record's refresh and the liveness rule depend on it. The upper bound keeps `3 × period` in milliseconds inside 31 bits.
 - Compile-time checks (constexpr, like the existing `starts_with`):
-  - `GROUP_ROOT` is non-empty, ends in `/` and contains no `+ # ;`;
+  - `GROUP_ROOT` is 1..64 characters, ends in `/` and contains no `+ # ;`;
+  - the worst incoming record packet fits PubSubClient3's receive buffer, which drops any larger packet whole (`MQTT_MAX_PACKET_SIZE`, 256 bytes; the firmware does not enlarge it): 5 bytes of fixed header + 2 + `GROUP_ROOT` + `members/` + a 32-byte hostname + a 140-byte record ≤ `MQTT_MAX_PACKET_SIZE`. With the 64-character bound that is 251. Without this check a long root would make every unit drop the others' records, and two publishers would never see each other (Codex review, 19 Sep);
   - `GROUP_OP_PREFIX` starts with `GROUP_ROOT` (with `HA_DISCOVERY` only, as for `MQTT_OP_PREFIX` today);
   - `<GROUP_ROOT>members/` does not start with `MQTT_SET_PREFIX`;
   - `HOSTNAME` is 1..32 characters without `/ + # ; " \`;
@@ -99,7 +100,7 @@ New `MHI_AC_Ctrl_Core::reset_system_values()`:
 | outdoor_id | the unit's outdoor ID (explicit or derived) | 1..40 chars, no `; / + # " \`, space or control character |
 | prefix | the unit's `MQTT_PREFIX` | 1..64 chars, ends in `/`, no `; + # " \`, space or control character |
 
-- Decimal numbers have no sign and no leading `+`. The record is at most 160 bytes.
+- Decimal numbers have no sign and no leading `+`. The record is at most 140 bytes (the longest valid one is 139).
 - The hostname comes from the topic level after `members/`: 1..32 characters without `/ + # ; " \`.
 - Parsing:
   - A payload whose first field is a valid number other than `1` is a **foreign** record. Only that number is read.
@@ -120,6 +121,7 @@ New `MHI_AC_Ctrl_Core::reset_system_values()`:
 - A retained copy delivered again with the same content is not a refresh.
 - When the table is full, a new unit replaces the entry that has been gone (§5.3) the longest. With none gone, the new unit is ignored with one Serial line.
 - **The table is cleared at every MQTT connect.** The broker hands the retained records and `connected` topics over again within the grace period, and every staleness clock starts at that moment. So a unit that was offline for an hour does not find all its peers stale and claim the role.
+- **Limit (Codex review, 19 Sep).** A dead unit whose retained `connected` still reads 1 (it died while the broker was down, so no will was sent) ages out only after 3 of its periods of continuous connection. A unit that reconnects more often than that keeps finding it fresh. If that ghost is the lowest hostname, or a publisher, it can hold off a claim for as long as the flapping lasts. PubSubClient does not pass the retain flag to the callback, so a retained copy cannot be told from a live publish. Persisting freshness across reconnects was considered and rejected: after an outage it would make one lost QoS-0 record publish enough to cause a false takeover. The documentation says so, and says how to remove a unit for good (§10).
 
 ### 5.3 Definitions
 All times are `millis()` differences in unsigned arithmetic, so they survive the 49.7-day wrap.
@@ -223,7 +225,7 @@ Nothing ever preempts a live incumbent: a unit claims only when there is none. O
 - **`src/group.{h,cpp}`** (new, Arduino glue):
   - owns the `MhiGroup` state;
   - `group_setup()` at boot, `group_connected()` after every connect, `group_loop()` on every pass while connected;
-  - `group_handle_message(topic, payload, len)` returns true when the topic was a group topic. It uses its own 161-byte copy, because the command path copies only 32 bytes.
+  - `group_handle_message(topic, payload, len)` returns true when the topic was a group topic. It uses its own 141-byte copy, because the command path copies only 32 bytes.
   - It executes the actions: publishes, core reset, discovery start/cancel, subscriptions.
 - **`src/main.cpp`:**
   - `MQTT_subscribe_callback` offers each message to `group_handle_message` first. A group message never produces `cmd_received`.
@@ -285,7 +287,7 @@ The retained `homeassistant/sensor/ac_outdoor_energy/config` from batch C stays 
 ## 9. Host tests
 
 - **`test_mhi_group`:**
-  - record round trip;
+  - record round trip; the longest valid record is 139 bytes;
   - every invalid form rejected: field count, sign, leading `+`, empty field, out-of-range number, role 1 with term 0, a forbidden character in ID or prefix, a prefix without `/`, too long, a non-digit proto;
   - foreign record detected from its first field;
   - empty payload removes the entry;
@@ -310,7 +312,7 @@ The retained `homeassistant/sensor/ac_outdoor_energy/config` from batch C stays 
   16. nothing is published during the grace period;
   17. max_term_seen never goes down.
 - **`test_mhi_discovery`:**
-  - the Group role row;
+  - the Group role row is a unit row: `<id_prefix>_group_role`, the unit's device block, `~/connected` availability (the classification of `is_outdoor_row()` is a closed range, Codex review);
   - the outdoor rows with group base and absolute availability;
   - the retired KWH row disabled;
   - no `//` after expanding `~` in any row;
@@ -342,7 +344,9 @@ What the host cannot test is verified on the units (§11): the core's sentinels,
     - the removed flag, and `TELEMETRY_PERIOD` 1..86400;
     - the same `TOPIC_CONNECTED`/`PAYLOAD_CONNECTED_*` on all units of a group;
     - how to remove a unit for good (publish an empty retained payload on its `members/<hostname>`);
-    - the limit that a publisher which stays connected but cannot read its AC keeps the role.
+    - the limit that a publisher which stays connected but cannot read its AC keeps the role;
+    - the ghost limit of §5.2;
+    - the 64-character bound on `GROUP_ROOT` and why it exists.
 - **hass-config (#315):**
   - fixtures per unit, 16 rows, plus 6 outdoor rows per possible publisher;
   - the assertions in `tests/test_airco_topics_302.py`;
@@ -375,7 +379,8 @@ Lucas authorized Claude on 19 Sep to flash this build. hass-config acks each syn
 6. **Sentinels** of the 11 system values (§4.3). Side effect: DEFROST "Off" and a reading of 0 are published after every connect.
 7. **`TELEMETRY_PERIOD` 1..86400.**
 8. **Default outdoor ID** = slug of `GROUP_ROOT` + `_outdoor`. The default `GROUP_OP_PREFIX` keeps a custom `MQTT_OP_PREFIX` when no `GROUP_ROOT` is set.
-9. **Table cleared at every connect** (§5.2).
+9. **Table cleared at every connect** (§5.2). Codex disagreed unless the ghost case is mitigated. Its first mitigation, documenting the limit and requiring the removal of dead units' records, is what §5.2 and §10 do.
 10. **Foreign records:** only the version is read. The lowest alive hostname's version wins, so during a mixed-version upgrade only one side of the group can publish.
 11. **Full table:** a gone entry makes room.
 12. **`HA_OUTDOOR_DEVICE` → `#error`** with a pointer to `GROUP_ROOT`.
+13. **Receive-buffer bound** (Codex review, critical): record ≤ 140 bytes, `GROUP_ROOT` ≤ 64 characters, and a compile-time proof that the worst record packet fits PubSubClient3's 256-byte receive buffer.
