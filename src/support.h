@@ -297,6 +297,7 @@ void publish_cmd_invalidparameter();                          // a paramter of t
 void output_P(ACStatus status, PGM_P topic, PGM_P payload);   // publish via MQTT
 void note_frame_result(int ret);  // count mhi_ac_ctrl_core.loop()'s return towards FrameErrors/FrameTimeouts (fork #21)
 const char* outdoor_id();                                     // HA_OUTDOOR_ID, or the one derived from GROUP_ROOT (fork #22)
+uint32_t uptime_seconds();                                    // the Uptime counter, advanced to now; the group record carries it (fork #22)
 
 void setupOTA();                                              // initialize and start OTA
 void setup_ds18x20();                                         // setup the temperature measurement

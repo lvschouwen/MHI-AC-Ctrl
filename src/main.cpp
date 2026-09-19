@@ -10,6 +10,7 @@
 #include "MHI-AC-Ctrl-core.h"
 #include "MHI-AC-Ctrl.h"
 #include "discovery.h"
+#include "group.h"
 #include "mhi_action.h"
 #include "mhi_diag.h"
 #include "mhi_diag_frame.h"
@@ -73,6 +74,8 @@ static void publish_diag_state() {
 #define MQTT_PAYLOAD_MAX 32
 
 void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int length) {
+  if (group_handle_message(topic, payload, length))
+    return;  // a record or a peer's connected topic: not a command (fork #22)
   // Copy out rather than terminating in place. `payload` points into
   // pubsubclient3's receive buffer, so payload[length] is _buffer[length] -
   // one byte past the end when a message fills the buffer.
@@ -583,6 +586,7 @@ void setup() {
   MQTTclient.setCallback(MQTT_subscribe_callback);
   mhi_ac_ctrl_core.MHIAcCtrlStatus(&mhiStatusHandler);
   discovery_setup();
+  group_setup();
   const bool drive_miso = mhi_miso_may_be_driven(wiring_faults);
   if (!drive_miso)
     Serial.println(F("Signal on MISO: leaving it an input, so commands will not reach the AC"));
@@ -621,9 +625,11 @@ void loop() {
       diag_frame.have_last = false;   // the next diag/frame is a whole frame
       mhi_retry_reset(&diag_pacer);
       discovery_restart();
+      group_connected();
     }
     ArduinoOTA.handle();
     discovery_loop();
+    group_loop();
   }
   publishTelemetry();  // every pass, connected or not, so the uptime counter never misses a millis() wrap
 

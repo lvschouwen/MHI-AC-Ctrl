@@ -1,6 +1,7 @@
 #include "support.h"
 #include <Arduino.h>
 
+#include "group.h"
 #include "mhi_diag.h"
 #include "mhi_frame_stats.h"
 #include "mhi_group.h"
@@ -246,6 +247,10 @@ const char* outdoor_id() {
   return id;
 }
 
+uint32_t uptime_seconds() {
+  return mhi_uptime_advance(&uptime_counter, millis());
+}
+
 // Called on every loop() pass, connected or not: an outage longer than the
 // millis() wrap must not cost the counter a wrap.
 void publishTelemetry() {
@@ -317,6 +322,7 @@ int MQTTreconnect() {
 
 
       MQTTclient.subscribe(MQTT_SET_PREFIX "#");
+      MQTTclient.subscribe(GROUP_ROOT "members/+");  // every unit's record, this one's included (fork #22)
       return MQTT_RECONNECTED;
     }
     else {
@@ -343,6 +349,30 @@ void publish_cmd_invalidparameter() {
   output_P((ACStatus)type_status, PSTR(TOPIC_CMD_RECEIVED), PSTR(PAYLOAD_CMD_INVALID_PARAMETER));
 }
 
+// The outdoor unit's values (fork #22 spec §4.1): the same on every indoor
+// unit, so only the group's publisher writes them, under the group root. Only
+// their opdata_* statuses: the erropdata_* ones sharing their case labels in
+// main.cpp are this unit's own error snapshot and stay under
+// MQTT_ERR_OP_PREFIX.
+static bool is_system_value(ACStatus status) {
+  switch (status) {
+    case opdata_outdoor:
+    case opdata_ct:
+    case opdata_comp:
+    case opdata_defrost:
+    case opdata_total_comp_run:
+    case opdata_protection_no:
+    case opdata_td:
+    case opdata_tdsh:
+    case opdata_tho_r1:
+    case opdata_thi_r2:
+    case opdata_ou_fanspeed:
+      return true;
+    default:  // every other status, KWH and OU-EEV1 included: this unit's own
+      return false;
+  }
+}
+
 void output_P(const ACStatus status, PGM_P topic, PGM_P payload) {
   const int mqtt_topic_size = 100;
   char mqtt_topic[mqtt_topic_size];
@@ -352,6 +382,11 @@ void output_P(const ACStatus status, PGM_P topic, PGM_P payload) {
   PGM_P prefix;
   if ((status & 0xc0) == type_status)
     prefix = PSTR(MQTT_PREFIX);
+  else if ((status & 0xc0) == type_opdata && is_system_value(status)) {
+    if (!group_may_publish_system())
+      return;  // not the publisher, or still in the grace period: dropped (spec §6.4)
+    prefix = PSTR(GROUP_OP_PREFIX);
+  }
   else if ((status & 0xc0) == type_opdata)
     prefix = PSTR(MQTT_OP_PREFIX);
   else if ((status & 0xc0) == type_erropdata)
