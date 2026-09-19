@@ -25,7 +25,7 @@ int mhi_vanes_lr_decode(uint8_t db16, uint8_t db17);
 bool mhi_3dauto_decode(uint8_t db17);
 
 struct MhiVanesLrNames {
-  const char* pos[7];  // positions 1..7, as seen on the unit (1 leftmost .. 7 spot)
+  const char* pos[7];  // 1..5 positions as seen on the unit (1 leftmost .. 5 rightmost), 6 wide and 7 spot: spread modes, not positions
   const char* swing;
 };
 

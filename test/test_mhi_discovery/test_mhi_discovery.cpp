@@ -214,10 +214,8 @@ static size_t every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
       snprintf(avty, sizeof(avty), "\"avty_t\":\"~/connected\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\"");
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, avty), msg);
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"dev\":{\"ids\":[\""), msg);
-    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\""), msg);
-    // The blanket model/version check above can no longer name one model: the
-    // outdoor rows carry their own device. Each kind keeps its own full check,
-    // so nothing the ten-row version asserted is lost.
+    // The outdoor rows carry their own device: each kind of row has its own
+    // full model check.
     if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r))
       TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"outdoor unit\",\"via_device\":\""), msg);
     else
@@ -586,33 +584,37 @@ static void test_a_unit_has_17_entities_with_the_33_byte_frame(void) {
 
 // --- the committed reference payloads ---------------------------------------
 
-static void test_second_fixture_set_is_written(void) {
+// Writes every enabled row of ctx to <dir>/<fixture name>.txt as
+// "<topic>\n<payload>\n", then reads each file back and compares: the file
+// holds exactly the row the builder made, well-formed. CI then compares the
+// files with the committed ones.
+static void write_fixture_set(const MhiDiscoveryCtx* ctx, const char* dir) {
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
-    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kSlaapkamer)) continue;
+    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, ctx)) continue;
     char path[96], topic[MHI_DISCOVERY_TOPIC_MAX], payload[MHI_DISCOVERY_BUF];
-    snprintf(path, sizeof(path), "test/fixtures/discovery_all/%s.txt", kFixtureName[r]);
-    TEST_ASSERT_TRUE(mhi_discovery_topic((MhiDiscoveryRow)r, &kSlaapkamer, topic, sizeof(topic)) > 0);
-    TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &kSlaapkamer, payload, sizeof(payload)) > 0);
+    char expected[MHI_DISCOVERY_TOPIC_MAX + MHI_DISCOVERY_BUF + 2], back[sizeof(expected) + 1];
+    snprintf(path, sizeof(path), "%s/%s.txt", dir, kFixtureName[r]);
+    const size_t topic_len = mhi_discovery_topic((MhiDiscoveryRow)r, ctx, topic, sizeof(topic));
+    const size_t payload_len = mhi_discovery_build((MhiDiscoveryRow)r, ctx, payload, sizeof(payload));
+    TEST_ASSERT_TRUE_MESSAGE(topic_len > 0 && payload_len > 0, path);
+    TEST_ASSERT_TRUE_MESSAGE(json_shape_ok(payload), path);
+    snprintf(expected, sizeof(expected), "%s\n%s\n", topic, payload);
     FILE* f = fopen(path, "w");
-    TEST_ASSERT_NOT_NULL_MESSAGE(f, "cannot write test/fixtures/discovery_all/: run pio test from the project root");
-    fprintf(f, "%s\n%s\n", topic, payload);
+    TEST_ASSERT_NOT_NULL_MESSAGE(f, "cannot write the fixture directory: run pio test from the project root");
+    fputs(expected, f);
     fclose(f);
+    f = fopen(path, "r");
+    TEST_ASSERT_NOT_NULL_MESSAGE(f, path);
+    const size_t got = fread(back, 1, sizeof(back) - 1, f);
+    fclose(f);
+    back[got] = '\0';
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(expected, back, path);
   }
 }
 
-static void test_reference_fixtures_are_written(void) {
-  for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
-    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) continue;
-    char path[80], topic[MHI_DISCOVERY_TOPIC_MAX], payload[MHI_DISCOVERY_BUF];
-    snprintf(path, sizeof(path), "test/fixtures/discovery/%s.txt", kFixtureName[r]);
-    TEST_ASSERT_TRUE(mhi_discovery_topic((MhiDiscoveryRow)r, &kDefault, topic, sizeof(topic)) > 0);
-    TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &kDefault, payload, sizeof(payload)) > 0);
-    FILE* f = fopen(path, "w");
-    TEST_ASSERT_NOT_NULL_MESSAGE(f, "cannot write test/fixtures/discovery/: run pio test from the project root");
-    fprintf(f, "%s\n%s\n", topic, payload);
-    fclose(f);
-  }
-}
+static void test_second_fixture_set_is_written(void) { write_fixture_set(&kSlaapkamer, "test/fixtures/discovery_all"); }
+
+static void test_reference_fixtures_are_written(void) { write_fixture_set(&kDefault, "test/fixtures/discovery"); }
 
 int main(void) {
   UNITY_BEGIN();

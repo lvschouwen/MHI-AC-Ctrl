@@ -3,8 +3,8 @@
 
 #include "MHI-AC-Ctrl-core.h"
 #include "mhi_action.h"
-#include "mhi_vanes_lr.h"
 #include "mhi_status.h"
+#include "mhi_vanes_lr.h"
 
 // The checksum helpers moved to lib/mhi_pure/mhi_frame.cpp, where they can be
 // tested on the build machine.
