@@ -55,7 +55,7 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
   - the entries counter;
   - the 120 s clear keeps the entries.
 - **On the units, every normal boot proves the normal path.** A broken read or write would show at once as a unit that misbehaves at boot, and Slaapkamer goes first as always.
-- **Decision for Lucas: a controlled proof of the safe-mode path.**
+- **Decided (Lucas, 19 Sep): a controlled proof of the safe-mode path, included.**
   - `set/reset` accepts a second payload, `crash`. It triggers one deliberate exception, reset reason 2. Sending it three times, each after the unit is back (within 120 s of its boot), must put Slaapkamer in safe mode:
     - HA unavailable for 10 min;
     - OTA advertised on mDNS (`_arduino._tcp`, checked with `avahi-browse`);
@@ -63,7 +63,7 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
   - It can never start an uncontrolled loop: every crash is one we send. If safe mode failed to engage, the unit would simply boot normally again.
   - Cost: about 5 lines, and a command that reboots the unit, which `set/reset` already does.
   - Without it, the safe-mode path is proven by host tests and review only, until a real crash loop.
-  - Recommendation: include it.
+  - Lucas approved the addendum with it on 19 Sep.
 
 ## 2. #24: the ride-alongs
 
@@ -95,5 +95,5 @@ The `ci-custom-payloads` env adds `-D PAYLOAD_FAN_1=\"Low\"` … `PAYLOAD_FAN_4=
 ## 3. Rollout
 Everything rides the #22 flash (#22 spec §11). Additions:
 - After the Slaapkamer flash: `SafeMode 0` retained, and the restart button present.
-- If Lucas takes the decision in §1.5: the safe-mode proof on Slaapkamer, after the #22 reconnect and takeover tests. The takeover test must end first, because safe mode takes Slaapkamer off the network for 10 min, which is itself a takeover. Uitkijk takes over (term n+1), and Slaapkamer returns as a member.
+- The safe-mode proof on Slaapkamer (§1.5), after the #22 reconnect and takeover tests. The takeover test must end first, because safe mode takes Slaapkamer off the network for 10 min, which is itself a takeover. Uitkijk takes over (term n+1), and Slaapkamer returns as a member.
 - hass-config: fixtures with 17 rows per unit, the `skipped` value, and the `button` entity (`button.ac_<unit>_restart`).
