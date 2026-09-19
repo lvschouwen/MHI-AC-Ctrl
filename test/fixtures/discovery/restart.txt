@@ -1,0 +1,2 @@
+homeassistant/button/MHI-AC-Ctrl_restart/config
+{"~":"MHI-AC-Ctrl","name":"Restart","uniq_id":"MHI-AC-Ctrl_restart","cmd_t":"~/set/reset","pl_prs":"reset","dev_cla":"restart","ent_cat":"config","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["MHI-AC-Ctrl"],"name":"MHI-AC-Ctrl","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"fixture"}}

@@ -186,7 +186,7 @@
 #define TOPIC_REQUEST_OPDATA "OpDataRequest"
 #endif
 #ifndef TOPIC_DISCOVERY
-#define TOPIC_DISCOVERY "Discovery"           // retained, after the discovery configs went out: ok, or modes when the climate row was skipped (HA_DISCOVERY)
+#define TOPIC_DISCOVERY "Discovery"           // retained, after the discovery configs went out: ok, modes when the climate row was skipped, skipped when a row did not fit (HA_DISCOVERY)
 #endif
 #ifndef TOPIC_GROUP
 #define TOPIC_GROUP "Group"                   // retained: 0 member, 1 publisher, 2 outdoor ID mismatch, 3 version mismatch (fork #22)
@@ -362,6 +362,9 @@
 #endif
 #ifndef PAYLOAD_DISCOVERY_MODES
 #define PAYLOAD_DISCOVERY_MODES "modes"
+#endif
+#ifndef PAYLOAD_DISCOVERY_SKIPPED
+#define PAYLOAD_DISCOVERY_SKIPPED "skipped"   // a config did not fit its buffer and was not published (fork #24)
 #endif
 
 enum POWER_STATUS {

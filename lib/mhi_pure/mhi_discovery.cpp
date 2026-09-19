@@ -21,12 +21,12 @@ static const char* const kComponent[MHI_DISCOVERY_ROWS] = {
   "climate", "select", "switch", "binary_sensor", "binary_sensor", "sensor", "sensor", "sensor", "sensor", "sensor",
   "select", "switch", "sensor", "sensor", "sensor",
   "sensor", "sensor", "sensor", "sensor", "binary_sensor", "sensor", "sensor",
-  "sensor"};
+  "sensor", "button"};
 static const char* const kSuffix[MHI_DISCOVERY_ROWS] = {
   "", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3d_auto", "frame_errors", "frame_timeouts", "error_code",
   "outdoor_temp", "current", "energy", "comp_freq", "defrost", "comp_run", "protection",
-  "group_role"};
+  "group_role", "restart"};
 static const char* const kHaModes[6] = {"off", "auto", "dry", "cool", "fan_only", "heat"};
 
 struct Out {
@@ -89,12 +89,12 @@ bool mhi_discovery_is_outdoor_row(MhiDiscoveryRow row) {
 }
 
 // The outdoor block is the seven rows of fork #19, and the table ends with the
-// Group role row. MhiDiscoveryRow is append-only: whoever appends a row decides
+// Restart button. MhiDiscoveryRow is append-only: whoever appends a row decides
 // in mhi_discovery_is_outdoor_row() whether it is an outdoor row, then moves
 // this line.
 static_assert(MHI_DISCOVERY_OU_PROTECTION - MHI_DISCOVERY_OU_OUTDOOR == 6, "the outdoor block is OU_OUTDOOR..OU_PROTECTION");
-static_assert(MHI_DISCOVERY_GROUP_ROLE + 1 == MHI_DISCOVERY_ROWS,
-              "a row appended after MHI_DISCOVERY_GROUP_ROLE: classify it in mhi_discovery_is_outdoor_row() first");
+static_assert(MHI_DISCOVERY_RESTART + 1 == MHI_DISCOVERY_ROWS,
+              "a row appended after MHI_DISCOVERY_RESTART: classify it in mhi_discovery_is_outdoor_row() first");
 
 static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
   // The outdoor rows read the group root (fork #22); it never ends in "/", so
@@ -331,6 +331,13 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
       // 0 member, 1 publisher, 2 outdoor ID mismatch, 3 version mismatch; the
       // wording is Home Assistant's (fork #22 spec §3).
       state_topic(&o, c->t_group);
+      break;
+    case MHI_DISCOVERY_RESTART:
+      // set/reset reset, as the command does today (fork #24). Home Assistant's
+      // button: cmd_t, pl_prs, dev_cla restart, ent_cat config; no state.
+      diagnostic = false;
+      put(&o, FMT("\"cmd_t\":\"~/%s%s\",\"pl_prs\":\"%s\",\"dev_cla\":\"restart\",\"ent_cat\":\"config\","),
+          c->set_prefix, c->t_request_reset, c->request_reset);
       break;
     case MHI_DISCOVERY_OU_KWH:  // retired (fork #22): never built, so never published, and never empty
     case MHI_DISCOVERY_ROWS:    // excluded above; keeps -Wswitch exhaustive

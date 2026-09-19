@@ -140,6 +140,9 @@
 #ifndef HA_NAME_GROUP_ROLE
 #define HA_NAME_GROUP_ROLE "Group role"             // the diagnostic sensor on the Group topic (fork #22)
 #endif
+#ifndef HA_NAME_RESTART
+#define HA_NAME_RESTART "Restart"                   // the button that sends set/reset reset (fork #24)
+#endif
 //#define HA_RESET_REASON_TPL "{{ value }}"         // when defined, the reset-reason sensor's value_template (a Jinja template, e.g. a translation table)
 
 #ifndef TELEMETRY_PERIOD

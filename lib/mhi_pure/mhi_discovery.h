@@ -44,6 +44,7 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_OU_COMP_RUN,    // sensor        <outdoor_id>_comp_run
   MHI_DISCOVERY_OU_PROTECTION,  // sensor        <outdoor_id>_protection
   MHI_DISCOVERY_GROUP_ROLE,     // sensor   <id_prefix>_group_role, on the Group topic (fork #22): a unit row
+  MHI_DISCOVERY_RESTART,        // button   <id_prefix>_restart, set/reset (fork #24): a unit row
   MHI_DISCOVERY_ROWS
 };
 
@@ -111,6 +112,9 @@ struct MhiDiscoveryCtx {
   const char* group_base;             // GROUP_ROOT without its trailing slash: the outdoor rows' "~"
   const char* avty_topic;             // MQTT_PREFIX TOPIC_CONNECTED in full: the outdoor rows' availability
   const char* t_group;                // TOPIC_GROUP, relative to base
+  // Fork #24 (the Restart button).
+  const char* t_request_reset;        // TOPIC_REQUEST_RESET, relative to the set prefix
+  const char* request_reset;          // PAYLOAD_REQUEST_RESET
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,

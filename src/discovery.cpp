@@ -54,7 +54,7 @@ static MhiDiscoveryCtx ctx = {
             HA_NAME_RSSI, HA_NAME_RESET_REASON, HA_NAME_WIFI_PHY,
             HA_NAME_VANES_LR, HA_NAME_3DAUTO, HA_NAME_FRAME_ERRORS, HA_NAME_FRAME_TIMEOUTS, HA_NAME_ERROR_CODE,
             HA_NAME_OU_OUTDOOR, HA_NAME_OU_CT, HA_NAME_OU_KWH, HA_NAME_OU_COMP, HA_NAME_OU_DEFROST,
-            HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION, HA_NAME_GROUP_ROLE},
+            HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION, HA_NAME_GROUP_ROLE, HA_NAME_RESTART},
 #ifdef HA_RESET_REASON_TPL
   .reset_reason_tpl = HA_RESET_REASON_TPL,
 #else
@@ -95,11 +95,15 @@ static MhiDiscoveryCtx ctx = {
   .group_base = group_base_topic,
   .avty_topic = MQTT_PREFIX TOPIC_CONNECTED,
   .t_group = TOPIC_GROUP,
+  .t_request_reset = TOPIC_REQUEST_RESET, .request_reset = PAYLOAD_REQUEST_RESET,
 };
 
 static bool modes_ok = false;
 static uint8_t next_row = MHI_DISCOVERY_ROWS;          // the unit rows; nothing to publish until a connect
 static uint8_t next_outdoor_row = MHI_DISCOVERY_ROWS;  // the outdoor rows; only the group starts it
+static bool unit_row_skipped = false;     // a unit row did not fit since the connect (fork #24)
+static bool outdoor_row_skipped = false;  // an outdoor row did not fit in this outdoor pass
+static bool status_ok = false;            // the Discovery topic says ok; modes > skipped > ok over both passes
 
 // A prefix without its trailing slash, for a payload's "~".
 static void strip_slash(char* dst, size_t size, const char* prefix) {
@@ -120,10 +124,13 @@ void discovery_setup() {
 
 void discovery_restart() {
   next_row = 0;
+  unit_row_skipped = false;
+  status_ok = false;  // until the unit rows are through
 }
 
 void discovery_start_outdoor() {
   next_outdoor_row = MHI_DISCOVERY_OU_OUTDOOR;
+  outdoor_row_skipped = false;
 }
 
 void discovery_cancel_outdoor() {
@@ -132,18 +139,20 @@ void discovery_cancel_outdoor() {
 
 // One row, retained. A row that is not part of this build is skipped, one that
 // does not fit is refused, so a discovery topic never gets an empty payload.
-static void publish_row(MhiDiscoveryRow row) {
+// False only for a row that did not fit: the Discovery topic says "skipped".
+static bool publish_row(MhiDiscoveryRow row) {
   // Static, not on the stack: loop() runs on the ESP8266's 4 KB cont stack and
   // the publish path runs below this frame.
   static char payload[MHI_DISCOVERY_BUF];
   char topic[MHI_DISCOVERY_TOPIC_MAX];
-  if (!mhi_discovery_row_enabled(row, &ctx)) return;  // has_lr off, or the retired energy row
+  if (!mhi_discovery_row_enabled(row, &ctx)) return true;  // has_lr off, or the retired energy row
   if (mhi_discovery_topic(row, &ctx, topic, sizeof(topic)) == 0 ||
       mhi_discovery_build(row, &ctx, payload, sizeof(payload)) == 0) {
     Serial.printf_P(PSTR("HA_DISCOVERY: row %u does not fit, not published\n"), (unsigned)row);
-    return;
+    return false;
   }
   MQTTclient.publish(topic, payload, true);
+  return true;
 }
 
 void discovery_loop() {
@@ -153,22 +162,33 @@ void discovery_loop() {
     if (row == MHI_DISCOVERY_CLIMATE && !modes_ok) {
       // skipped: said so at boot, and the Discovery topic says "modes"
     }
-    else if (!mhi_discovery_is_outdoor_row(row)) {  // the outdoor rows are the group's
-      publish_row(row);
+    else if (!mhi_discovery_is_outdoor_row(row) && !publish_row(row)) {  // the outdoor rows are the group's
+      unit_row_skipped = true;
     }
-    if (next_row == MHI_DISCOVERY_ROWS) {
-      if (modes_ok)
-        output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_OK));
-      else
+    if (next_row == MHI_DISCOVERY_ROWS) {  // "modes" first, then "skipped" (fork #24 spec §2.1)
+      if (!modes_ok)
         output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_MODES));
+      else if (unit_row_skipped)
+        output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_SKIPPED));
+      else
+        output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_OK));
+      status_ok = modes_ok && !unit_row_skipped;
     }
   }
   else if (next_outdoor_row < MHI_DISCOVERY_ROWS) {  // after the unit rows, one per pass
     const MhiDiscoveryRow row = (MhiDiscoveryRow)next_outdoor_row++;
-    if (mhi_discovery_is_outdoor_row(row))
-      publish_row(row);
-    else
+    if (mhi_discovery_is_outdoor_row(row)) {
+      if (!publish_row(row)) outdoor_row_skipped = true;
+    }
+    else {
       next_outdoor_row = MHI_DISCOVERY_ROWS;  // past the outdoor block: done
+      // Nothing when all six fit (fork #24 spec §2.1), and never over modes or
+      // an earlier skipped: modes > skipped > ok across both passes.
+      if (outdoor_row_skipped && status_ok) {
+        status_ok = false;
+        output_P((ACStatus)type_status, PSTR(TOPIC_DISCOVERY), PSTR(PAYLOAD_DISCOVERY_SKIPPED));
+      }
+    }
   }
 }
 
