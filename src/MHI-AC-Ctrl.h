@@ -185,6 +185,9 @@
 #ifndef TOPIC_DISCOVERY
 #define TOPIC_DISCOVERY "Discovery"           // retained, after the discovery configs went out: ok, or modes when the climate row was skipped (HA_DISCOVERY)
 #endif
+#ifndef TOPIC_GROUP
+#define TOPIC_GROUP "Group"                   // retained: 0 member, 1 publisher, 2 outdoor ID mismatch, 3 version mismatch (fork #22)
+#endif
 
 // MQTT payload text
 #ifndef PAYLOAD_CONNECTED_TRUE

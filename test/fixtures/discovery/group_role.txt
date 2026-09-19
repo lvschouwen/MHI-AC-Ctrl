@@ -1,0 +1,2 @@
+homeassistant/sensor/MHI-AC-Ctrl_group_role/config
+{"~":"MHI-AC-Ctrl","name":"Group role","uniq_id":"MHI-AC-Ctrl_group_role","stat_t":"~/Group","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["MHI-AC-Ctrl"],"name":"MHI-AC-Ctrl","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"fixture"}}

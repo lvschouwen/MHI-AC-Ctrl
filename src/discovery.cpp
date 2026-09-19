@@ -28,15 +28,17 @@ constexpr bool starts_with(const char* s, const char* prefix) {
   return *prefix == '\0' || (*s == *prefix && starts_with(s + 1, prefix + 1));
 }
 static_assert(starts_with(MQTT_SET_PREFIX, MQTT_PREFIX), "HA_DISCOVERY needs MQTT_SET_PREFIX to start with MQTT_PREFIX");
-// The outdoor rows read "~/<op_prefix><topic>", so the operating-data prefix
-// must sit under the status prefix too.
-static_assert(starts_with(MQTT_OP_PREFIX, MQTT_PREFIX), "HA_DISCOVERY needs MQTT_OP_PREFIX to start with MQTT_PREFIX");
+// The outdoor rows read "~/<op_prefix><topic>" with the group root as "~"
+// (fork #22), so the publisher's prefix must sit under the group root.
+static_assert(starts_with(GROUP_OP_PREFIX, GROUP_ROOT), "HA_DISCOVERY needs GROUP_OP_PREFIX to start with GROUP_ROOT");
 static_assert(sizeof(MQTT_PREFIX) > 1, "HA_DISCOVERY needs a non-empty MQTT_PREFIX");
 // Every topic in the configs is "~/<name>", so the prefix must end in "/".
 static_assert(MQTT_PREFIX[sizeof(MQTT_PREFIX) - 2] == '/', "HA_DISCOVERY needs MQTT_PREFIX to end with /");
 
 // MQTT_PREFIX without its trailing slash: the payload's "~".
 static char base_topic[sizeof(MQTT_PREFIX)];
+// GROUP_ROOT without its trailing slash: the outdoor rows' "~" (fork #22).
+static char group_base_topic[sizeof(GROUP_ROOT)];
 
 static const MhiDiscoveryCtx ctx = {
   .discovery_prefix = HA_DISCOVERY_PREFIX,
@@ -56,7 +58,7 @@ static const MhiDiscoveryCtx ctx = {
             HA_NAME_RSSI, HA_NAME_RESET_REASON, HA_NAME_WIFI_PHY,
             HA_NAME_VANES_LR, HA_NAME_3DAUTO, HA_NAME_FRAME_ERRORS, HA_NAME_FRAME_TIMEOUTS, HA_NAME_ERROR_CODE,
             HA_NAME_OU_OUTDOOR, HA_NAME_OU_CT, HA_NAME_OU_KWH, HA_NAME_OU_COMP, HA_NAME_OU_DEFROST,
-            HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION},
+            HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION, HA_NAME_GROUP_ROLE},
 #ifdef HA_RESET_REASON_TPL
   .reset_reason_tpl = HA_RESET_REASON_TPL,
 #else
@@ -92,22 +94,31 @@ static const MhiDiscoveryCtx ctx = {
 #else
   .outdoor_entity_prefix = NULL,
 #endif
-  .op_prefix = MQTT_OP_PREFIX + (sizeof(MQTT_PREFIX) - 1),
+  .op_prefix = GROUP_OP_PREFIX + (sizeof(GROUP_ROOT) - 1),
   .t_op_outdoor = TOPIC_OUTDOOR, .t_op_ct = TOPIC_CT, .t_op_kwh = TOPIC_KWH, .t_op_comp = TOPIC_COMP,
   .t_op_defrost = TOPIC_DEFROST, .t_op_total_comp_run = TOPIC_TOTAL_COMP_RUN, .t_op_protection_no = TOPIC_PROTECTION_NO,
   .defrost_on = PAYLOAD_OP_DEFROST_ON, .defrost_off = PAYLOAD_OP_DEFROST_OFF,
   .t_frame_errors = TOPIC_FRAME_ERRORS, .t_frame_timeouts = TOPIC_FRAME_TIMEOUTS,
   .fan = {PAYLOAD_FAN_1, PAYLOAD_FAN_2, PAYLOAD_FAN_3, PAYLOAD_FAN_4},
+  .group_base = group_base_topic,
+  .avty_topic = MQTT_PREFIX TOPIC_CONNECTED,
+  .t_group = TOPIC_GROUP,
 };
 
 static bool modes_ok = false;
 static uint8_t next_row = MHI_DISCOVERY_ROWS;  // nothing to publish until a connect
 
+// A prefix without its trailing slash, for a payload's "~".
+static void strip_slash(char* dst, size_t size, const char* prefix) {
+  strncpy(dst, prefix, size);
+  dst[size - 1] = '\0';
+  const size_t n = strlen(dst);
+  if (n > 0 && dst[n - 1] == '/') dst[n - 1] = '\0';
+}
+
 void discovery_setup() {
-  strncpy(base_topic, MQTT_PREFIX, sizeof(base_topic));
-  base_topic[sizeof(base_topic) - 1] = '\0';
-  const size_t n = strlen(base_topic);
-  if (n > 0 && base_topic[n - 1] == '/') base_topic[n - 1] = '\0';
+  strip_slash(base_topic, sizeof(base_topic), MQTT_PREFIX);
+  strip_slash(group_base_topic, sizeof(group_base_topic), GROUP_ROOT);
   modes_ok = mhi_discovery_modes_valid(&ctx);
   if (!modes_ok)
     Serial.println(F("HA_DISCOVERY: the PAYLOAD_MODE_* texts are not Home Assistant's mode names, the climate config will not be published (Discovery: modes)"));

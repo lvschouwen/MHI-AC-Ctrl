@@ -20,11 +20,13 @@
 static const char* const kComponent[MHI_DISCOVERY_ROWS] = {
   "climate", "select", "switch", "binary_sensor", "binary_sensor", "sensor", "sensor", "sensor", "sensor", "sensor",
   "select", "switch", "sensor", "sensor", "sensor",
-  "sensor", "sensor", "sensor", "sensor", "binary_sensor", "sensor", "sensor"};
+  "sensor", "sensor", "sensor", "sensor", "binary_sensor", "sensor", "sensor",
+  "sensor"};
 static const char* const kSuffix[MHI_DISCOVERY_ROWS] = {
   "", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3d_auto", "frame_errors", "frame_timeouts", "error_code",
-  "outdoor_temp", "current", "energy", "comp_freq", "defrost", "comp_run", "protection"};
+  "outdoor_temp", "current", "energy", "comp_freq", "defrost", "comp_run", "protection",
+  "group_role"};
 static const char* const kHaModes[6] = {"off", "auto", "dry", "cool", "fan_only", "heat"};
 
 struct Out {
@@ -80,23 +82,32 @@ static void put_list(Out* o, const char* key, const char* const* items, size_t c
 
 // The rows of the outdoor device (fork #19): their own dev block, and both the
 // uniq_id and the config topic keyed by outdoor_id instead of id_prefix.
-static bool is_outdoor_row(MhiDiscoveryRow row) { return row >= MHI_DISCOVERY_OU_OUTDOOR; }
+// A closed range (fork #22): MHI_DISCOVERY_GROUP_ROLE, appended after the
+// block, is a unit row.
+bool mhi_discovery_is_outdoor_row(MhiDiscoveryRow row) {
+  return row >= MHI_DISCOVERY_OU_OUTDOOR && row <= MHI_DISCOVERY_OU_PROTECTION;
+}
 
-// The test above is open-ended, and MhiDiscoveryRow is append-only: a row added
-// after the outdoor block would become an outdoor row without anyone saying so.
-static_assert(MHI_DISCOVERY_OU_PROTECTION + 1 == MHI_DISCOVERY_ROWS,
-              "a row appended after the outdoor rows must be classified in is_outdoor_row() first");
+// The outdoor block is the seven rows of fork #19, and the table ends with the
+// Group role row. MhiDiscoveryRow is append-only: whoever appends a row decides
+// in mhi_discovery_is_outdoor_row() whether it is an outdoor row, then moves
+// this line.
+static_assert(MHI_DISCOVERY_OU_PROTECTION - MHI_DISCOVERY_OU_OUTDOOR == 6, "the outdoor block is OU_OUTDOOR..OU_PROTECTION");
+static_assert(MHI_DISCOVERY_GROUP_ROLE + 1 == MHI_DISCOVERY_ROWS,
+              "a row appended after MHI_DISCOVERY_GROUP_ROLE: classify it in mhi_discovery_is_outdoor_row() first");
 
 static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
-  put(o, FMT("{\"~\":\"%s\","), c->base);
+  // The outdoor rows read the group root (fork #22); it never ends in "/", so
+  // no expanded topic holds "//".
+  put(o, FMT("{\"~\":\"%s\","), mhi_discovery_is_outdoor_row(row) ? c->group_base : c->base);
   if (row == MHI_DISCOVERY_CLIMATE) {
     // null: the climate is the device's main feature, HA names it after the device.
     put(o, FMT("\"name\":null,\"uniq_id\":\"%s\","), c->climate_id);
     if (c->entity_prefix) put(o, FMT("\"default_entity_id\":\"climate.%s\","), c->entity_prefix);
     return;
   }
-  const char* id_prefix = is_outdoor_row(row) ? c->outdoor_id : c->id_prefix;
-  const char* entity_prefix = is_outdoor_row(row) ? c->outdoor_entity_prefix : c->entity_prefix;
+  const char* id_prefix = mhi_discovery_is_outdoor_row(row) ? c->outdoor_id : c->id_prefix;
+  const char* entity_prefix = mhi_discovery_is_outdoor_row(row) ? c->outdoor_entity_prefix : c->entity_prefix;
   put(o, FMT("\"name\":"));
   put_str(o, c->names[row]);
   put(o, FMT(",\"uniq_id\":\"%s_%s\","), id_prefix, kSuffix[row]);
@@ -113,9 +124,14 @@ static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
 
 static void tail(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row, bool diagnostic) {
   if (diagnostic) put(o, FMT("\"ent_cat\":\"diagnostic\","));
-  put(o, FMT("\"avty_t\":\"~/%s\",\"pl_avail\":\"%s\",\"pl_not_avail\":\"%s\",\"dev\":{\"ids\":[\""),
-      c->t_connected, c->connected_on, c->connected_off);
-  if (is_outdoor_row(row)) {
+  // The outdoor rows are available while the unit that publishes them is: its
+  // connected topic in full, since their "~" is the group root (fork #22).
+  if (mhi_discovery_is_outdoor_row(row))
+    put(o, FMT("\"avty_t\":\"%s\","), c->avty_topic);
+  else
+    put(o, FMT("\"avty_t\":\"~/%s\","), c->t_connected);
+  put(o, FMT("\"pl_avail\":\"%s\",\"pl_not_avail\":\"%s\",\"dev\":{\"ids\":[\""), c->connected_on, c->connected_off);
+  if (mhi_discovery_is_outdoor_row(row)) {
     // The outdoor unit is its own HA device, seen through the unit that polls
     // it (via_device) and available while that unit is: no sw of its own.
     put(o, FMT("%s\"],\"name\":"), c->outdoor_id);
@@ -133,7 +149,7 @@ static void state_topic(Out* o, const char* topic) {
   put(o, FMT("\"stat_t\":\"~/%s\","), topic);
 }
 
-// An operating-data topic: the unit's own MQTT_OP_PREFIX, below the same "~".
+// An operating-data topic of the outdoor device: GROUP_OP_PREFIX, below the group root's "~".
 static void op_state_topic(Out* o, const MhiDiscoveryCtx* c, const char* topic) {
   put(o, FMT("\"stat_t\":\"~/%s%s\","), c->op_prefix, topic);
 }
@@ -173,8 +189,9 @@ bool mhi_discovery_modes_valid(const MhiDiscoveryCtx* c) {
 
 bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* c) {
   if (row >= MHI_DISCOVERY_ROWS) return false;  // not a row of the table, like mhi_discovery_topic()
+  if (row == MHI_DISCOVERY_OU_KWH) return false;  // retired (fork #22 spec §4.2): KWH is per unit
   if (row == MHI_DISCOVERY_VANES_LR || row == MHI_DISCOVERY_3DAUTO) return c->has_lr;
-  if (is_outdoor_row(row)) return c->has_outdoor;
+  if (mhi_discovery_is_outdoor_row(row)) return c->has_outdoor;
   return true;
 }
 
@@ -185,7 +202,7 @@ size_t mhi_discovery_topic(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
     r = snprintf(out, out_len, "%s/%s/%s/config", c->discovery_prefix, kComponent[row], c->climate_id);
   else
     r = snprintf(out, out_len, "%s/%s/%s_%s/config", c->discovery_prefix, kComponent[row],
-                 is_outdoor_row(row) ? c->outdoor_id : c->id_prefix, kSuffix[row]);
+                 mhi_discovery_is_outdoor_row(row) ? c->outdoor_id : c->id_prefix, kSuffix[row]);
   if (r < 0 || (size_t)r >= out_len) {
     out[0] = '\0';
     return 0;
@@ -295,11 +312,6 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
       op_state_topic(&o, c, c->t_op_ct);
       put(&o, FMT("\"dev_cla\":\"current\",\"unit_of_meas\":\"A\",\"stat_cla\":\"measurement\","));
       break;
-    case MHI_DISCOVERY_OU_KWH:
-      diagnostic = false;
-      op_state_topic(&o, c, c->t_op_kwh);
-      put(&o, FMT("\"dev_cla\":\"energy\",\"unit_of_meas\":\"kWh\",\"stat_cla\":\"total_increasing\","));
-      break;
     case MHI_DISCOVERY_OU_COMP:
       op_state_topic(&o, c, c->t_op_comp);
       put(&o, FMT("\"dev_cla\":\"frequency\",\"unit_of_meas\":\"Hz\",\"stat_cla\":\"measurement\","));
@@ -315,7 +327,13 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
     case MHI_DISCOVERY_OU_PROTECTION:
       op_state_topic(&o, c, c->t_op_protection_no);  // the number, not a text
       break;
-    case MHI_DISCOVERY_ROWS:  // excluded above; keeps -Wswitch exhaustive
+    case MHI_DISCOVERY_GROUP_ROLE:
+      // 0 member, 1 publisher, 2 outdoor ID mismatch, 3 version mismatch; the
+      // wording is Home Assistant's (fork #22 spec §3).
+      state_topic(&o, c->t_group);
+      break;
+    case MHI_DISCOVERY_OU_KWH:  // retired (fork #22): never built, so never published, and never empty
+    case MHI_DISCOVERY_ROWS:    // excluded above; keeps -Wswitch exhaustive
       out[0] = '\0';
       return 0;
   }

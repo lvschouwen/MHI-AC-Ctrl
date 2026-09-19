@@ -34,14 +34,16 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_FRAME_ERRORS,   // sensor   <id_prefix>_frame_errors (fork #21 F1)
   MHI_DISCOVERY_FRAME_TIMEOUTS, // sensor   <id_prefix>_frame_timeouts (fork #21 F1)
   MHI_DISCOVERY_ERROR_CODE,     // sensor   <id_prefix>_error_code, on the existing Errorcode topic (fork #21 F2)
-  // From here on, the outdoor device (fork #19): uniq_id <outdoor_id>_<suffix>.
+  // OU_OUTDOOR..OU_PROTECTION: the outdoor device (fork #19): uniq_id <outdoor_id>_<suffix>,
+  // read from the group root and sent only by the group's publisher (fork #22).
   MHI_DISCOVERY_OU_OUTDOOR,     // sensor        <outdoor_id>_outdoor_temp
   MHI_DISCOVERY_OU_CT,          // sensor        <outdoor_id>_current
-  MHI_DISCOVERY_OU_KWH,         // sensor        <outdoor_id>_energy
+  MHI_DISCOVERY_OU_KWH,         // retired (fork #22): KWH is per unit; never built, never published
   MHI_DISCOVERY_OU_COMP,        // sensor        <outdoor_id>_comp_freq
   MHI_DISCOVERY_OU_DEFROST,     // binary_sensor <outdoor_id>_defrost
   MHI_DISCOVERY_OU_COMP_RUN,    // sensor        <outdoor_id>_comp_run
   MHI_DISCOVERY_OU_PROTECTION,  // sensor        <outdoor_id>_protection
+  MHI_DISCOVERY_GROUP_ROLE,     // sensor   <id_prefix>_group_role, on the Group topic (fork #22): a unit row
   MHI_DISCOVERY_ROWS
 };
 
@@ -96,15 +98,19 @@ struct MhiDiscoveryCtx {
   const char* vanes_lr[8];            // PAYLOAD_VANESLR_1..7, _SWING
   const char* threedauto_on;          // PAYLOAD_3DAUTO_ON
   const char* threedauto_off;         // PAYLOAD_3DAUTO_OFF
-  bool has_outdoor;                   // HA_OUTDOOR_DEVICE
+  bool has_outdoor;                   // the outdoor rows are wanted (fork #22: every unit; the group decides when they go out)
   const char* outdoor_id;             // HA_OUTDOOR_ID; dev.ids and uniq_id prefix of the OU_* rows
   const char* outdoor_name;           // HA_OUTDOOR_NAME; dev.name
   const char* outdoor_entity_prefix;  // HA_OUTDOOR_ENTITY_PREFIX; NULL: none
-  const char* op_prefix;              // what MQTT_OP_PREFIX adds to MQTT_PREFIX, "OpData/"
+  const char* op_prefix;              // what GROUP_OP_PREFIX adds to GROUP_ROOT, "OpData/"
   const char* t_op_outdoor, *t_op_ct, *t_op_kwh, *t_op_comp, *t_op_defrost, *t_op_total_comp_run, *t_op_protection_no;
   const char* defrost_on, *defrost_off;  // PAYLOAD_OP_DEFROST_ON/OFF
   const char* t_frame_errors, *t_frame_timeouts;  // the error-code row reads t_errorcode, which is already there
   const char* fan[4];                 // PAYLOAD_FAN_1..4
+  // Fork #22 (the outdoor election).
+  const char* group_base;             // GROUP_ROOT without its trailing slash: the outdoor rows' "~"
+  const char* avty_topic;             // MQTT_PREFIX TOPIC_CONNECTED in full: the outdoor rows' availability
+  const char* t_group;                // TOPIC_GROUP, relative to base
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,
@@ -125,11 +131,21 @@ size_t mhi_discovery_topic(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx, char
 size_t mhi_discovery_slug(const char* name, char* out, size_t out_len);
 
 // Whether a row is part of this build: false for MHI_DISCOVERY_VANES_LR and
-// MHI_DISCOVERY_3DAUTO when !has_lr, false for every OU_* row when
-// !has_outdoor, false for a row that is not in the table, true otherwise.
-// Callers must skip a disabled row entirely.
+// MHI_DISCOVERY_3DAUTO when !has_lr, false for every outdoor row when
+// !has_outdoor, false for the retired MHI_DISCOVERY_OU_KWH in every build,
+// false for a row that is not in the table, true otherwise. Callers must skip
+// a disabled row entirely.
 bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx);
 
+// The outdoor device's rows, MHI_DISCOVERY_OU_OUTDOOR..MHI_DISCOVERY_OU_PROTECTION:
+// their own dev block, uniq_id and topic keyed by outdoor_id, "~" the group
+// base, absolute availability. A closed range: a row appended later is a unit
+// row unless it is added here.
+bool mhi_discovery_is_outdoor_row(MhiDiscoveryRow row);
+
 // One row's JSON. Returns the length, 0 (and an empty string) when it does
-// not fit out_len. out_len should be MHI_DISCOVERY_BUF.
+// not fit out_len or the row is retired (MHI_DISCOVERY_OU_KWH): a caller
+// publishes only a length above 0, so no discovery topic ever gets an empty
+// payload, which would delete the Home Assistant entity. out_len should be
+// MHI_DISCOVERY_BUF.
 size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx, char* out, size_t out_len);

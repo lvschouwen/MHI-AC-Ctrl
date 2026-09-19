@@ -140,6 +140,9 @@
 #ifndef HA_NAME_OU_PROTECTION
 #define HA_NAME_OU_PROTECTION "Protection state"
 #endif
+#ifndef HA_NAME_GROUP_ROLE
+#define HA_NAME_GROUP_ROLE "Group role"             // the diagnostic sensor on the Group topic (fork #22)
+#endif
 //#define HA_RESET_REASON_TPL "{{ value }}"         // when defined, the reset-reason sensor's value_template (a Jinja template, e.g. a translation table)
 
 #ifndef TELEMETRY_PERIOD
@@ -173,6 +176,21 @@
 #endif
 #ifndef MQTT_ERR_OP_PREFIX
 #define MQTT_ERR_OP_PREFIX MQTT_PREFIX "ErrOpData/" // prefix for publishing operating data from last error, must end with a "/"
+#endif
+
+// The outdoor election (fork #22, SW-Configuration.md "Several indoor units
+// on one outdoor unit"): the indoor units of one outdoor unit share GROUP_ROOT
+// and elect the one that writes the outdoor unit's values under
+// GROUP_OP_PREFIX. A single split needs nothing: its root is its own
+// MQTT_PREFIX, so its topics stay where they are.
+#ifndef GROUP_ROOT
+#define GROUP_ROOT MQTT_PREFIX                      // topic root shared by the units of one outdoor unit, ends in "/", at most 64 characters
+#ifndef GROUP_OP_PREFIX
+#define GROUP_OP_PREFIX MQTT_OP_PREFIX              // without a GROUP_ROOT a custom MQTT_OP_PREFIX keeps its topics
+#endif
+#endif
+#ifndef GROUP_OP_PREFIX
+#define GROUP_OP_PREFIX GROUP_ROOT "OpData/"        // where the publisher writes the outdoor unit's values
 #endif
 
 #ifndef OTA_HOSTNAME
