@@ -176,7 +176,7 @@ The election in short:
 - After every MQTT connect a unit only listens for 5 s. A publisher that rebooted finds its own record then and carries on without a handover.
 - A unit counts as gone when its record has not changed for 3 of its own periods, or when its `connected` has read 0 for 30 s.
 - When no publisher has been left for 5 s, the live unit with the lowest hostname takes over with a new generation. A takeover therefore takes 30 s + 5 s after the publisher's `connected` went to 0.
-- A live publisher is never replaced, so a unit that comes back stays a member. When two units take over at the same moment, the newer generation keeps the role, and at equal generations the lower hostname.
+- A live publisher is never replaced, so a unit that comes back stays a member. When two units take over at the same moment, the newer generation keeps the role, and at equal generations the lower hostname. If the broker loses its retained data (restarted without persistence), the units re-elect as at a cold start, so the publisher can change once.
 - The live unit with the lowest hostname sets the group's outdoor ID and protocol version. A unit that differs stays out (`Group` `2` or `3`).
 - The new publisher writes the eleven values within one operating-data cycle (20 s), and sends the outdoor device's Home Assistant configs 30 s after it took over.
 
