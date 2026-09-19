@@ -665,8 +665,8 @@ void loop() {
       group_connected();
     }
     ArduinoOTA.handle();
-    discovery_loop();
     group_loop();
+    discovery_loop();
   }
   publishTelemetry();  // every pass, connected or not, so the uptime counter never misses a millis() wrap
   safe_mode_clear_after_boot(millis());  // fork #23: up 120 s, so the crashes before do not count towards a loop
