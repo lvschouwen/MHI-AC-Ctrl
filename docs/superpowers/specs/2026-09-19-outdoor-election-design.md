@@ -21,7 +21,7 @@ On Lucas's units: `GROUP_ROOT "airco/outdoor/"` and `HA_OUTDOOR_ID "ac_outdoor"`
 | `GROUP_OP_PREFIX` | `MQTT_OP_PREFIX` when `GROUP_ROOT` is not defined, otherwise `GROUP_ROOT "OpData/"` | Where the publisher writes the system values. With the defaults a single split keeps its topics even with a custom `MQTT_OP_PREFIX`. |
 | `HA_OUTDOOR_ID` | derived at boot: slug of `GROUP_ROOT` + `_outdoor` (`airco/outdoor/` → `airco_outdoor_outdoor`, `MHI-AC-Ctrl/` → `mhi_ac_ctrl_outdoor`) | The outdoor device's identifier and uniq_id prefix. Derived from the group root so that every member derives the same one. The suffix keeps it apart from a unit whose `HA_ID_PREFIX` equals the slug. |
 | `HA_NAME_GROUP_ROLE` | `"Group role"` | Name of the new diagnostic entity. |
-| `TOPIC_GROUP` | `"Group"` | The per-unit role topic. |
+| `TOPIC_GROUP` | `"Group"` | The per-unit role topic. It goes in `MHI-AC-Ctrl.h` with the other `TOPIC_*` defines. |
 
 - `HA_OUTDOOR_DEVICE` is removed. A build that still defines it stops with `#error "HA_OUTDOOR_DEVICE was removed (fork #22): every unit is a candidate publisher now; give the units of one outdoor unit the same GROUP_ROOT"`.
 - `HA_OUTDOOR_NAME` and `HA_OUTDOOR_ENTITY_PREFIX` stay as they are.
@@ -32,7 +32,9 @@ On Lucas's units: `GROUP_ROOT "airco/outdoor/"` and `HA_OUTDOOR_ID "ac_outdoor"`
   - `GROUP_OP_PREFIX` starts with `GROUP_ROOT` (with `HA_DISCOVERY` only, as for `MQTT_OP_PREFIX` today);
   - `<GROUP_ROOT>members/` does not start with `MQTT_SET_PREFIX`;
   - `HOSTNAME` is 1..32 characters without `/ + # ; " \`;
-  - an explicit `HA_OUTDOOR_ID` is 1..40 characters without `/ + # ; " \`.
+  - an explicit `HA_OUTDOOR_ID` is 1..40 characters without `/ + # ; " \`, space or control character: the record's outdoor_id rule (§5.1), so no peer can reject this unit's record;
+  - a derived outdoor ID longer than 40 characters is refused (a root whose slug is over 32 characters); `HA_OUTDOOR_ID` is the way out;
+  - `MQTT_PREFIX` meets the record's prefix rule: 1..64 characters, ends in `/`, no `; + # " \`, space or control character.
 - Group protocol: all units of a group use the same `TOPIC_CONNECTED` and `PAYLOAD_CONNECTED_TRUE`/`_FALSE` (the documentation says so). Peers are watched on `<their prefix><TOPIC_CONNECTED>`.
 
 ## 3. Topics and payloads
@@ -146,7 +148,7 @@ All times are `millis()` differences in unsigned arithmetic, so they survive the
 ### 6.1 Connect and grace
 At every MQTT connect:
 1. The unit subscribes to `<GROUP_ROOT>members/+` next to `MQTT_SET_PREFIX "#"`, and clears its peer table.
-2. For 5 s (grace) it only collects. While a member-kind peer's record comes in, the unit subscribes (from `loop()`, never inside the MQTT callback) to that peer's `<prefix><TOPIC_CONNECTED>`. When a peer's prefix changes, it unsubscribes the old topic first.
+2. For 5 s (grace) it only collects. While a member-kind peer's record comes in, the unit subscribes (from `loop()`, never inside the MQTT callback) to that peer's `<prefix><TOPIC_CONNECTED>`. When a peer's prefix changes, the unit subscribes the new topic and does not unsubscribe the old one: that subscription disappears at the next connect (clean session), and a message on it matches no peer and is ignored. Keeping each old prefix for an unsubscribe would cost 390 B of RAM for a case that needs a reconfigured unit.
 3. The unit's own retained record (`members/<HOSTNAME>`) is read only during the grace period. When it is proto 1 and carries a higher term than the unit holds, the unit adopts its role and term. After a reboot this is what lets a publisher resume without a handover (a reboot starts at role 0, term 0).
 4. During the grace period the unit publishes no record, no `Group`, no system value and no outdoor config. Its own status, per-unit values and unit discovery rows go out as today.
 5. At the end of the grace period the unit first applies the rules in §6.2 once, which may demote it. Only then does it publish its record and its `Group`. If its role is 1 after that, it runs the publisher start (§6.3).
@@ -154,7 +156,7 @@ At every MQTT connect:
 ### 6.2 Rules, applied on every `loop()` pass after the grace period
 1. If the role is 1 and the state is 2 or 3 → **demote**.
 2. If the role is 1 and a peer among the incumbents beats this unit → **demote**.
-3. If the role is 1 and a record arrives from a compatible peer claiming role 1 that this unit beats → re-send the outdoor configs 5 s later, once per such record. This covers a near-simultaneous claim: the loser may already have sent some of its configs before it saw the winner.
+3. If the role is 1 and a record arrives from a compatible peer claiming role 1 that this unit beats → re-send the outdoor configs 35 s later, once per such record. This is a backstop for a loser that did not see the winner in time. The loser sends its configs at the latest 30 s after its claim, so the winner's re-send comes last, and after the values (§6.3).
 4. If the role is 0 and the state is 0:
    - With no incumbents, a settle clock starts.
    - When there have been no incumbents for 5 s and this unit has the lowest hostname among the candidates → **claim**: role 1, term = max_term_seen + 1.
@@ -300,7 +302,7 @@ The retained `homeassistant/sensor/ac_outdoor_energy/config` from batch C stays 
   4. `connected` 0 then 1 within 30 s: no takeover;
   5. a stale record (`connected` stays 1, no refresh for 3 periods) counts as gone;
   6. the peer's own period, not this unit's, decides staleness;
-  7. simultaneous claims with equal terms: the higher hostname demotes and cancels its configs; the lower re-sends 5 s after the loser's record;
+  7. simultaneous claims with equal terms: the higher hostname demotes and cancels its configs; the lower re-sends 35 s after the loser's record;
   8. the returning ex-publisher becomes a member and never gets a start or config action;
   9. three units: only the lowest alive candidate claims;
   10. an outdoor ID mismatch gives `Group 2`, never a claim, and demotes a publisher;
@@ -337,6 +339,7 @@ What the host cannot test is verified on the units (§11): the core's sentinels,
   - `health-check.sh` prints `Group` and the records.
 - **Docs:**
   - README: feature line.
+  - `Version.md`: a bullet, as batch C added one.
   - `SW-Configuration.md`:
     - `GROUP_ROOT` and `GROUP_OP_PREFIX`;
     - the record, the `Group` numbers and the election in short;
@@ -375,7 +378,7 @@ Lucas authorized Claude on 19 Sep to flash this build. hass-config acks each syn
 2. The record gets a **period** field. With only its own period, a unit would find a peer with a longer period stale.
 3. A **5 s settle** before a claim. It keeps two units that boot together from both claiming. Takeover = 30 s + 5 s.
 4. **Outdoor configs 30 s after a claim**, so the values are on the group root first (hass-config's retain trap). On Lucas's units the gap in HA grows to about 90 s from the drop to available.
-5. **Conflict re-send:** the winner of a simultaneous claim re-sends its configs 5 s after the loser's record.
+5. **Conflict re-send:** the winner of a simultaneous claim re-sends its configs 35 s after the loser's record, so they come after the loser's and after the values (35 s since the plan review of 19 Sep; it was 5 s).
 6. **Sentinels** of the 11 system values (§4.3). Side effect: DEFROST "Off" and a reading of 0 are published after every connect.
 7. **`TELEMETRY_PERIOD` 1..86400.**
 8. **Default outdoor ID** = slug of `GROUP_ROOT` + `_outdoor`. The default `GROUP_OP_PREFIX` keeps a custom `MQTT_OP_PREFIX` when no `GROUP_ROOT` is set.
