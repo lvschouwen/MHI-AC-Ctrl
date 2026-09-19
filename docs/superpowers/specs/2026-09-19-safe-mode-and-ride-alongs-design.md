@@ -10,6 +10,7 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
 ### 1.2 Behaviour
 **The crash count.** At the start of `setup()`, right after `Serial.begin()`, the unit reads its reset reason and a small record in RTC user memory (it survives resets, not power loss):
 - A reset reason of 1 (hardware watchdog), 2 (exception) or 3 (software watchdog) is a crash: the count goes up by one, capped at 255.
+- So is a boot that finds the **crashed bit** set in the record. The core's weak hook `custom_crash_callback()` runs on every software crash path: exception, software watchdog, `abort()`, `panic()`, a failed `assert`, a failed `new`, and the cont-stack overflow check after every `loop()`. The unit defines the hook, and it does one thing: it sets that bit in the RTC record. The SDK reports `abort`, `panic`, `assert` and a stack overflow as reason 4, so the reason alone would miss exactly the likelier failures of new code; the plan review found this on 19 Sep, and Lucas approved the hook. A hardware watchdog runs no hook but keeps reason 1. Every boot clears the bit.
 - Every other reason sets the count to 0: power-on (0), `ESP.restart()` (4, which is also how an OTA update and `set/reset` end), deep-sleep wake (5), external reset (6).
 - An invalid record (magic or check word wrong, as after a power-on) also counts as 0.
 - Once the unit has been up for 120 s in normal mode, it writes the count back to 0, once per boot. So only crashes that come less than 120 s after boot count as a loop.
@@ -27,7 +28,7 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
 **The AC** runs on its own remote meanwhile. The bus is silent, as it already is during a crash loop or an OTA upload.
 
 ### 1.3 RTC record
-- Three 32-bit words at RTC **user block 32** (`ESP.rtcUserMemoryRead/Write`, offset 32, 12 bytes): `magic` (`0x4D484953`), `data` (count in the low byte, safe-mode entries in the next byte), and `check` (`magic ^ data ^ 0xFFFFFFFF`).
+- Three 32-bit words at RTC **user block 32** (`ESP.rtcUserMemoryRead/Write`, offset 32, 12 bytes): `magic` (`0x4D484953`), `data` (count in the low byte, safe-mode entries in the next byte, the crashed bit in bit 16), and `check` (`magic ^ data ^ 0xFFFFFFFF`).
 - **Why block 32** (corrected on 19 Sep during planning; this spec first said block 0).
   - In the pinned core (framework 3.30102.0, `platform espressif8266@4.2.1`), `ESP.rtcUserMemory*(offset)` maps to `system_rtc_mem_*(64 + offset)`. System block 0 is `0x60001100`, so user block 0 is `0x60001200`: exactly where eboot keeps its 128-byte OTA command, user blocks 0-31. `Esp.cpp` says so itself: "the eboot command will be stored into the first 128 bytes of user data".
   - A record there could not break an OTA, because eboot checks its own magic and CRC. But every OTA would wipe the record, including the OTA that rescues a unit from safe mode.
@@ -38,6 +39,8 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
 - **`lib/mhi_pure/mhi_safe_mode.{h,cpp}`**, host-tested:
   - `MhiSafeBoot mhi_safe_boot(uint32_t reset_reason, const uint32_t rec_in[3], uint32_t rec_out[3])` returns `{bool safe_mode; uint8_t count; uint8_t entries;}` and writes the updated record. Safe-mode entries go up by one when this boot enters safe mode.
   - `void mhi_safe_record_clear_count(uint32_t rec[3])` for the 120 s clear; it keeps the entries.
+  - The crashed bit: a pure helper sets it in a record, and `mhi_safe_boot` counts and clears it.
+- **`src/safe_mode.cpp`** defines `custom_crash_callback()`: read the record, set the bit, recompute the check word, write it. No Serial, no allocation.
   - No Arduino, no RTC access. The glue reads and writes.
 - **`src/main.cpp`:**
   - `setup()` starts with the decision.
@@ -50,6 +53,7 @@ OTA is the only way to reach the two units without tools: Uitkijk means opening 
 ### 1.5 Tests and proof
 - **Host tests:**
   - every reset reason 0-6 and one out of range;
+  - the crashed bit with reason 4 counts as a crash, and the bit is cleared after every boot;
   - an invalid record for each of: magic, check and garbage;
   - count 2 → 3 enters safe mode;
   - the cap at 255;
