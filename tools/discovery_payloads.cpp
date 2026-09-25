@@ -25,7 +25,7 @@
 // The run-time row (fork #27) adds --name-run-time; it reads the unit's own
 //   OpData/TOTAL-IU-RUN.
 // The cleaning and external-Troom rows (fork #25) add --name-cleaning and
-//   --name-troom-external.
+//   --name-troom-external; the crash-info row adds --name-crash-info.
 // Every option has the repo default; --modes and --vanes take exactly six
 // comma-separated items and --vanes-lr exactly eight; --lr and --outdoor take
 // exactly 0 or 1; --outdoor-id defaults to the slug of --group-base plus
@@ -45,7 +45,7 @@ static const char* kNameOption[MHI_DISCOVERY_ROWS] = {
   "--name-vanes-lr", "--name-3dauto", "--name-frame-errors", "--name-frame-timeouts", "--name-error-code",
   "--name-ou-outdoor", "--name-ou-ct", "--name-ou-kwh", "--name-ou-comp", "--name-ou-defrost",
   "--name-ou-comp-run", "--name-ou-protection", "--name-group-role", "--name-restart",
-  "--name-run-time", "--name-cleaning", "--name-troom-external"};
+  "--name-run-time", "--name-cleaning", "--name-troom-external", "--name-crash-info"};
 
 // A 0/1 option; anything else is malformed. External callers compare live
 // payloads against this output, so "--lr true" has to be an error rather than a
@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
               "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
               "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-              "Group role", "Restart", "Run time", "Cleaning", "External Troom"},
+              "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info"},
     .reset_reason_tpl = NULL,
     .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
     .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
     .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
     .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
     .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
+    .t_crash_info = "CrashInfo",
   };
   bool outdoor_id_given = false, group_base_given = false;
   for (int i = 1; i + 1 < argc; i += 2) {

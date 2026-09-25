@@ -644,6 +644,7 @@ void setup() {
     setupOTA();
     return;
   }
+  crash_info_boot();  // fork #25: after the safe-mode decision, which keeps the record for the next normal boot
   Serial.printf_P(PSTR("CPU frequency[Hz]=%lu\n"), F_CPU);
   Serial.printf("ESP.getCoreVersion()=%s\n", ESP.getCoreVersion().c_str());
   Serial.printf("ESP.getSdkVersion()=%s\n", ESP.getSdkVersion());

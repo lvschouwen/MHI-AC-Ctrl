@@ -3,12 +3,16 @@
 #include <Arduino.h>
 #include <user_interface.h>  // struct rst_info and the REASON_* values; the header has its own extern "C"
 
+#include "mhi_crash_info.h"
 #include "mhi_safe_mode.h"
 
 // The record's place (spec §1.3): RTC user block 32, three words. User block 0
 // is 0x60001200, where eboot keeps its 128-byte OTA command (blocks 0-31), so
 // block 32 is the first word an OTA does not overwrite.
 #define SAFE_MODE_RTC_BLOCK 32
+// The crash details (fork #25): six words after the safe-mode record.
+#define CRASH_INFO_RTC_BLOCK 36
+static_assert(SAFE_MODE_RTC_BLOCK + 3 <= CRASH_INFO_RTC_BLOCK, "the crash details must not overlap the safe-mode record");
 
 // mhi_safe_mode numbers the reasons itself, because lib/mhi_pure cannot include
 // the SDK's user_interface.h; this is where the two spellings are tied together.
@@ -55,11 +59,37 @@ uint8_t safe_mode_entries() {
 // never gets here: its timer calls the unwrapped restart. This runs inside the
 // crash, so it only reads and writes the three RTC words, as postmortem_report()
 // itself reads RTC (line 137): no Serial, no allocation, nothing that waits.
-extern "C" void custom_crash_callback(struct rst_info*, uint32_t, uint32_t) {
+// It also stores the crash's rst_info for CrashInfo (fork #25), the last crash
+// winning.
+extern "C" void custom_crash_callback(struct rst_info* info, uint32_t, uint32_t) {
   uint32_t rec[3] = {0, 0, 0};  // an invalid record if the read is refused
   ESP.rtcUserMemoryRead(SAFE_MODE_RTC_BLOCK, rec, sizeof(rec));
   mhi_safe_record_mark_crashed(rec);
   ESP.rtcUserMemoryWrite(SAFE_MODE_RTC_BLOCK, rec, sizeof(rec));
+  if (info != nullptr) {
+    uint32_t crash[MHI_CRASH_RECORD_WORDS];
+    mhi_crash_record_make(crash, info->reason, info->exccause, info->epc1, info->excvaddr);
+    ESP.rtcUserMemoryWrite(CRASH_INFO_RTC_BLOCK, crash, sizeof(crash));
+  }
+}
+
+static char crash_json[MHI_CRASH_INFO_JSON_MAX] = "{\"exccause\":-1}";
+
+// Not in safe mode: that boot never connects, so the record waits for the
+// normal boot after it.
+void crash_info_boot() {
+  uint32_t crash[MHI_CRASH_RECORD_WORDS] = {0};  // an invalid record if the read is refused
+  ESP.rtcUserMemoryRead(CRASH_INFO_RTC_BLOCK, crash, sizeof(crash));
+  mhi_crash_info_json(crash, crash_json, sizeof(crash_json));
+  if (mhi_crash_record_valid(crash)) {
+    Serial.printf_P(PSTR("Last crash: %s\n"), crash_json);
+    const uint32_t cleared[MHI_CRASH_RECORD_WORDS] = {0};
+    ESP.rtcUserMemoryWrite(CRASH_INFO_RTC_BLOCK, const_cast<uint32_t*>(cleared), sizeof(cleared));
+  }
+}
+
+const char* crash_info_json() {
+  return crash_json;
 }
 
 // A store to address 0 raises the CPU exception StoreProhibited (29). The SDK's

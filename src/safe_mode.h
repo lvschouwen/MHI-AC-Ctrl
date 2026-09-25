@@ -13,3 +13,7 @@ bool safe_mode_boot();                             // first thing in setup(), af
 void safe_mode_clear_after_boot(uint32_t now_ms);  // every normal loop() pass: at 120 s uptime, once, the crash count goes back to 0
 uint8_t safe_mode_entries();                       // boots into safe mode since power-on: the SafeMode topic
 void safe_mode_test_crash();                       // set/reset crash: one deliberate CPU exception, reset reason 2 (spec §1.5)
+
+// Crash details (fork #25): the crash hook also stores rst_info in RTC.
+void crash_info_boot();                            // in setup() on a normal boot: reads and clears the record
+const char* crash_info_json();                     // the CrashInfo payload, {"exccause":-1} without a crash

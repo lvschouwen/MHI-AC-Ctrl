@@ -1,0 +1,2 @@
+homeassistant/sensor/ac_slaapkamer_crash_info/config
+{"~":"airco/slaapkamer","name":"Crash info","uniq_id":"ac_slaapkamer_crash_info","default_entity_id":"sensor.ac_slaapkamer_crash_info","stat_t":"~/CrashInfo","val_tpl":"{{ value_json.exccause }}","json_attr_t":"~/CrashInfo","ic":"mdi:bug-outline","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

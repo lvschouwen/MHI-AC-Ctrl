@@ -48,6 +48,7 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_RUN_TIME,       // sensor   <id_prefix>_run_time, the unit's own TOTAL-IU-RUN (fork #27): a unit row
   MHI_DISCOVERY_CLEANING,       // binary_sensor <id_prefix>_cleaning, Allergen Clear running (fork #25): a unit row
   MHI_DISCOVERY_TROOM_EXTERNAL, // binary_sensor <id_prefix>_external_troom, a room sensor is Troom (fork #25 C3): a unit row
+  MHI_DISCOVERY_CRASH_INFO,     // sensor   <id_prefix>_crash_info, the last crash's exccause (fork #25): a unit row
   MHI_DISCOVERY_ROWS
 };
 
@@ -126,6 +127,7 @@ struct MhiDiscoveryCtx {
   const char* cleaning_on, *cleaning_off;  // PAYLOAD_CLEANING_ON/OFF
   const char* t_troom_external;       // TOPIC_TROOM_EXTERNAL
   const char* troom_external_on, *troom_external_off;  // PAYLOAD_TROOM_EXTERNAL_ON/OFF
+  const char* t_crash_info;           // TOPIC_CRASH_INFO
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,

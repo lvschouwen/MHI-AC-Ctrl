@@ -49,6 +49,23 @@ static void test_counts_saturate(void) {
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, s.timeouts);
 }
 
+// Fork #25: FrameErrors/FrameTimeouts go out when they changed, and once after
+// every connect, not in every heartbeat.
+static void test_publish_only_after_a_change(void) {
+  MhiFrameStats s = {0, 0};
+  MhiFrameStatsPublished p;
+  mhi_frame_stats_republish(&p);
+  TEST_ASSERT_TRUE(mhi_frame_stats_due(&s, &p));   // the first after a connect
+  TEST_ASSERT_FALSE(mhi_frame_stats_due(&s, &p));  // nothing new
+  mhi_frame_stats_count(&s, -3);
+  TEST_ASSERT_TRUE(mhi_frame_stats_due(&s, &p));
+  TEST_ASSERT_FALSE(mhi_frame_stats_due(&s, &p));
+  mhi_frame_stats_count(&s, -1);
+  TEST_ASSERT_TRUE(mhi_frame_stats_due(&s, &p));
+  mhi_frame_stats_republish(&p);                   // a reconnect
+  TEST_ASSERT_TRUE(mhi_frame_stats_due(&s, &p));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_a_valid_frame_counts_as_neither);
@@ -56,5 +73,6 @@ int main(void) {
   RUN_TEST(test_either_sck_timeout_counts_as_a_timeout);
   RUN_TEST(test_an_unrecognised_value_counts_as_neither);
   RUN_TEST(test_counts_saturate);
+  RUN_TEST(test_publish_only_after_a_change);
   return UNITY_END();
 }

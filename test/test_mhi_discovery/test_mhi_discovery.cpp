@@ -30,7 +30,7 @@ static const MhiDiscoveryCtx kDefault = {
   .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart", "Run time", "Cleaning", "External Troom"},
+            "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -58,6 +58,7 @@ static const MhiDiscoveryCtx kDefault = {
   .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
   .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
   .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
+  .t_crash_info = "CrashInfo",
 };
 
 // Lucas's Uitkijk: custom names throughout, a template, an entity prefix, and a
@@ -78,7 +79,7 @@ static const MhiDiscoveryCtx kUitkijk = {
   .names = {NULL, "louvers", "quiet mode", "fault", "wiring fault", "time since boot", "heap free", "wifi-signal", "restart reason", "wifi-standard",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart", "Run time", "Cleaning", "External Troom"},
+            "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info"},
   .reset_reason_tpl = "{{ {'Power On': 'power applied', 'Software/System restart': 'software restart (update or reset)', 'Hardware Watchdog': 'hardware watchdog', 'Software Watchdog': 'software watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'woke from deep sleep', 'External System': 'external reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -106,6 +107,7 @@ static const MhiDiscoveryCtx kUitkijk = {
   .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
   .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
   .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
+  .t_crash_info = "CrashInfo",
 };
 
 // Slaapkamer: has_lr and the outdoor device both on (batch C spec §3), as the
@@ -134,7 +136,7 @@ static const char* const kFixtureName[MHI_DISCOVERY_ROWS] = {
   "climate", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_code",
   "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection",
-  "group_role", "restart", "run_time", "cleaning", "external_troom"};
+  "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info"};
 
 // Balanced braces and brackets outside strings, every string closed, no
 // printf conversion left over and no NULL argument printed.
@@ -635,15 +637,27 @@ static void test_the_external_troom_row_is_a_diagnostic_binary_sensor(void) {
   TEST_ASSERT_NULL(strstr(out, "dev_cla"));
 }
 
-static void test_a_unit_has_20_entities_with_the_33_byte_frame(void) {
+// State: exccause, -1 without a crash; the whole record as attributes.
+static void test_the_crash_info_row_reads_the_json(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_CRASH_INFO));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_CRASH_INFO, &kDefault));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_CRASH_INFO, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_crash_info/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_CRASH_INFO, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_crash_info\",\"default_entity_id\":\"sensor.ac_slaapkamer_crash_info\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/CrashInfo\",\"val_tpl\":\"{{ value_json.exccause }}\",\"json_attr_t\":\"~/CrashInfo\",\"ic\":\"mdi:bug-outline\",\"ent_cat\":\"diagnostic\","));
+}
+
+static void test_a_unit_has_21_entities_with_the_33_byte_frame(void) {
   int with_lr = 0, without_lr = 0;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
     if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) continue;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kUitkijk)) with_lr++;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) without_lr++;
   }
-  TEST_ASSERT_EQUAL_INT(20, with_lr);
-  TEST_ASSERT_EQUAL_INT(18, without_lr);
+  TEST_ASSERT_EQUAL_INT(21, with_lr);
+  TEST_ASSERT_EQUAL_INT(19, without_lr);
 }
 
 // --- the committed reference payloads ---------------------------------------
@@ -717,7 +731,8 @@ int main(void) {
   RUN_TEST(test_the_run_time_row_uses_the_unit_op_prefix_not_the_groups);
   RUN_TEST(test_the_cleaning_row_is_a_running_binary_sensor);
   RUN_TEST(test_the_external_troom_row_is_a_diagnostic_binary_sensor);
-  RUN_TEST(test_a_unit_has_20_entities_with_the_33_byte_frame);
+  RUN_TEST(test_the_crash_info_row_reads_the_json);
+  RUN_TEST(test_a_unit_has_21_entities_with_the_33_byte_frame);
   RUN_TEST(test_reference_fixtures_are_written);
   RUN_TEST(test_second_fixture_set_is_written);
   return UNITY_END();

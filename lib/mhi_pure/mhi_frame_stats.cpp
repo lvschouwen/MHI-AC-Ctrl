@@ -11,3 +11,15 @@ void mhi_frame_stats_count(MhiFrameStats* stats, int err_msg) {
     default: break;  // err_msg_valid_frame (0) and anything else
   }
 }
+
+void mhi_frame_stats_republish(MhiFrameStatsPublished* published) {
+  published->valid = false;
+}
+
+bool mhi_frame_stats_due(const MhiFrameStats* stats, MhiFrameStatsPublished* published) {
+  if (published->valid && published->last.errors == stats->errors && published->last.timeouts == stats->timeouts)
+    return false;
+  published->last = *stats;
+  published->valid = true;
+  return true;
+}

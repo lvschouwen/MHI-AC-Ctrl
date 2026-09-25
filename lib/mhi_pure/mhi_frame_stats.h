@@ -14,3 +14,16 @@ struct MhiFrameStats {
 // and anything else as neither. Both fields saturate at UINT32_MAX. A plain
 // int so this file need not include MHI-AC-Ctrl-core.h (pulls in Arduino.h).
 void mhi_frame_stats_count(MhiFrameStats* stats, int err_msg);
+
+// What FrameErrors/FrameTimeouts last carried (fork #25): they go out when they
+// changed, and once after every connect, not in every heartbeat.
+struct MhiFrameStatsPublished {
+  MhiFrameStats last;
+  bool valid;  // false: the next check is due, as after a connect
+};
+
+// An MQTT (re)connect: the next check is due.
+void mhi_frame_stats_republish(MhiFrameStatsPublished* published);
+
+// Whether the counters are to be published now; if so, they are recorded as published.
+bool mhi_frame_stats_due(const MhiFrameStats* stats, MhiFrameStatsPublished* published);

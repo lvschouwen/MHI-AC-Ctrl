@@ -208,6 +208,7 @@ void setupWiFi(int& WiFiStatusParam) {
 static MhiUptime uptime_counter = {0, 0, 0};
 static MhiRetryPacer telemetry_pacer = {0, false};
 static MhiFrameStats frame_stats = {0, 0};
+static MhiFrameStatsPublished frame_stats_published = {{0, 0}, false};
 
 static void publishTelemetryNow(uint32_t uptime_s) {
   char strtmp[12];
@@ -217,6 +218,9 @@ static void publishTelemetryNow(uint32_t uptime_s) {
   output_P((ACStatus)type_status, PSTR(TOPIC_UPTIME), strtmp);
   ultoa(ESP.getFreeHeap(), strtmp, 10);
   output_P((ACStatus)type_status, PSTR(TOPIC_FREE_HEAP), strtmp);
+  // Only when they changed since the last publish, and once after every
+  // connect (fork #25): both are almost always 0.
+  if (!mhi_frame_stats_due(&frame_stats, &frame_stats_published)) return;
   ultoa(frame_stats.errors, strtmp, 10);
   output_P((ACStatus)type_status, PSTR(TOPIC_FRAME_ERRORS), strtmp);
   ultoa(frame_stats.timeouts, strtmp, 10);
@@ -299,8 +303,10 @@ int MQTTreconnect() {
       output_P((ACStatus)type_status, PSTR(TOPIC_CONNECTED), PSTR(PAYLOAD_CONNECTED_TRUE));
       output_P((ACStatus)type_status, PSTR(TOPIC_VERSION), PSTR(VERSION));
       output_P((ACStatus)type_status, PSTR(TOPIC_RESET_REASON), ESP.getResetReason().c_str());
+      output_P((ACStatus)type_status, PSTR(TOPIC_CRASH_INFO), crash_info_json());  // fork #25, retained
       itoa(safe_mode_entries(), strtmp, 10);  // fork #23: 0 on a healthy unit
       output_P((ACStatus)type_status, PSTR(TOPIC_SAFE_MODE), strtmp);
+      mhi_frame_stats_republish(&frame_stats_published);
       publishTelemetryNow(mhi_uptime_advance(&uptime_counter, millis()));
       telemetry_pacer.last_ms = millis();  // the first periodic publish is one period after this one
       telemetry_pacer.attempted = true;

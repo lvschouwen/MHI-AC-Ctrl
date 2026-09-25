@@ -167,6 +167,9 @@
 #ifndef TOPIC_SILENT
 #define TOPIC_SILENT "Silent"                 // status and set/ command (fork #4 batch B)
 #endif
+#ifndef TOPIC_CRASH_INFO
+#define TOPIC_CRASH_INFO "CrashInfo"          // retained JSON: the last crash's rst_info, {"exccause":-1} without one (fork #25)
+#endif
 #ifndef TOPIC_CLEANING
 #define TOPIC_CLEANING "Cleaning"             // retained: Allergen Clear running, see mhi_cleaning.h (fork #25)
 #endif
