@@ -151,6 +151,12 @@ static void test_the_compile_time_rules(void) {
   TEST_ASSERT_FALSE(mhi_group_root_valid("airco/+/"));
   TEST_ASSERT_FALSE(mhi_group_root_valid("airco/#/"));
   TEST_ASSERT_FALSE(mhi_group_root_valid("airco;/"));
+  // Unescaped in the outdoor configs' "~" (fork #25): no quote, backslash,
+  // space or control character.
+  TEST_ASSERT_FALSE(mhi_group_root_valid("air\"co/"));
+  TEST_ASSERT_FALSE(mhi_group_root_valid("air\\co/"));
+  TEST_ASSERT_FALSE(mhi_group_root_valid("air co/"));
+  TEST_ASSERT_FALSE(mhi_group_root_valid("air\tco/"));
   TEST_ASSERT_TRUE(mhi_group_root_valid("123456789012345678901234567890123456789012345678901234567890123/"));    // 64
   TEST_ASSERT_FALSE(mhi_group_root_valid("1234567890123456789012345678901234567890123456789012345678901234/"));  // 65
   TEST_ASSERT_TRUE(mhi_group_starts_with("airco/slaapkamer/set/", "airco/slaapkamer/"));

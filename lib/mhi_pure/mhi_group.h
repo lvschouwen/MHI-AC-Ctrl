@@ -66,9 +66,10 @@ constexpr bool mhi_group_prefix_valid(const char* s) {
   return s != nullptr && mhi_group_text_ok(s, 1, MHI_GROUP_ROOT_MAX, ";+#\"\\", true) && s[mhi_group_len(s) - 1] == '/';
 }
 
-// GROUP_ROOT (spec §2): 1..64 characters, ends in /, no + # ;.
+// GROUP_ROOT (spec §2): 1..64 characters, ends in /, no + # ; " \, space or
+// control character. It goes unescaped into the outdoor configs' "~" (fork #25).
 constexpr bool mhi_group_root_valid(const char* s) {
-  return s != nullptr && mhi_group_text_ok(s, 1, MHI_GROUP_ROOT_MAX, "+#;", false) && s[mhi_group_len(s) - 1] == '/';
+  return s != nullptr && mhi_group_text_ok(s, 1, MHI_GROUP_ROOT_MAX, "+#;\"\\", true) && s[mhi_group_len(s) - 1] == '/';
 }
 
 // The worst record packet a unit receives (spec §2): 5 bytes of fixed header,

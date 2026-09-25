@@ -265,6 +265,9 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       delay(500);
       ESP.restart();
     }
+#ifdef RESET_CRASH_COMMAND
+    // Test builds only (fork #25): an MQTT-reachable crash, and a retained one
+    // would cycle the unit through safe mode.
     else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET_CRASH)) == 0) {
       // The safe-mode proof (fork #23 spec §1.5): three of these, each within
       // 120 s of the boot before, start safe mode. Every crash is one we send.
@@ -272,6 +275,7 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       delay(500);
       safe_mode_test_crash();
     }
+#endif
     else
       publish_cmd_invalidparameter();
   }
@@ -634,7 +638,8 @@ void setup() {
   if (safe_mode) {
     // Wi-Fi and OTA only: no pin measurement, no DS18x20, no MQTT, no AC core
     // (MISO is never driven), no discovery, no group.
-    Serial.println(F("SAFE MODE: three crashes in a row; Wi-Fi and OTA only, a normal boot in 10 min"));
+    Serial.printf_P(PSTR("SAFE MODE: %u crashes in a row; Wi-Fi and OTA only, a normal boot in %u min\n"),
+                    (unsigned)MHI_SAFE_THRESHOLD, (unsigned)(MHI_SAFE_RESTART_MS / 60000u));
     initWiFi();
     setupOTA();
     return;

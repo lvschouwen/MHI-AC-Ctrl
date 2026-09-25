@@ -347,6 +347,7 @@ int MQTTreconnect() {
         // next pass sees !connected(), reconnects after the 5 s pacing and
         // subscribes everything again from scratch.
         Serial.println(F("MQTTreconnect(): a subscribe failed, dropping the connection so the next pass reconnects and resubscribes"));
+        MQTT_lost++;  // the link never looked up to mhi_link_dropped(), so count the drop here
         mqtt_drop_connection();
         return MQTT_NOT_CONNECTED;
       }

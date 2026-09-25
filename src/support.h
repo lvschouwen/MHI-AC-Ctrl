@@ -238,6 +238,8 @@
 //#define ENHANCED_RESOLUTION true                    // when using Tsetpoint with x.5 degrees, airco will use (x+1).0 setpoint
                                                     // uncomment this to compensatie (offset) Troom for this.
                                                     // this will simulate .x degrees resolution
+//#define RESET_CRASH_COMMAND                        // test builds only: set/reset crash, one deliberate exception for the
+                                                    // safe-mode and crash-details proofs (fork #23, #25); never in production
 //#define CONTINUE_WITHOUT_MQTT true                  // uncomment if communication with AC has to continue when MQTT or WiFi connection is disconnected.
                                                     // When Troom is supplied from external, it will fallback to AC internal Troom temperature sensor
                                                     // When ROOM_TEMP_DS18X20 is used, it will use room temperature from DS18x20
@@ -270,7 +272,15 @@
 // The group's configuration (fork #22 spec §2), checked with the rules the
 // units apply to each other's records.
 #include "mhi_group.h"
-static_assert(mhi_group_root_valid(GROUP_ROOT), "GROUP_ROOT must be 1..64 characters, end in / and contain no + # ;");
+static_assert(mhi_group_root_valid(GROUP_ROOT),
+              "GROUP_ROOT must be 1..64 characters, end in / and contain no + # ; \" \\, space or control character");
+// PubSubClient3 refuses a SUBSCRIBE that does not fit its buffer (5 bytes of
+// header, message ID, topic length, topic, QoS), and since fork #22 a failed
+// subscribe drops the connection: the unit would reconnect every 5 s.
+static_assert(5 + 2 + 2 + sizeof(MQTT_SET_PREFIX "#") - 1 + 1 <= MQTT_MAX_PACKET_SIZE,
+              "MQTT_SET_PREFIX is too long to subscribe to <MQTT_SET_PREFIX>#");
+static_assert(5 + 2 + 2 + sizeof(GROUP_ROOT "members/+") - 1 + 1 <= MQTT_MAX_PACKET_SIZE,
+              "GROUP_ROOT is too long to subscribe to <GROUP_ROOT>members/+");
 // PubSubClient3 drops a received packet larger than its buffer whole, and the
 // firmware never enlarges it: a longer root would make every unit drop the
 // others' records, and two publishers would never see each other.
