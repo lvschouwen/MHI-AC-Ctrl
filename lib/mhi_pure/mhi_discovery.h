@@ -46,6 +46,8 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_GROUP_ROLE,     // sensor   <id_prefix>_group_role, on the Group topic (fork #22): a unit row
   MHI_DISCOVERY_RESTART,        // button   <id_prefix>_restart, set/reset (fork #24): a unit row
   MHI_DISCOVERY_RUN_TIME,       // sensor   <id_prefix>_run_time, the unit's own TOTAL-IU-RUN (fork #27): a unit row
+  MHI_DISCOVERY_CLEANING,       // binary_sensor <id_prefix>_cleaning, Allergen Clear running (fork #25): a unit row
+  MHI_DISCOVERY_TROOM_EXTERNAL, // binary_sensor <id_prefix>_external_troom, a room sensor is Troom (fork #25 C3): a unit row
   MHI_DISCOVERY_ROWS
 };
 
@@ -119,6 +121,11 @@ struct MhiDiscoveryCtx {
   // Fork #27 (the indoor unit's run hours).
   const char* unit_op_prefix;         // what MQTT_OP_PREFIX adds to MQTT_PREFIX, "OpData/": the unit's own operating data
   const char* t_op_total_iu_run;      // TOPIC_TOTAL_IU_RUN, relative to unit_op_prefix
+  // Fork #25 (Allergen Clear, the room sensor).
+  const char* t_cleaning;             // TOPIC_CLEANING
+  const char* cleaning_on, *cleaning_off;  // PAYLOAD_CLEANING_ON/OFF
+  const char* t_troom_external;       // TOPIC_TROOM_EXTERNAL
+  const char* troom_external_on, *troom_external_off;  // PAYLOAD_TROOM_EXTERNAL_ON/OFF
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,

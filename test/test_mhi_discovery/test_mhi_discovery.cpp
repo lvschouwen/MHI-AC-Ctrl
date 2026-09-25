@@ -30,7 +30,7 @@ static const MhiDiscoveryCtx kDefault = {
   .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart", "Run time"},
+            "Group role", "Restart", "Run time", "Cleaning", "External Troom"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -56,6 +56,8 @@ static const MhiDiscoveryCtx kDefault = {
   .group_base = "MHI-AC-Ctrl", .avty_topic = "MHI-AC-Ctrl/connected", .t_group = "Group",  // a single split: GROUP_ROOT = MQTT_PREFIX
   .t_request_reset = "reset", .request_reset = "reset",
   .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
+  .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
+  .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
 };
 
 // Lucas's Uitkijk: custom names throughout, a template, an entity prefix, and a
@@ -76,7 +78,7 @@ static const MhiDiscoveryCtx kUitkijk = {
   .names = {NULL, "louvers", "quiet mode", "fault", "wiring fault", "time since boot", "heap free", "wifi-signal", "restart reason", "wifi-standard",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart", "Run time"},
+            "Group role", "Restart", "Run time", "Cleaning", "External Troom"},
   .reset_reason_tpl = "{{ {'Power On': 'power applied', 'Software/System restart': 'software restart (update or reset)', 'Hardware Watchdog': 'hardware watchdog', 'Software Watchdog': 'software watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'woke from deep sleep', 'External System': 'external reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -102,6 +104,8 @@ static const MhiDiscoveryCtx kUitkijk = {
   .group_base = "airco/uitkijk", .avty_topic = "airco/uitkijk/connected", .t_group = "Group",
   .t_request_reset = "reset", .request_reset = "reset",
   .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
+  .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
+  .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
 };
 
 // Slaapkamer: has_lr and the outdoor device both on (batch C spec §3), as the
@@ -130,7 +134,7 @@ static const char* const kFixtureName[MHI_DISCOVERY_ROWS] = {
   "climate", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_code",
   "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection",
-  "group_role", "restart", "run_time"};
+  "group_role", "restart", "run_time", "cleaning", "external_troom"};
 
 // Balanced braces and brackets outside strings, every string closed, no
 // printf conversion left over and no NULL argument printed.
@@ -260,7 +264,7 @@ static void test_the_climate_is_the_device_and_lists_come_from_the_payload_texts
   TEST_ASSERT_NOT_NULL(strstr(out, "\"modes\":[\"off\",\"auto\",\"dry\",\"cool\",\"fan_only\",\"heat\"],"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"fan_modes\":[\"1\",\"2\",\"3\",\"4\",\"Auto\"],"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"swing_modes\":[\"Up\",\"UpCenter\",\"CenterDown\",\"Down\",\"Swing\",\"?\"],"));
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"min_temp\":18,\"max_temp\":30,\"temp_step\":0.5,"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"min_temp\":10,\"max_temp\":30,\"temp_step\":0.5,"));
   TEST_ASSERT_NULL(strstr(out, "ent_cat"));  // the climate card, not the diagnostics list
 }
 
@@ -606,15 +610,40 @@ static void test_the_run_time_row_uses_the_unit_op_prefix_not_the_groups(void) {
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/GroupOp/TOTAL-COMP-RUN\","));
 }
 
-static void test_a_unit_has_18_entities_with_the_33_byte_frame(void) {
+// --- fork #25: Allergen Clear and the room sensor --------------------------------
+
+static void test_the_cleaning_row_is_a_running_binary_sensor(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_CLEANING));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_CLEANING, &kDefault));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_CLEANING, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/binary_sensor/ac_slaapkamer_cleaning/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_CLEANING, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "{\"~\":\"airco/slaapkamer\",\"name\":\"Cleaning\",\"uniq_id\":\"ac_slaapkamer_cleaning\",\"default_entity_id\":\"binary_sensor.ac_slaapkamer_cleaning\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Cleaning\",\"pl_on\":\"On\",\"pl_off\":\"Off\",\"dev_cla\":\"running\",\"ent_cat\":\"diagnostic\","));
+}
+
+static void test_the_external_troom_row_is_a_diagnostic_binary_sensor(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_TROOM_EXTERNAL));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_TROOM_EXTERNAL, &kDefault));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_TROOM_EXTERNAL, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/binary_sensor/ac_slaapkamer_external_troom/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_TROOM_EXTERNAL, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_external_troom\",\"default_entity_id\":\"binary_sensor.ac_slaapkamer_external_troom\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/TroomExternal\",\"pl_on\":\"On\",\"pl_off\":\"Off\",\"ic\":\"mdi:thermometer-check\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_NULL(strstr(out, "dev_cla"));
+}
+
+static void test_a_unit_has_20_entities_with_the_33_byte_frame(void) {
   int with_lr = 0, without_lr = 0;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
     if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) continue;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kUitkijk)) with_lr++;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) without_lr++;
   }
-  TEST_ASSERT_EQUAL_INT(18, with_lr);
-  TEST_ASSERT_EQUAL_INT(16, without_lr);
+  TEST_ASSERT_EQUAL_INT(20, with_lr);
+  TEST_ASSERT_EQUAL_INT(18, without_lr);
 }
 
 // --- the committed reference payloads ---------------------------------------
@@ -686,7 +715,9 @@ int main(void) {
   RUN_TEST(test_the_restart_button_presses_set_reset);
   RUN_TEST(test_the_run_time_row_reads_the_units_own_run_hours);
   RUN_TEST(test_the_run_time_row_uses_the_unit_op_prefix_not_the_groups);
-  RUN_TEST(test_a_unit_has_18_entities_with_the_33_byte_frame);
+  RUN_TEST(test_the_cleaning_row_is_a_running_binary_sensor);
+  RUN_TEST(test_the_external_troom_row_is_a_diagnostic_binary_sensor);
+  RUN_TEST(test_a_unit_has_20_entities_with_the_33_byte_frame);
   RUN_TEST(test_reference_fixtures_are_written);
   RUN_TEST(test_second_fixture_set_is_written);
   return UNITY_END();

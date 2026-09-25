@@ -167,6 +167,12 @@
 #ifndef TOPIC_SILENT
 #define TOPIC_SILENT "Silent"                 // status and set/ command (fork #4 batch B)
 #endif
+#ifndef TOPIC_CLEANING
+#define TOPIC_CLEANING "Cleaning"             // retained: Allergen Clear running, see mhi_cleaning.h (fork #25)
+#endif
+#ifndef TOPIC_TROOM_EXTERNAL
+#define TOPIC_TROOM_EXTERNAL "TroomExternal"  // retained: a fresh set/Troom value is the AC's room temperature (fork #25)
+#endif
 
 // Protocol discovery tooling (fork #4): what the AC's frame changed, unknown
 // operating data with its value bytes, and a one-shot request.
@@ -356,6 +362,18 @@
 #endif
 #ifndef PAYLOAD_SILENT_OFF
 #define PAYLOAD_SILENT_OFF "Off"
+#endif
+#ifndef PAYLOAD_CLEANING_ON
+#define PAYLOAD_CLEANING_ON "On"
+#endif
+#ifndef PAYLOAD_CLEANING_OFF
+#define PAYLOAD_CLEANING_OFF "Off"
+#endif
+#ifndef PAYLOAD_TROOM_EXTERNAL_ON
+#define PAYLOAD_TROOM_EXTERNAL_ON "On"
+#endif
+#ifndef PAYLOAD_TROOM_EXTERNAL_OFF
+#define PAYLOAD_TROOM_EXTERNAL_OFF "Off"
 #endif
 #ifndef PAYLOAD_DISCOVERY_OK
 #define PAYLOAD_DISCOVERY_OK "ok"

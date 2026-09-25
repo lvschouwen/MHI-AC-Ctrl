@@ -17,6 +17,11 @@
 // conversion stays defined.
 uint8_t mhi_troom_from_celsius(float celsius);
 
+// Encode degC as the MHI Troom byte, rounded to the nearest quarter degree
+// (half a step up), clamped like mhi_troom_from_celsius(). For a room sensor's
+// value on set/Troom (fork #25 C3): truncation made 23.93 read 23.75.
+uint8_t mhi_troom_round_from_celsius(float celsius);
+
 // Decode an MHI Troom byte back to degC.
 float mhi_celsius_from_troom(int troom);
 

@@ -9,6 +9,13 @@ static const int kDs18x20RawPerTroomStep = 32;
 static const int16_t kDs18x20RawMax = 48 * 128;
 static const int16_t kDs18x20RawMin = -10 * 128;
 
+uint8_t mhi_troom_round_from_celsius(float celsius) {
+  const float encoded = celsius * kTroomStepsPerDegree + (float)kTroomOffset + 0.5f;
+  if (!(encoded >= 0.0f)) return 0;  // NaN too
+  if (encoded >= 256.0f) return 255;
+  return (uint8_t)encoded;  // non-negative, so the cast floors
+}
+
 uint8_t mhi_troom_from_celsius(float celsius) {
   // Truncation happens after the offset is added, as in the original
   // (byte)(f * 4 + 61); doing it before would shift negative temperatures.

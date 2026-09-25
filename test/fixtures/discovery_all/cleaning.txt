@@ -1,0 +1,2 @@
+homeassistant/binary_sensor/ac_slaapkamer_cleaning/config
+{"~":"airco/slaapkamer","name":"Cleaning","uniq_id":"ac_slaapkamer_cleaning","default_entity_id":"binary_sensor.ac_slaapkamer_cleaning","stat_t":"~/Cleaning","pl_on":"On","pl_off":"Off","dev_cla":"running","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

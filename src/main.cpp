@@ -21,6 +21,8 @@
 #include "mhi_status.h"
 #include "mhi_temp.h"
 #include "mhi_troom_filter.h"
+#include "mhi_cleaning.h"
+#include "mhi_setpoint.h"
 #include "mhi_vanes.h"
 #include "mhi_vanes_lr.h"
 #include "safe_mode.h"
@@ -40,6 +42,16 @@ bool troom_was_set_by_DS18X20 = false;
 
 // Reset on every MQTT (re)connect, so Troom is re-sent like every other status.
 MhiTroomFilter troom_filter = {0, false};
+
+// Fork #25 F3: the mode the setpoint limits go by (the one the bus reported
+// or the one just commanded, whichever came last) and DB2 as last reported.
+static uint8_t setpoint_mode = MHI_SETPOINT_MODE_UNKNOWN;
+static uint8_t setpoint_db2 = MHI_SETPOINT_UNKNOWN;
+
+// Fork #25: Allergen Clear (see mhi_cleaning.h), and what TroomExternal last
+// carried; 0xff re-sends it, as after an MQTT (re)connect.
+static MhiCleaning cleaning = {MHI_CLEANING_UNKNOWN, MHI_CLEANING_UNKNOWN, MHI_CLEANING_UNKNOWN, MHI_CLEANING_UNKNOWN};
+static uint8_t troom_external_published = 0xff;
 
 // Protocol discovery tooling (#4 batch A). diag/frame compares each valid
 // frame with the last *published* one, at most once a second, while Diag is
@@ -67,6 +79,29 @@ static_assert(MHI_VANES_LR_SWING == vanesLR_swing, "mhi_vanes_lr numbers swing a
 
 // The texts on the Fan topic; set/Fan accepts these and 1..4 (fork #21 F6).
 static const MhiFanNames fan_names = {{PAYLOAD_FAN_1, PAYLOAD_FAN_2, PAYLOAD_FAN_3, PAYLOAD_FAN_4}, PAYLOAD_FAN_AUTO};
+
+static void publish_cleaning() {
+  output_P((ACStatus)type_status, PSTR(TOPIC_CLEANING),
+           cleaning.state == 1 ? PSTR(PAYLOAD_CLEANING_ON) : PSTR(PAYLOAD_CLEANING_OFF));
+}
+
+static void publish_troom_external() {
+  const uint8_t state = troom_was_set_by_MQTT ? 1 : 0;
+  if (state == troom_external_published) return;
+  troom_external_published = state;
+  output_P((ACStatus)type_status, PSTR(TOPIC_TROOM_EXTERNAL),
+           state ? PSTR(PAYLOAD_TROOM_EXTERNAL_ON) : PSTR(PAYLOAD_TROOM_EXTERNAL_OFF));
+}
+
+// set/Mode: the limits of set/Tsetpoint follow the commanded mode at once, and
+// leaving heat with a setpoint below 18 writes 18 in the same frame (fork #25 F3).
+static void set_mode_checked(ACMode mode) {
+  mhi_ac_ctrl_core.set_mode(mode);
+  setpoint_mode = mode;
+  const uint8_t setpoint = mhi_setpoint_on_mode_change(mode, setpoint_db2);
+  if (setpoint != 0)
+    mhi_ac_ctrl_core.set_tsetpoint(setpoint);
+}
 
 static void publish_diag_state() {
   if (diag_on)
@@ -112,35 +147,35 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     } else
 #endif
       if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_AUTO)) == 0) {
-        mhi_ac_ctrl_core.set_mode(mode_auto);
+        set_mode_checked(mode_auto);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
       else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_DRY)) == 0) {
-        mhi_ac_ctrl_core.set_mode(mode_dry);
+        set_mode_checked(mode_dry);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
       else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_COOL)) == 0) {
-        mhi_ac_ctrl_core.set_mode(mode_cool);
+        set_mode_checked(mode_cool);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
       else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_FAN)) == 0) {
-        mhi_ac_ctrl_core.set_mode(mode_fan);
+        set_mode_checked(mode_fan);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
         publish_cmd_ok();
       }
       else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_HEAT)) == 0) {
-        mhi_ac_ctrl_core.set_mode(mode_heat);
+        set_mode_checked(mode_heat);
 #ifdef POWERON_WHEN_CHANGING_MODE
         mhi_ac_ctrl_core.set_power(power_on);
 #endif
@@ -151,7 +186,7 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TSETPOINT)) == 0) {
     float f=atof(payload_str);
-    if((f >= 18) & (f <= 30)) {
+    if (mhi_setpoint_allowed(f, setpoint_mode)) {  // 10-30 in heat, 18-30 otherwise (fork #25 F3)
       mhi_ac_ctrl_core.set_tsetpoint((byte)(2 * f));
       publish_cmd_ok();
     }
@@ -212,7 +247,7 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     if (mhi_troom_celsius_plausible(f)) {
       room_temp_set_timeout_Millis = millis();  // reset timeout
       troom_was_set_by_MQTT=true;
-      byte troom = mhi_troom_from_celsius(f);
+      byte troom = mhi_troom_round_from_celsius(f);
       mhi_ac_ctrl_core.set_troom(troom);
       Serial.printf("ROOM_TEMP_MQTT: %f %i\n", f, troom);
       publish_cmd_ok();
@@ -324,6 +359,8 @@ class StatusHandler : public CallbackInterface_Status {
           else if (power_status == on) 
             Serial.printf("power_status: on; received status_power: %i\n", value);
 
+          if (mhi_cleaning_on_power(&cleaning, value == power_on ? 1 : 0))
+            publish_cleaning();
           if (value == power_on){
             output_P(status, (TOPIC_POWER), PSTR(PAYLOAD_POWER_ON));
             power_status = on;
@@ -341,6 +378,9 @@ class StatusHandler : public CallbackInterface_Status {
 #endif
           break;
         case status_mode:
+          setpoint_mode = value;
+          if (mhi_cleaning_on_mode(&cleaning, value))
+            publish_cleaning();
 #ifdef POWERON_WHEN_CHANGING_MODE
           if (!mhi_mode_topic_on_mode(&mode_topic, value))
             break;  // held until the unit is on
@@ -424,12 +464,15 @@ class StatusHandler : public CallbackInterface_Status {
 #endif
           break;
         case status_troom:
-          if (mhi_troom_filter_pass(&troom_filter, (uint8_t)value, TROOM_FILTER_LIMIT)) {
+          // A room sensor's value goes out on every change: the filter is for
+          // the AC's own jittery sensor (fork #25 C3, upstream #221).
+          if (mhi_troom_filter_pass(&troom_filter, (uint8_t)value, troom_was_set_by_MQTT ? 0.0f : TROOM_FILTER_LIMIT)) {
             dtostrf(mhi_celsius_from_troom(value), 0, 2, strtmp);
             output_P(status, PSTR(TOPIC_TROOM), strtmp);
           }
           break;
         case status_tsetpoint:
+          setpoint_db2 = value;
 #ifdef ENHANCED_RESOLUTION
           tmp_value = (value & 0x7f)/ 2.0;
           offset = round(tmp_value) - tmp_value;  // Calculate offset when setpoint is changed
@@ -658,6 +701,8 @@ void loop() {
     if (MQTTStatus == MQTT_RECONNECTED) {
       mhi_ac_ctrl_core.reset_old_values();  // after a reconnect
       mhi_troom_filter_reset(&troom_filter);
+      mhi_cleaning_republish(&cleaning);  // goes out again once the parser re-reports power
+      troom_external_published = 0xff;
       publish_diag_state();
       diag_frame.have_last = false;   // the next diag/frame is a whole frame
       mhi_retry_reset(&diag_pacer);
@@ -665,6 +710,7 @@ void loop() {
       group_connected();
     }
     ArduinoOTA.handle();
+    publish_troom_external();
     group_loop();
     discovery_loop();
   }

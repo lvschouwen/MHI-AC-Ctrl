@@ -1,0 +1,2 @@
+homeassistant/binary_sensor/ac_slaapkamer_external_troom/config
+{"~":"airco/slaapkamer","name":"External Troom","uniq_id":"ac_slaapkamer_external_troom","default_entity_id":"binary_sensor.ac_slaapkamer_external_troom","stat_t":"~/TroomExternal","pl_on":"On","pl_off":"Off","ic":"mdi:thermometer-check","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

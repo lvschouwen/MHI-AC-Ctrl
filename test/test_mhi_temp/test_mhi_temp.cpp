@@ -43,6 +43,19 @@ static void test_encoding_truncates_rather_than_rounds(void) {
   TEST_ASSERT_EQUAL_UINT8(146, mhi_troom_from_celsius(21.25f));
 }
 
+// Fork #25 C3: a room sensor's value sent over set/Troom rounds to the nearest
+// quarter degree; 23.93 truncated to 23.75.
+static void test_rounded_encoding_goes_to_the_nearest_quarter(void) {
+  TEST_ASSERT_EQUAL_UINT8(157, mhi_troom_round_from_celsius(23.93f));  // 24.0
+  TEST_ASSERT_EQUAL_UINT8(156, mhi_troom_round_from_celsius(23.8f));   // 23.75
+  TEST_ASSERT_EQUAL_UINT8(146, mhi_troom_round_from_celsius(21.125f)); // half a step rounds up
+  TEST_ASSERT_EQUAL_UINT8(145, mhi_troom_round_from_celsius(21.1f));
+  TEST_ASSERT_EQUAL_UINT8(21, mhi_troom_round_from_celsius(-10.0f));
+  TEST_ASSERT_EQUAL_UINT8(40, mhi_troom_round_from_celsius(-5.3f));    // -5.25
+  TEST_ASSERT_EQUAL_UINT8(0, mhi_troom_round_from_celsius(-100.0f));
+  TEST_ASSERT_EQUAL_UINT8(255, mhi_troom_round_from_celsius(100.0f));
+}
+
 // --- plausibility windows --------------------------------------------------
 
 static void test_celsius_plausibility_window_is_exclusive(void) {
@@ -128,6 +141,7 @@ int main(void) {
   RUN_TEST(test_decodes_the_troom_byte_back_to_celsius);
   RUN_TEST(test_round_trips_every_quarter_degree_in_range);
   RUN_TEST(test_encoding_truncates_rather_than_rounds);
+  RUN_TEST(test_rounded_encoding_goes_to_the_nearest_quarter);
   RUN_TEST(test_celsius_plausibility_window_is_exclusive);
   RUN_TEST(test_ds18x20_plausibility_window_is_inclusive);
   RUN_TEST(test_ds18x20_power_on_reset_value_is_rejected);
