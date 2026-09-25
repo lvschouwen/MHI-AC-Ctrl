@@ -21,6 +21,7 @@
 #include "mhi_status.h"
 #include "mhi_temp.h"
 #include "mhi_troom_filter.h"
+#include "mhi_heat_shift.h"
 #include "mhi_cleaning.h"
 #include "mhi_setpoint.h"
 #include "mhi_vanes.h"
@@ -45,6 +46,14 @@ MhiTroomFilter troom_filter = {0, false};
 
 // Fork #25 F3: the mode and setpoint the limits go by, see mhi_setpoint.h.
 static MhiSetpointGuard setpoint_guard = {MHI_SETPOINT_MODE_UNKNOWN, MHI_SETPOINT_UNKNOWN};
+// Fork #30: a heat target below 18 °C, reached by a shifted room temperature
+// (mhi_heat_shift.h), and the room sensor's last value as set/Troom sent it.
+static MhiHeatShift heat_shift = {NAN, false, MHI_HEAT_SHIFT_DB2_UNKNOWN};
+static float troom_external_celsius = NAN;
+static uint8_t troom_external_byte_published = 0;  // the room value last published on Troom while shifting; 0: none
+#ifdef ROOM_TEMP_DS18X20
+static byte ds18x20_value_old = 0;  // file scope: a heat shift's start and end re-apply the DS18x20 (fork #30)
+#endif
 
 // Fork #25: Allergen Clear (see mhi_cleaning.h), and what TroomExternal last
 // carried; 0xff re-sends it, as after an MQTT (re)connect.
@@ -91,6 +100,59 @@ static void publish_troom_external() {
            state ? PSTR(PAYLOAD_TROOM_EXTERNAL_ON) : PSTR(PAYLOAD_TROOM_EXTERNAL_OFF));
 }
 
+static void publish_tsetpoint(float celsius) {
+  char text[8];
+  dtostrf(celsius, 0, 1, text);
+  output_P((ACStatus)type_status, PSTR(TOPIC_TSETPOINT), text);
+}
+
+// Sends the unit a room sensor's value (set/Troom or the DS18x20): shifted
+// while a heat target below 18 is active (fork #30), and then held inside the
+// plausible window, so a hot room with a low target still reads hot. While
+// shifting, Troom carries the room itself, since the unit echoes the shifted value.
+static void send_room_temperature(float room_celsius) {
+  float sent = mhi_heat_shift_troom(&heat_shift, room_celsius, HEAT_SHIFT_OFFSET);
+  if (sent > 47.75f) sent = 47.75f;  // mhi_troom_celsius_plausible(): below 48
+  mhi_ac_ctrl_core.set_troom(mhi_troom_round_from_celsius(sent));
+  if (mhi_heat_shift_active(&heat_shift)) {
+    const uint8_t room = mhi_troom_round_from_celsius(room_celsius);
+    if (room != troom_external_byte_published) {
+      troom_external_byte_published = room;
+      char text[10];
+      dtostrf(mhi_celsius_from_troom(room), 0, 2, text);
+      output_P((ACStatus)type_status, PSTR(TOPIC_TROOM), text);
+    }
+  }
+}
+
+static void apply_external_troom() {
+  send_room_temperature(troom_external_celsius);
+}
+
+// The DS18x20's value is sent again at its next reading, shifted or not.
+static void ds18x20_reapply() {
+#ifdef ROOM_TEMP_DS18X20
+  ds18x20_value_old = 0;
+#endif
+}
+
+// A shift ended (fork #30): the room sensor's value goes too, so no unshifted
+// external value lingers; the unit is back on its own sensor at once and Home
+// Assistant sends it again only when its gate opens. With publish_setpoint the
+// setpoint goes out now, since DB2 stays 18 and the bus reports no change; a
+// set/Tsetpoint that writes another DB2 leaves that to the bus's echo.
+static void heat_shift_ended(bool publish_setpoint = true) {
+  if (troom_was_set_by_MQTT) {
+    mhi_ac_ctrl_core.set_troom(0xff);
+    troom_was_set_by_MQTT = false;
+  }
+  troom_external_byte_published = 0;
+  ds18x20_reapply();  // a DS18x20 stays the room sensor, unshifted from its next reading
+  mhi_troom_filter_reset(&troom_filter);  // the unit's own Troom goes out again at its next report
+  if (publish_setpoint && heat_shift.bus_db2 != MHI_HEAT_SHIFT_DB2_UNKNOWN)
+    publish_tsetpoint(mhi_heat_shift_setpoint(&heat_shift, heat_shift.bus_db2));
+}
+
 // set/Mode: the limits of set/Tsetpoint follow the commanded mode at once, and
 // leaving heat with a setpoint below 18 writes 18 in the same frame (fork #25 F3).
 static void set_mode_checked(ACMode mode) {
@@ -98,6 +160,8 @@ static void set_mode_checked(ACMode mode) {
   const uint8_t setpoint = mhi_setpoint_guard_mode(&setpoint_guard, mode);
   if (setpoint != 0)
     mhi_ac_ctrl_core.set_tsetpoint(setpoint);
+  if (mhi_heat_shift_on_mode(&heat_shift, mode == mode_heat))
+    heat_shift_ended();
 }
 
 static void publish_diag_state() {
@@ -185,6 +249,15 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     float f=atof(payload_str);
     uint8_t db2;
     if (mhi_setpoint_guard_request(&setpoint_guard, f, &db2)) {  // 10-30 in heat, 18-30 otherwise (fork #25 F3)
+      // Below 18 in heat: DB2 18 and a shifted room temperature (fork #30).
+      if (mhi_heat_shift_request(&heat_shift, f, setpoint_guard.mode == mode_heat, &db2))
+        heat_shift_ended(db2 == heat_shift.bus_db2);
+      else if (mhi_heat_shift_active(&heat_shift)) {
+        if (troom_was_set_by_MQTT) apply_external_troom();
+        ds18x20_reapply();
+        if (heat_shift.bus_db2 == MHI_HEAT_SHIFT_DB2)  // no echo will come: DB2 is already 18
+          publish_tsetpoint(heat_shift.target);
+      }
       mhi_ac_ctrl_core.set_tsetpoint(db2);
       publish_cmd_ok();
     }
@@ -245,9 +318,8 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     if (mhi_troom_celsius_plausible(f)) {
       room_temp_set_timeout_Millis = millis();  // reset timeout
       troom_was_set_by_MQTT=true;
-      byte troom = mhi_troom_round_from_celsius(f);
-      mhi_ac_ctrl_core.set_troom(troom);
-      Serial.printf("ROOM_TEMP_MQTT: %f %i\n", f, troom);
+      troom_external_celsius = f;
+      apply_external_troom();  // shifted while a heat target below 18 is active (fork #30)
       publish_cmd_ok();
     }
     else
@@ -381,6 +453,8 @@ class StatusHandler : public CallbackInterface_Status {
           break;
         case status_mode:
           mhi_setpoint_guard_on_bus_mode(&setpoint_guard, value);
+          if (mhi_heat_shift_on_mode(&heat_shift, value == mode_heat))  // fork #30
+            heat_shift_ended();
           if (mhi_cleaning_on_mode(&cleaning, value))
             publish_cleaning();
 #ifdef POWERON_WHEN_CHANGING_MODE
@@ -468,6 +542,10 @@ class StatusHandler : public CallbackInterface_Status {
         case status_troom:
           // A room sensor's value goes out on every change: the filter is for
           // the AC's own jittery sensor (fork #25 C3, upstream #221).
+          // While shifting, the unit echoes the shifted value: apply_external_troom()
+          // publishes the room itself (fork #30).
+          if ((troom_was_set_by_MQTT || troom_was_set_by_DS18X20) && mhi_heat_shift_active(&heat_shift))
+            break;
           if (mhi_troom_filter_pass(&troom_filter, (uint8_t)value, troom_was_set_by_MQTT ? 0.0f : TROOM_FILTER_LIMIT)) {
             dtostrf(mhi_celsius_from_troom(value), 0, 2, strtmp);
             output_P(status, PSTR(TOPIC_TROOM), strtmp);
@@ -480,7 +558,13 @@ class StatusHandler : public CallbackInterface_Status {
           offset = round(tmp_value) - tmp_value;  // Calculate offset when setpoint is changed
           Serial.printf("status_tsetpoint: Set Troom offset: %f\n", offset);
           mhi_ac_ctrl_core.set_troom_offset(offset);
-#endif          
+#endif
+          // The IR remote moved DB2 off 18: the shift ends (fork #30). While
+          // shifting with DB2 at 18, the published setpoint is the target.
+          if (mhi_heat_shift_on_bus_db2(&heat_shift, value))
+            heat_shift_ended();
+          publish_tsetpoint(mhi_heat_shift_setpoint(&heat_shift, value));
+          break;
         case opdata_tsetpoint:
         case erropdata_tsetpoint:
           dtostrf((value & 0x7f)/ 2.0, 0, 1, strtmp);
@@ -659,6 +743,7 @@ void setup() {
   mhi_ac_ctrl_core.MHIAcCtrlStatus(&mhiStatusHandler);
   discovery_setup();
   group_setup();
+  mhi_heat_shift_init(&heat_shift);
   const bool drive_miso = mhi_miso_may_be_driven(wiring_faults);
   if (!drive_miso)
     Serial.println(F("Signal on MISO: leaving it an input, so commands will not reach the AC"));
@@ -672,9 +757,6 @@ void setup() {
 
 
 void loop() {
-#ifdef ROOM_TEMP_DS18X20
-  static byte ds18x20_value_old = 0;
-#endif
   static int WiFiStatus = WIFI_CONNECT_TIMEOUT;   // start connecting to WiFi
   static int MQTTStatus = MQTT_NOT_CONNECTED;
   static unsigned long previousMillis = millis();
@@ -710,6 +792,7 @@ void loop() {
       mhi_troom_filter_reset(&troom_filter);
       mhi_cleaning_republish(&cleaning);  // goes out again once the parser re-reports power
       troom_external_published = 0xff;
+      troom_external_byte_published = 0;  // the room goes out again with the next set/Troom while shifting (fork #30)
       publish_diag_state();
       diag_frame.have_last = false;   // the next diag/frame is a whole frame
       mhi_retry_reset(&diag_pacer);
@@ -765,7 +848,7 @@ void loop() {
 #ifdef ROOM_TEMP_DS18X20
       if(ds18x20_value != ds18x20_value_old) {
         if (mhi_troom_byte_plausible(ds18x20_value)) {  // use only values -10°C < T < 48°C
-          mhi_ac_ctrl_core.set_troom(ds18x20_value);
+          send_room_temperature(mhi_celsius_from_troom(ds18x20_value));  // shifted below 18 in heat (fork #30)
           troom_was_set_by_DS18X20 = true;
           ds18x20_value_old = ds18x20_value;
           Serial.printf("update Troom based on DS18x20 value %i\n", ds18x20_value);
@@ -781,6 +864,7 @@ void loop() {
     mhi_ac_ctrl_core.set_troom(0xff);  // use IU temperature sensor
     Serial.println(F("ROOM_TEMP_MQTT_SET_TIMEOUT exceeded, use IU temperature sensor value!"));
     troom_was_set_by_MQTT=false;
+    troom_external_byte_published = 0;  // a shift keeps its target and resumes with the next value (fork #30)
 #ifdef ROOM_TEMP_DS18X20
     // Otherwise the sensor's value, unchanged since MQTT took over, would not
     // be applied again until it moved a step; the AC stayed on its own sensor.

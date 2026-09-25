@@ -244,6 +244,11 @@ static_assert(RESCUE_AP_AFTER_MIN >= 1 && RESCUE_AP_MIN >= 1, "the rescue access
 
 //#define ROOM_TEMP_DS18X20                           // use room temperature from DS18x20
 
+#ifndef HEAT_SHIFT_OFFSET
+#define HEAT_SHIFT_OFFSET 2.0                       // °C the unit adds to its heat setpoint (OpData/Tsetpoint 20 at 18): added to the
+                                                    // shifted room temperature for a heat target below 18 (fork #30)
+#endif
+
 #ifndef ROOM_TEMP_MQTT_SET_TIMEOUT
 #define ROOM_TEMP_MQTT_SET_TIMEOUT  300             // time in seconds, after this time w/o receiving a valid room temperature
                                                     // via MQTT fallback to IU temperature sensor value; above Home

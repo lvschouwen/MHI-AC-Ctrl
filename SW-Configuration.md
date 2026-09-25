@@ -93,7 +93,7 @@ topic|r/w|value|comment
 -----|---|-----|------
 Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected: `set/Power` then answers `unknown command`, switch off with `set/Mode` "Off" instead.
 Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
-Tsetpoint|r/w|10 ... 30 in heat, 18 ... 30 otherwise|Target room temperature (float) in °C, resolution is 0.5°C. Heat accepts down to 10 °C, what the remote's NIGHT SETBACK sets (bus capture 25 Sep 2026); every other mode refuses below 18, and a change from heat to another mode with a setpoint below 18 writes 18 with it
+Tsetpoint|r/w|10 ... 30 in heat, 18 ... 30 otherwise|Target room temperature (float) in °C, resolution is 0.5°C. Heat accepts down to 10 °C; every other mode refuses below 18, and a change from heat to another mode with a setpoint below 18 writes 18 with it. The AC itself does not heat below 18, so a heat target below 18 is reached with a shifted room temperature (see [Heating below 18 °C](#heating-below-18-c)); `Tsetpoint` then shows that target
 Fan|r/w|1,2,3,4,"Auto"|Fan level; define PAYLOAD_FAN_1..PAYLOAD_FAN_4 for named levels (default "1".."4", unchanged on the wire)
 Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing","?"|Vanes up/down position, top to bottom; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>; define `PAYLOAD_VANES_1` .. `PAYLOAD_VANES_4` as `"1"` .. `"4"` in `config_defaults.h` to keep v2.8's texts
 Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
@@ -329,6 +329,19 @@ Usage of the room temperature sensor inside the AC is the default, but instead y
 ```
 `ROOM_TEMP_MQTT_SET_TIMEOUT` must be greater than the period of room temperature update via MQTT. E.g. when the room temperature update via MQTT is done every minute, then `ROOM_TEMP_MQTT_SET_TIMEOUT` could be 2 minutes.
 If the timeout occurs, and the system falls back to IU temperature, it will return to using the MQTT room temperature if the MQTT messages resume. The default is 300 s (upstream: 40 s), above a Home Assistant automation that repeats the value every minute; `TroomExternal` says which sensor is in use. A value on `set/Troom` is rounded to the nearest 0.25 °C, and while it is in use `Troom` publishes every step: `TROOM_FILTER_LIMIT` is for the AC's own sensor only.
+
+## Heating below 18 °C ([support.h](src/support.h), fork #30)
+The AC accepts a heat setpoint of 10-17 °C on the bus but clamps it to 18 inside (the remote's NIGHT SETBACK gets below 18 through a state that is not visible on the bus). So `set/Tsetpoint` below 18 in heat writes 18 and remembers the target T, and while a room temperature arrives on `set/Troom` the AC is sent
+
+```
+room + (18 - T) + HEAT_SHIFT_OFFSET
+#define HEAT_SHIFT_OFFSET 2.0   // °C the AC adds to its own heat setpoint: OpData/Tsetpoint reads 20 at a setpoint of 18
+```
+
+The AC then regulates the room to T. `Tsetpoint` shows T and `Troom` the room value that was sent, not the shifted value the AC reports back.
+- It needs a room sensor on `set/Troom`, repeated well inside `ROOM_TEMP_MQTT_SET_TIMEOUT`. The AC's own sensor cannot be the base: the AC reports back the room temperature it is sent, and in heat its intake reads several degrees high. Without a fresh value (`TroomExternal` `Off`) the AC heats to 18 on its own sensor and T is kept; the shift resumes with the next value.
+- The shift ends, and the `set/Troom` value is dropped at once, when the mode leaves heat, when `set/Tsetpoint` is 18 or more, or when the IR remote sets another temperature.
+- T is kept in RAM only: after a reboot the AC reports 18, and the controller (Home Assistant) sends T again.
 
 ## Enhance resolution of `Tsetpoint` ([support.h](src/support.h))
 The AC is only accepting a setpoint in x.0 degrees. If you send x.5 degrees, the AC will convert this to (x+1).0 degrees. So using .5 degrees as a setpoint will increase the setpoint on the AC not with .5 degrees but with 1 degree. This behaviour can be changed with:
