@@ -23,3 +23,25 @@ bool mhi_setpoint_allowed(float celsius, uint8_t mode);
 // degrees, or 0 for none: 18 °C when the unit leaves heat with a setpoint
 // below 18 (`setpoint_db2` as DB2 last reported it; bit 7 is ignored).
 uint8_t mhi_setpoint_on_mode_change(uint8_t new_mode, uint8_t setpoint_db2);
+
+// What the limits go by: the mode and setpoint last requested over MQTT or
+// reported by the bus, whichever came last. A request counts at once: the bus
+// echoes it a few frames later, and a mode change in between must see it
+// (review 25 Sep: set/Tsetpoint 10 in heat, then set/Mode cool before the
+// echo, would otherwise send cool with 10).
+struct MhiSetpointGuard {
+  uint8_t mode;  // DB0 mode bits, MHI_SETPOINT_MODE_UNKNOWN until known
+  uint8_t db2;   // half degrees, MHI_SETPOINT_UNKNOWN until known
+};
+
+void mhi_setpoint_guard_init(MhiSetpointGuard* g);
+void mhi_setpoint_guard_on_bus_mode(MhiSetpointGuard* g, uint8_t mode);
+void mhi_setpoint_guard_on_bus_db2(MhiSetpointGuard* g, uint8_t db2);
+
+// set/Tsetpoint: true and *db2_out (half degrees) when allowed in the current
+// mode; the guard then holds it. False changes nothing.
+bool mhi_setpoint_guard_request(MhiSetpointGuard* g, float celsius, uint8_t* db2_out);
+
+// set/Mode: records the mode and returns the setpoint to write with it (0 for
+// none), which the guard then holds, as mhi_setpoint_on_mode_change().
+uint8_t mhi_setpoint_guard_mode(MhiSetpointGuard* g, uint8_t mode);

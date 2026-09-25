@@ -161,6 +161,9 @@ void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan r
 // closing it hands the radio back to setupWiFi() with a fresh scan.
 bool rescue_loop() {
 #ifdef RESCUE_AP_PASSWORD
+  // Not while a scan is in flight (review 25 Sep): switching the radio to AP
+  // mode under a running scan is untested SDK ground; a scan takes seconds.
+  if (!rescue.ap_up && WiFi.scanComplete() == WIFI_SCAN_RUNNING) return false;
   const MhiRescueAction action =
       mhi_rescue_tick(&rescue, WiFi.status() == WL_CONNECTED, WiFi.softAPgetStationNum() > 0, millis(),
                       RESCUE_AP_AFTER_MIN * 60000UL, RESCUE_AP_MIN * 60000UL);

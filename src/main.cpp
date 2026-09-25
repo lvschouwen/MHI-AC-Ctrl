@@ -43,10 +43,8 @@ bool troom_was_set_by_DS18X20 = false;
 // Reset on every MQTT (re)connect, so Troom is re-sent like every other status.
 MhiTroomFilter troom_filter = {0, false};
 
-// Fork #25 F3: the mode the setpoint limits go by (the one the bus reported
-// or the one just commanded, whichever came last) and DB2 as last reported.
-static uint8_t setpoint_mode = MHI_SETPOINT_MODE_UNKNOWN;
-static uint8_t setpoint_db2 = MHI_SETPOINT_UNKNOWN;
+// Fork #25 F3: the mode and setpoint the limits go by, see mhi_setpoint.h.
+static MhiSetpointGuard setpoint_guard = {MHI_SETPOINT_MODE_UNKNOWN, MHI_SETPOINT_UNKNOWN};
 
 // Fork #25: Allergen Clear (see mhi_cleaning.h), and what TroomExternal last
 // carried; 0xff re-sends it, as after an MQTT (re)connect.
@@ -97,8 +95,7 @@ static void publish_troom_external() {
 // leaving heat with a setpoint below 18 writes 18 in the same frame (fork #25 F3).
 static void set_mode_checked(ACMode mode) {
   mhi_ac_ctrl_core.set_mode(mode);
-  setpoint_mode = mode;
-  const uint8_t setpoint = mhi_setpoint_on_mode_change(mode, setpoint_db2);
+  const uint8_t setpoint = mhi_setpoint_guard_mode(&setpoint_guard, mode);
   if (setpoint != 0)
     mhi_ac_ctrl_core.set_tsetpoint(setpoint);
 }
@@ -186,8 +183,9 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TSETPOINT)) == 0) {
     float f=atof(payload_str);
-    if (mhi_setpoint_allowed(f, setpoint_mode)) {  // 10-30 in heat, 18-30 otherwise (fork #25 F3)
-      mhi_ac_ctrl_core.set_tsetpoint((byte)(2 * f));
+    uint8_t db2;
+    if (mhi_setpoint_guard_request(&setpoint_guard, f, &db2)) {  // 10-30 in heat, 18-30 otherwise (fork #25 F3)
+      mhi_ac_ctrl_core.set_tsetpoint(db2);
       publish_cmd_ok();
     }
     else
@@ -382,7 +380,7 @@ class StatusHandler : public CallbackInterface_Status {
 #endif
           break;
         case status_mode:
-          setpoint_mode = value;
+          mhi_setpoint_guard_on_bus_mode(&setpoint_guard, value);
           if (mhi_cleaning_on_mode(&cleaning, value))
             publish_cleaning();
 #ifdef POWERON_WHEN_CHANGING_MODE
@@ -476,7 +474,7 @@ class StatusHandler : public CallbackInterface_Status {
           }
           break;
         case status_tsetpoint:
-          setpoint_db2 = value;
+          mhi_setpoint_guard_on_bus_db2(&setpoint_guard, value);
 #ifdef ENHANCED_RESOLUTION
           tmp_value = (value & 0x7f)/ 2.0;
           offset = round(tmp_value) - tmp_value;  // Calculate offset when setpoint is changed
@@ -693,7 +691,7 @@ void loop() {
     return;
   }
 
-  if (rescue_loop()) {  // fork #28: the rescue access point is up, OTA only; the AC keeps running
+  if (rescue_loop()) {  // fork #28: the rescue access point is up, OTA only; with CONTINUE_WITHOUT_MQTT the AC keeps being served
     ArduinoOTA.handle();
   }
   else if (((WiFi.status() != WL_CONNECTED)  || 

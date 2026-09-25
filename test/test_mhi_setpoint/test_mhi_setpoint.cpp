@@ -72,6 +72,64 @@ static void test_the_bit_7_of_db2_is_ignored(void) {
   TEST_ASSERT_EQUAL_UINT8(36, mhi_setpoint_on_mode_change(kCool, 0x80 | 0x14));
 }
 
+// --- the guard main.cpp keeps: requests and the bus both update it ----------
+
+static MhiSetpointGuard heat_at_20(void) {
+  MhiSetpointGuard g;
+  mhi_setpoint_guard_init(&g);
+  mhi_setpoint_guard_on_bus_mode(&g, kHeat);
+  mhi_setpoint_guard_on_bus_db2(&g, 40);
+  return g;
+}
+
+// Review finding (25 Sep): set/Tsetpoint 10 in heat and then set/Mode cool
+// within one frame cycle. The bus has not echoed 10 yet; the mode change must
+// still see it, or cool goes out with 10 in the same frame.
+static void test_a_requested_low_setpoint_is_corrected_by_a_mode_change_before_the_bus_echoes_it(void) {
+  MhiSetpointGuard g = heat_at_20();
+  uint8_t db2 = 0;
+  TEST_ASSERT_TRUE(mhi_setpoint_guard_request(&g, 10.0f, &db2));
+  TEST_ASSERT_EQUAL_UINT8(20, db2);
+  TEST_ASSERT_EQUAL_UINT8(36, mhi_setpoint_guard_mode(&g, kCool));
+  // And a later request in cool is judged by cool.
+  TEST_ASSERT_FALSE(mhi_setpoint_guard_request(&g, 17.0f, &db2));
+}
+
+static void test_a_requested_mode_decides_the_next_setpoint_at_once(void) {
+  MhiSetpointGuard g = heat_at_20();
+  TEST_ASSERT_EQUAL_UINT8(0, mhi_setpoint_guard_mode(&g, kCool));  // 20 is fine in cool
+  uint8_t db2 = 0;
+  TEST_ASSERT_FALSE(mhi_setpoint_guard_request(&g, 10.0f, &db2));
+  TEST_ASSERT_EQUAL_UINT8(0, mhi_setpoint_guard_mode(&g, kHeat));
+  TEST_ASSERT_TRUE(mhi_setpoint_guard_request(&g, 10.0f, &db2));
+}
+
+static void test_a_refused_request_changes_nothing(void) {
+  MhiSetpointGuard g = heat_at_20();
+  uint8_t db2 = 99;
+  TEST_ASSERT_FALSE(mhi_setpoint_guard_request(&g, 9.0f, &db2));
+  TEST_ASSERT_EQUAL_UINT8(99, db2);
+  TEST_ASSERT_EQUAL_UINT8(0, mhi_setpoint_guard_mode(&g, kCool));  // still 20
+}
+
+static void test_the_correction_counts_as_the_new_setpoint(void) {
+  MhiSetpointGuard g = heat_at_20();
+  uint8_t db2 = 0;
+  mhi_setpoint_guard_request(&g, 12.0f, &db2);
+  TEST_ASSERT_EQUAL_UINT8(36, mhi_setpoint_guard_mode(&g, kDry));
+  TEST_ASSERT_EQUAL_UINT8(0, mhi_setpoint_guard_mode(&g, kCool));  // 18 already
+}
+
+static void test_the_remote_updates_the_guard_through_the_bus(void) {
+  MhiSetpointGuard g;
+  mhi_setpoint_guard_init(&g);
+  uint8_t db2 = 0;
+  TEST_ASSERT_FALSE(mhi_setpoint_guard_request(&g, 10.0f, &db2));  // mode unknown
+  mhi_setpoint_guard_on_bus_mode(&g, kHeat);
+  mhi_setpoint_guard_on_bus_db2(&g, 0x14);  // night setback from the remote
+  TEST_ASSERT_EQUAL_UINT8(36, mhi_setpoint_guard_mode(&g, kFan));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_heat_accepts_10_to_30);
@@ -84,5 +142,10 @@ int main(void) {
   RUN_TEST(test_into_heat_writes_nothing);
   RUN_TEST(test_unknown_setpoint_writes_nothing);
   RUN_TEST(test_the_bit_7_of_db2_is_ignored);
+  RUN_TEST(test_a_requested_low_setpoint_is_corrected_by_a_mode_change_before_the_bus_echoes_it);
+  RUN_TEST(test_a_requested_mode_decides_the_next_setpoint_at_once);
+  RUN_TEST(test_a_refused_request_changes_nothing);
+  RUN_TEST(test_the_correction_counts_as_the_new_setpoint);
+  RUN_TEST(test_the_remote_updates_the_guard_through_the_bus);
   return UNITY_END();
 }
