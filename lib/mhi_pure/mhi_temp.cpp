@@ -1,5 +1,9 @@
 #include "mhi_temp.h"
 
+#include <ctype.h>
+#include <math.h>
+#include <stdlib.h>
+
 // Troom byte = degC * 4 + 61
 static const int kTroomOffset = 61;
 static const float kTroomStepsPerDegree = 4.0f;
@@ -51,4 +55,15 @@ uint8_t mhi_troom_from_ds18x20_raw(int16_t raw) {
   const int encoded = biased / kDs18x20RawPerTroomStep;
   if (encoded > 255) return 255;
   return (uint8_t)encoded;
+}
+
+bool mhi_parse_celsius(const char* s, float* out) {
+  if (s == NULL) return false;
+  char* end;
+  const float f = strtof(s, &end);
+  if (end == s) return false;  // no number at all
+  while (isspace((unsigned char)*end)) end++;
+  if (*end != '\0' || !isfinite(f)) return false;
+  *out = f;
+  return true;
 }

@@ -1,10 +1,13 @@
 #include "mhi_setpoint.h"
 
+#include <math.h>
+
 static const uint8_t kModeHeat = 0x10;
 
 bool mhi_setpoint_allowed(float celsius, uint8_t mode) {
   const float min = mode == kModeHeat ? MHI_SETPOINT_MIN_HEAT : MHI_SETPOINT_MIN;
-  return celsius >= min && celsius <= MHI_SETPOINT_MAX;  // false for NaN
+  if (!(celsius >= min && celsius <= MHI_SETPOINT_MAX)) return false;  // also NaN
+  return 2 * celsius == floorf(2 * celsius);  // DB2 carries half degrees
 }
 
 uint8_t mhi_setpoint_on_mode_change(uint8_t new_mode, uint8_t setpoint_db2) {

@@ -16,7 +16,8 @@
 #define MHI_SETPOINT_UNKNOWN 0xff       // no DB2 seen yet
 
 // Whether set/Tsetpoint may write `celsius` while the unit is in `mode` (the
-// DB0 mode bits, or the mode just commanded). NaN is refused.
+// DB0 mode bits, or the mode just commanded). NaN and anything off the 0.5
+// step are refused.
 bool mhi_setpoint_allowed(float celsius, uint8_t mode);
 
 // The setpoint to write together with a change to `new_mode`, in DB2 half

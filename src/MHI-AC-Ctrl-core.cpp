@@ -31,7 +31,7 @@ void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection t
   op_iu_fanspeed_old = 0xff;
   op_thi_r1_old = 0x00;
   op_thi_r3_old = 0x00;
-  op_total_iu_run_old = 0;
+  op_total_iu_run_old = 0xff;  // a counter of 0 is published once too (sweep #33 F3)
   op_ou_eev1_old = 0xffff;
   reset_system_values();
 }
@@ -645,7 +645,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
       default:    // unknown operating data
         m_cbiStatus->cbiRawFunction(raw_opdata, &MOSI_frame[DB9], 4);  // the value bytes, which the number below drops
         m_cbiStatus->cbiStatusFunction(opdata_unknown, MOSI_frame[DB10] << 8 | MOSI_frame[DB9]);
-        Serial.printf("Unknown operating data, MOSI_frame[DB9]=%i MOSI_frame[D10]=%i\n", MOSI_frame[DB9], MOSI_frame[DB10]);
+        Serial.printf_P(PSTR("Unknown operating data, MOSI_frame[DB9]=%i MOSI_frame[D10]=%i\n"), MOSI_frame[DB9], MOSI_frame[DB10]);
     }
   }
   // Used to return call_counter, which at ~20 frames/sec goes negative after

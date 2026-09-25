@@ -135,6 +135,38 @@ static void test_troom_byte_window_matches_the_celsius_window(void) {
   }
 }
 
+// set/Troom and set/Tsetpoint (sweep #33 F1): atof() read junk as 0 degC,
+// which passed the plausibility window and was sent to the unit as the room.
+static void test_parses_a_plain_number(void) {
+  float c = -99.0f;
+  TEST_ASSERT_TRUE(mhi_parse_celsius("21.5", &c));
+  TEST_ASSERT_EQUAL_FLOAT(21.5f, c);
+  TEST_ASSERT_TRUE(mhi_parse_celsius("-3", &c));
+  TEST_ASSERT_EQUAL_FLOAT(-3.0f, c);
+  TEST_ASSERT_TRUE(mhi_parse_celsius("0", &c));
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, c);
+  TEST_ASSERT_TRUE(mhi_parse_celsius("20.50", &c));
+  TEST_ASSERT_EQUAL_FLOAT(20.5f, c);
+}
+
+static void test_surrounding_whitespace_is_allowed(void) {
+  float c = -99.0f;
+  TEST_ASSERT_TRUE(mhi_parse_celsius(" 21.5\n", &c));
+  TEST_ASSERT_EQUAL_FLOAT(21.5f, c);
+}
+
+static void test_anything_but_a_number_is_refused(void) {
+  const char* junk[] = {"", " ", "abc", "unavailable", "unknown", "21.5abc", "21,5",
+                        "nan", "inf", "-inf", "1e40", "."};
+  for (const char* s : junk) {
+    float c = -99.0f;
+    TEST_ASSERT_FALSE_MESSAGE(mhi_parse_celsius(s, &c), s);
+    TEST_ASSERT_EQUAL_FLOAT_MESSAGE(-99.0f, c, s);  // untouched
+  }
+  float c = -99.0f;
+  TEST_ASSERT_FALSE(mhi_parse_celsius(NULL, &c));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_encodes_celsius_in_quarter_degree_steps);
@@ -151,5 +183,8 @@ int main(void) {
   RUN_TEST(test_sub_zero_ds18x20_agrees_with_the_celsius_encoding);
   RUN_TEST(test_ds18x20_encoding_truncates_the_same_way_below_zero);
   RUN_TEST(test_troom_byte_window_matches_the_celsius_window);
+  RUN_TEST(test_parses_a_plain_number);
+  RUN_TEST(test_surrounding_whitespace_is_allowed);
+  RUN_TEST(test_anything_but_a_number_is_refused);
   return UNITY_END();
 }

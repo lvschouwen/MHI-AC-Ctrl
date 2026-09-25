@@ -93,10 +93,10 @@ topic|r/w|value|comment
 -----|---|-----|------
 Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected: `set/Power` then answers `unknown command`, switch off with `set/Mode` "Off" instead.
 Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
-Tsetpoint|r/w|10 ... 30 in heat, 18 ... 30 otherwise|Target room temperature (float) in °C, resolution is 0.5°C. Heat accepts down to 10 °C; every other mode refuses below 18, and a change from heat to another mode with a setpoint below 18 writes 18 with it. The AC itself does not heat below 18, so a heat target below 18 is reached with a shifted room temperature (see [Heating below 18 °C](#heating-below-18-c)); `Tsetpoint` then shows that target
+Tsetpoint|r/w|10 ... 30 in heat, 18 ... 30 otherwise|Target room temperature (float) in °C, resolution is 0.5°C; a value off the 0.5 step, or anything but a number, is refused. Heat accepts down to 10 °C; every other mode refuses below 18, and a change from heat to another mode with a setpoint below 18 writes 18 with it. The AC itself does not heat below 18, so a heat target below 18 is reached with a shifted room temperature (see [Heating below 18 °C](#heating-below-18-c)); `Tsetpoint` then shows that target
 Fan|r/w|1,2,3,4,"Auto"|Fan level; define PAYLOAD_FAN_1..PAYLOAD_FAN_4 for named levels (default "1".."4", unchanged on the wire)
 Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing","?"|Vanes up/down position, top to bottom; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>; define `PAYLOAD_VANES_1` .. `PAYLOAD_VANES_4` as `"1"` .. `"4"` in `config_defaults.h` to keep v2.8's texts
-Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
+Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C; anything but a number is refused <sup>2</sup>
 TroomExternal|r|"On", "Off"|"On" while a `set/Troom` value is the AC's room temperature, "Off" once it fell back to its own sensor <sup>2</sup>
 Cleaning|r|"On", "Off"|"On" while the remote's ALLERGEN CLEAR runs (1.5 h, the unit reads off with its mode on fan). Not seen when it was started from fan mode, or before the ESP8266 booted
 Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C; readings outside this range are ignored <sup>3</sup>
@@ -328,7 +328,7 @@ Usage of the room temperature sensor inside the AC is the default, but instead y
 
 ```
 `ROOM_TEMP_MQTT_SET_TIMEOUT` must be greater than the period of room temperature update via MQTT. E.g. when the room temperature update via MQTT is done every minute, then `ROOM_TEMP_MQTT_SET_TIMEOUT` could be 2 minutes.
-If the timeout occurs, and the system falls back to IU temperature, it will return to using the MQTT room temperature if the MQTT messages resume. The default is 300 s (upstream: 40 s), above a Home Assistant automation that repeats the value every minute; `TroomExternal` says which sensor is in use. A value on `set/Troom` is rounded to the nearest 0.25 °C, and while it is in use `Troom` publishes every step: `TROOM_FILTER_LIMIT` is for the AC's own sensor only.
+If the timeout occurs, and the system falls back to IU temperature, it will return to using the MQTT room temperature if the MQTT messages resume. The default is 300 s (upstream: 40 s), above a Home Assistant automation that repeats the value every minute; `TroomExternal` says which sensor is in use. A value on `set/Troom` is rounded to the nearest 0.25 °C, and while it is in use `Troom` publishes every step: `TROOM_FILTER_LIMIT` is for the AC's own sensor only, so a DS18x20 used as Troom publishes every step too.
 
 ## Heating below 18 °C ([support.h](src/support.h), fork #30)
 The AC accepts a heat setpoint of 10-17 °C on the bus but clamps it to 18 inside (the remote's NIGHT SETBACK gets below 18 through a state that is not visible on the bus). So `set/Tsetpoint` below 18 in heat writes 18 and remembers the target T, and while a room temperature arrives on `set/Troom` the AC is sent

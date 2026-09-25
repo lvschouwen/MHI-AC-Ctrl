@@ -37,6 +37,16 @@ static void test_other_modes_accept_18_to_30_only(void) {
   }
 }
 
+// Discovery advertises temp_step 0.5 and DB2 carries half degrees (sweep #33
+// F2): 17.9 used to be acked, sent as 17.5 and kept as the shift target 17.9.
+static void test_only_half_degree_steps_are_allowed(void) {
+  TEST_ASSERT_FALSE(mhi_setpoint_allowed(17.9f, kHeat));
+  TEST_ASSERT_FALSE(mhi_setpoint_allowed(18.25f, kCool));
+  TEST_ASSERT_FALSE(mhi_setpoint_allowed(20.1f, kCool));
+  TEST_ASSERT_TRUE(mhi_setpoint_allowed(20.5f, kCool));
+  TEST_ASSERT_TRUE(mhi_setpoint_allowed(16.5f, kHeat));
+}
+
 static void test_unknown_mode_is_not_heat(void) {
   TEST_ASSERT_FALSE(mhi_setpoint_allowed(10.0f, MHI_SETPOINT_MODE_UNKNOWN));
   TEST_ASSERT_TRUE(mhi_setpoint_allowed(18.0f, MHI_SETPOINT_MODE_UNKNOWN));
@@ -134,6 +144,7 @@ int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_heat_accepts_10_to_30);
   RUN_TEST(test_heat_refuses_outside_10_to_30);
+  RUN_TEST(test_only_half_degree_steps_are_allowed);
   RUN_TEST(test_other_modes_accept_18_to_30_only);
   RUN_TEST(test_unknown_mode_is_not_heat);
   RUN_TEST(test_nan_is_refused);

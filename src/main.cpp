@@ -246,9 +246,9 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
         publish_cmd_invalidparameter();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TSETPOINT)) == 0) {
-    float f=atof(payload_str);
+    float f;
     uint8_t db2;
-    if (mhi_setpoint_guard_request(&setpoint_guard, f, &db2)) {  // 10-30 in heat, 18-30 otherwise (fork #25 F3)
+    if (mhi_parse_celsius(payload_str, &f) && mhi_setpoint_guard_request(&setpoint_guard, f, &db2)) {  // 10-30 in heat, 18-30 otherwise (fork #25 F3)
       // Below 18 in heat: DB2 18 and a shifted room temperature (fork #30).
       if (mhi_heat_shift_request(&heat_shift, f, setpoint_guard.mode == mode_heat, &db2))
         heat_shift_ended(db2 == heat_shift.bus_db2);
@@ -311,11 +311,12 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
 #endif
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TROOM)) == 0) {
-    float f=atof(payload_str);
+    float f = 0.0f;
+    const bool parsed = mhi_parse_celsius(payload_str, &f);  // junk is refused, not read as 0 °C (sweep #33 F1)
 #ifdef ENHANCED_RESOLUTION
     f = f + mhi_ac_ctrl_core.get_troom_offset() ;  // increase Troom with current offset to compensate higher setpoint
 #endif
-    if (mhi_troom_celsius_plausible(f)) {
+    if (parsed && mhi_troom_celsius_plausible(f)) {
       room_temp_set_timeout_Millis = millis();  // reset timeout
       troom_was_set_by_MQTT=true;
       troom_external_celsius = f;
@@ -423,15 +424,15 @@ class StatusHandler : public CallbackInterface_Status {
           // Only when setting fan to Auto one time after powerdown AC, it will show 4 and Auto.
           // Below will take care of this.
           if (power_status == unknown) {  // First time after startup esp
-            Serial.printf("power_status: unknown; received status_power: %i\n", value);
+            Serial.printf_P(PSTR("power_status: unknown; received status_power: %i\n"), value);
             if (value == power_off) {  // Only when status is power off, set fan to Auto. 
-              Serial.println("Set fan to Auto to fix fan status after powerdown (230V) AC");
+              Serial.println(F("Set fan to Auto to fix fan status after powerdown (230V) AC"));
               mhi_ac_ctrl_core. set_fan(7);
             }
           } else if (power_status == off) 
-            Serial.printf("power_status: off; received status_power: %i\n", value);
+            Serial.printf_P(PSTR("power_status: off; received status_power: %i\n"), value);
           else if (power_status == on) 
-            Serial.printf("power_status: on; received status_power: %i\n", value);
+            Serial.printf_P(PSTR("power_status: on; received status_power: %i\n"), value);
 
           if (mhi_cleaning_on_power(&cleaning, value == power_on ? 1 : 0))
             publish_cleaning();
@@ -546,7 +547,8 @@ class StatusHandler : public CallbackInterface_Status {
           // publishes the room itself (fork #30).
           if ((troom_was_set_by_MQTT || troom_was_set_by_DS18X20) && mhi_heat_shift_active(&heat_shift))
             break;
-          if (mhi_troom_filter_pass(&troom_filter, (uint8_t)value, troom_was_set_by_MQTT ? 0.0f : TROOM_FILTER_LIMIT)) {
+          if (mhi_troom_filter_pass(&troom_filter, (uint8_t)value,
+                                    troom_was_set_by_MQTT || troom_was_set_by_DS18X20 ? 0.0f : TROOM_FILTER_LIMIT)) {
             dtostrf(mhi_celsius_from_troom(value), 0, 2, strtmp);
             output_P(status, PSTR(TOPIC_TROOM), strtmp);
           }
@@ -556,14 +558,15 @@ class StatusHandler : public CallbackInterface_Status {
 #ifdef ENHANCED_RESOLUTION
           tmp_value = (value & 0x7f)/ 2.0;
           offset = round(tmp_value) - tmp_value;  // Calculate offset when setpoint is changed
-          Serial.printf("status_tsetpoint: Set Troom offset: %f\n", offset);
+          Serial.printf_P(PSTR("status_tsetpoint: Set Troom offset: %f\n"), offset);
           mhi_ac_ctrl_core.set_troom_offset(offset);
 #endif
           // The IR remote moved DB2 off 18: the shift ends (fork #30). While
           // shifting with DB2 at 18, the published setpoint is the target.
           if (mhi_heat_shift_on_bus_db2(&heat_shift, value))
-            heat_shift_ended();
-          publish_tsetpoint(mhi_heat_shift_setpoint(&heat_shift, value));
+            heat_shift_ended();  // publishes the new setpoint
+          else
+            publish_tsetpoint(mhi_heat_shift_setpoint(&heat_shift, value));
           break;
         case opdata_tsetpoint:
         case erropdata_tsetpoint:
@@ -728,9 +731,9 @@ void setup() {
   }
   crash_info_boot();  // fork #25: after the safe-mode decision, which keeps the record for the next normal boot
   Serial.printf_P(PSTR("CPU frequency[Hz]=%lu\n"), F_CPU);
-  Serial.printf("ESP.getCoreVersion()=%s\n", ESP.getCoreVersion().c_str());
-  Serial.printf("ESP.getSdkVersion()=%s\n", ESP.getSdkVersion());
-  Serial.printf("ESP.checkFlashCRC()=%i\n", ESP.checkFlashCRC());
+  Serial.printf_P(PSTR("ESP.getCoreVersion()=%s\n"), ESP.getCoreVersion().c_str());
+  Serial.printf_P(PSTR("ESP.getSdkVersion()=%s\n"), ESP.getSdkVersion());
+  Serial.printf_P(PSTR("ESP.checkFlashCRC()=%i\n"), ESP.checkFlashCRC());
 
 #if TEMP_MEASURE_PERIOD > 0
   setup_ds18x20();
@@ -851,7 +854,7 @@ void loop() {
           send_room_temperature(mhi_celsius_from_troom(ds18x20_value));  // shifted below 18 in heat (fork #30)
           troom_was_set_by_DS18X20 = true;
           ds18x20_value_old = ds18x20_value;
-          Serial.printf("update Troom based on DS18x20 value %i\n", ds18x20_value);
+          Serial.printf_P(PSTR("update Troom based on DS18x20 value %i\n"), ds18x20_value);
         }
       }
 #endif

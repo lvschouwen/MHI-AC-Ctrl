@@ -129,7 +129,7 @@ void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan r
   Serial.printf_P(PSTR("handleWiFiScanResult(): %i access points available\n"), networksFound);
   for (uint i = 0; i < networksFound; i++)
   {
-    Serial.printf("%2d %25s %2d %ddBm %s %s %02x\n", i + 1, WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.BSSIDstr(i).c_str(), WiFi.encryptionType(i) == ENC_TYPE_NONE ? "open" : "secured", (uint)WiFi.encryptionType(i));
+    Serial.printf_P(PSTR("%2d %25s %2d %ddBm %s %s %02x\n"), i + 1, WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.BSSIDstr(i).c_str(), WiFi.encryptionType(i) == ENC_TYPE_NONE ? "open" : "secured", (uint)WiFi.encryptionType(i));
     if((strcmp(WiFi.SSID(i).c_str(), WIFI_SSID) == 0) && (WiFi.RSSI(i)>max_rssi)){
         max_rssi = WiFi.RSSI(i);
         strongest_AP = i;
@@ -335,16 +335,16 @@ int MQTTreconnect() {
   if(!MQTTclient.connected()) {
     if (!mhi_retry_due(&mqtt_retry, millis(), kMqttRetryIntervalMs))
       return MQTT_NOT_CONNECTED;
-    Serial.printf("MQTTreconnect(): Attempting MQTT connection (MQTTclient.state=%i), WiFi.status()=%i ...\n", MQTTclient.state(), WiFi.status());  // state(), see https://pubsubclient.knolleary.net/api#state
+    Serial.printf_P(PSTR("MQTTreconnect(): Attempting MQTT connection (MQTTclient.state=%i), WiFi.status()=%i ...\n"), MQTTclient.state(), WiFi.status());  // state(), see https://pubsubclient.knolleary.net/api#state
     if(reconnect_trials++>9){                                                                                                                       // WiFi.status()=3=connected, see https://realglitch.com/2018/07/arduino-wifi-status-codes/
-      Serial.printf("MQTTreconnect(): reconnect_trials=%i\n", reconnect_trials);
+      Serial.printf_P(PSTR("MQTTreconnect(): reconnect_trials=%i\n"), reconnect_trials);
       WiFi.disconnect(); // work around for https://github.com/esp8266/Arduino/issues/7432
       reconnect_trials=0;
     }
 
     if (MQTTclient.connect(HOSTNAME, MQTT_USER, MQTT_PASSWORD, MQTT_PREFIX TOPIC_CONNECTED, 0, true, PAYLOAD_CONNECTED_FALSE)) {
       Serial.println(F(" connected"));
-      Serial.printf("MQTTclient.connected=%i\n", MQTTclient.connected());
+      Serial.printf_P(PSTR("MQTTclient.connected=%i\n"), MQTTclient.connected());
       reconnect_trials=0;
       output_P((ACStatus)type_status, PSTR(TOPIC_CONNECTED), PSTR(PAYLOAD_CONNECTED_TRUE));
       output_P((ACStatus)type_status, PSTR(TOPIC_VERSION), PSTR(VERSION));
@@ -365,7 +365,7 @@ int MQTTreconnect() {
       output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_PHY), mhi_phy_mode_text(WiFi.getPhyMode()));
 
       // for testing publish list of access points with the expected SSID 
-      Serial.printf("MQTTreconnect(): %i access points available\n", networksFound);         
+      Serial.printf_P(PSTR("MQTTreconnect(): %i access points available\n"), networksFound);         
       for (uint i = 0; i < networksFound; i++)
       {
         if(strcmp(WiFi.SSID(i).c_str(), WIFI_SSID) == 0){
@@ -409,7 +409,7 @@ int MQTTreconnect() {
       Serial.print(F(" reconnect failed, reason "));
       itoa(MQTTclient.state(), strtmp, 10);
       Serial.print(strtmp);
-      Serial.print(", WiFi status: ");
+      Serial.print(F(", WiFi status: "));
       Serial.println(WiFi.status());
       return MQTT_NOT_CONNECTED;
     }
@@ -591,7 +591,8 @@ void setupOTA() {
     else // U_SPIFFS
       type = "filesystem";
     // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    Serial.println("Start updating " + type);
+    Serial.print(F("Start updating "));
+    Serial.println(type);
   });
   ArduinoOTA.onEnd([]() {
     Serial.println(F("\nEnd"));

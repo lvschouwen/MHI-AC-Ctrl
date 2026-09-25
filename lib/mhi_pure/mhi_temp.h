@@ -25,6 +25,11 @@ uint8_t mhi_troom_round_from_celsius(float celsius);
 // Decode an MHI Troom byte back to degC.
 float mhi_celsius_from_troom(int troom);
 
+// Parse an MQTT payload as degC: the whole text must be one finite number,
+// surrounding whitespace allowed. False leaves *out untouched. atof() read
+// junk ("unavailable", "21.5abc") as 0 or a prefix (sweep #33 F1).
+bool mhi_parse_celsius(const char* s, float* out);
+
 // Accept a room temperature supplied over MQTT. The window is exclusive at
 // both ends, matching the original (f > -10) & (f < 48).
 bool mhi_troom_celsius_plausible(float celsius);
