@@ -4,6 +4,7 @@
 #include "group.h"
 #include "mhi_diag.h"
 #include "mhi_frame_stats.h"
+#include "mhi_rescue.h"
 #include "mhi_group.h"
 #include "mhi_link.h"
 #include "mhi_phy.h"
@@ -71,7 +72,14 @@ void MeasureFrequency() {  // measure the frequency on the pins
   }
 }
 
+#ifdef RESCUE_AP_PASSWORD
+static MhiRescue rescue = {false, 0};
+#endif
+
 void initWiFi(){
+#ifdef RESCUE_AP_PASSWORD
+  mhi_rescue_init(&rescue, millis());
+#endif
   WiFi.persistent(false);
   WiFi.disconnect(true);    // Delete SDK wifi config
   delay(200);
@@ -108,6 +116,11 @@ static void applyPhyModeForJoin() {
 }
 
 void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan result
+#ifdef RESCUE_AP_PASSWORD
+  // A scan started before the access point opened must not start the station
+  // again: WiFi.begin() would switch the radio out of AP mode (fork #28).
+  if (rescue.ap_up) return;
+#endif
   int max_rssi = -999;
   int strongest_AP = -1;
 
@@ -142,6 +155,36 @@ void handleWiFiScanResult(int WifinetworksFound) {  // Handles async WiFi scan r
     WiFiStatus = WIFI_CONNECT_SCANNING_DONE;
     Serial.println(F("WIFI_CONNECT_SCANNING_DONE"));
   }
+}
+
+// Fork #28: see mhi_rescue.h. The station is off while the access point is up;
+// closing it hands the radio back to setupWiFi() with a fresh scan.
+bool rescue_loop() {
+#ifdef RESCUE_AP_PASSWORD
+  const MhiRescueAction action =
+      mhi_rescue_tick(&rescue, WiFi.status() == WL_CONNECTED, WiFi.softAPgetStationNum() > 0, millis(),
+                      RESCUE_AP_AFTER_MIN * 60000UL, RESCUE_AP_MIN * 60000UL);
+  if (action == MHI_RESCUE_START_AP) {
+    Serial.printf_P(PSTR("RESCUE: no Wi-Fi link for %u min, opening access point %s for OTA\n"),
+                    (unsigned)RESCUE_AP_AFTER_MIN, RESCUE_AP_SSID);
+    WiFi.scanDelete();
+    WiFi.disconnect();
+    WiFi.mode(WIFI_AP);
+    if (!WiFi.softAP(RESCUE_AP_SSID, RESCUE_AP_PASSWORD))
+      Serial.println(F("RESCUE: softAP() failed"));
+    else
+      Serial.printf_P(PSTR("RESCUE: access point up at %s\n"), WiFi.softAPIP().toString().c_str());
+  }
+  else if (action == MHI_RESCUE_STOP_AP) {
+    Serial.println(F("RESCUE: closing the access point, joining the network again"));
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    WiFiStatus = WIFI_CONNECT_TIMEOUT;  // setupWiFi() starts with a fresh scan
+  }
+  return rescue.ap_up;
+#else
+  return false;
+#endif
 }
 
 void setupWiFi(int& WiFiStatusParam) {

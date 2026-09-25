@@ -35,6 +35,25 @@
 #define HOSTNAME "MHI-AC-Ctrl"
 #endif
 
+//#define RESCUE_AP_PASSWORD "..."                  // fork #28: when defined, a unit without a Wi-Fi link for RESCUE_AP_AFTER_MIN opens
+                                                    // its own WPA2 access point RESCUE_AP_SSID with this password (8..63 characters),
+                                                    // serving OTA only at 192.168.4.1, for RESCUE_AP_MIN; then it tries the normal join again
+#ifndef RESCUE_AP_SSID
+#define RESCUE_AP_SSID HOSTNAME "-rescue"
+#endif
+#ifndef RESCUE_AP_AFTER_MIN
+#define RESCUE_AP_AFTER_MIN 15                      // long enough for a router reboot and the 11g fallback (#17, 5 min)
+#endif
+#ifndef RESCUE_AP_MIN
+#define RESCUE_AP_MIN 10                            // a station connected to the access point keeps it up
+#endif
+#ifdef RESCUE_AP_PASSWORD
+static_assert(sizeof(RESCUE_AP_PASSWORD) - 1 >= 8 && sizeof(RESCUE_AP_PASSWORD) - 1 <= 63,
+              "RESCUE_AP_PASSWORD must be 8..63 characters (WPA2): the access point is never open");
+static_assert(sizeof(RESCUE_AP_SSID) - 1 >= 1 && sizeof(RESCUE_AP_SSID) - 1 <= 32, "RESCUE_AP_SSID must be 1..32 characters");
+static_assert(RESCUE_AP_AFTER_MIN >= 1 && RESCUE_AP_MIN >= 1, "the rescue access point's times are whole minutes, at least 1");
+#endif
+
 #ifndef WiFI_SEARCHStrongestAP
 #define WiFI_SEARCHStrongestAP true                 // when false then the first WiFi access point with matching SSID found is used.
                                                     // when true then the strongest WiFi access point with matching SSID found is used, it doesn't work with hidden SSID
@@ -315,6 +334,7 @@ extern uint8_t wiring_faults;
 void MeasureFrequency();                                      // measures the frequency of the SPI pins
 void initWiFi();                                              // basic WiFi initialization
 void setupWiFi(int& WiFiStatus);                              // setup WIFi connection to AP
+bool rescue_loop();                                           // fork #28: every loop() pass; true while the rescue access point is up (OTA only)
 int MQTTreconnect();                                          // (re)connect to MQTT broker
 void mqtt_drop_connection();                                  // close the TCP connection (not MQTTclient.disconnect(), which suppresses the will) so the next pass reconnects and resubscribes everything (fork #22)
 void publishTelemetry();                                      // call every loop() pass: advances the uptime counter; publishes RSSI, Uptime, FreeHeap every TELEMETRY_PERIOD s while connected

@@ -63,6 +63,12 @@ The HOSTNAME specified in support.h is used as WiFi hostname, MQTT hostname and 
 ## :fire: Unit stopped joining WiFi after a router change
 A unit that ran for years goes off WiFi after a router firmware update or channel change, and stays off; the serial log shows a wrong-password status (`WL_WRONG_PASSWORD`, 6) although the password is right, or the board looks dead. This is [#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224): a router with 802.11ax (WiFi 6) enabled on 2.4 GHz refusing the ESP8266's default 802.11n join. Since the [PHY mode fallback](SW-Configuration.md#wifi-phy-mode-fallback) the firmware tries 802.11g on its own after five minutes without a link, so give it ten minutes before reaching for a USB cable; a unit that got in that way reports `11g` on the `WIFI_PHY` topic. On older firmware, add `WiFi.setPhyMode(WIFI_PHY_MODE_11G);` to `initWiFi()` and flash over USB.
 
+If the credentials themselves are wrong (a new password or SSID), a build with `RESCUE_AP_PASSWORD` opens its [rescue access point](SW-Configuration.md#rescue-access-point) after 15 minutes without a link, for 10 minutes at a time:
+1. build an image with the corrected `WIFI_SSID`/`WIFI_PASSWORD`;
+2. join the Wi-Fi network `<HOSTNAME>-rescue` with `RESCUE_AP_PASSWORD` (the unit is at 192.168.4.1; while you are connected the access point stays up);
+3. upload: `python3 ~/.platformio/packages/framework-arduinoespressif8266/tools/espota.py -i 192.168.4.1 -p 8266 -a <OTA_PASSWORD> -f .pio/build/d1_mini/firmware.bin`;
+4. the unit restarts on the new image and joins the network. If the upload does not start, the unit may have closed the access point: wait for it to come back.
+
 ## :fire: AC switches power off sometimes
 When there is for >=120 seconds no valid MISO frame, the AC goes into an error state (MQTT topic Errorcode=1) and the AC switches off. You can leave the error state by sending a command via IR-RC or by sending a command via SPI. To switch on the AC again via SPI you have to send the Power On command. I assume this is some kind of safety function. This happens when there is >=120 seconds no WiFi or MQTT connection, because the SW loop related to SPI is not served.
 

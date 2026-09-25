@@ -693,7 +693,10 @@ void loop() {
     return;
   }
 
-  if (((WiFi.status() != WL_CONNECTED)  || 
+  if (rescue_loop()) {  // fork #28: the rescue access point is up, OTA only; the AC keeps running
+    ArduinoOTA.handle();
+  }
+  else if (((WiFi.status() != WL_CONNECTED)  || 
        (WiFiStatus != WIFI_CONNECT_OK)) || 
        (WiFI_SEARCHStrongestAP && (millis() - previousMillis >= WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL*60*1000))) {
     //Serial.printf("loop: call setupWiFi(WiFiStatus)\n");

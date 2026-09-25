@@ -42,6 +42,15 @@ Configure the time interval for searching a stronger AP.
 ### WiFi PHY mode fallback
 The ESP8266 joins in its default 802.11n mode. Some routers with 802.11ax (WiFi 6) enabled on 2.4 GHz refuse that join and the ESP8266 reports a wrong password although the password is right ([#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224)); forcing 802.11g gets in. A unit that is off the network cannot be told to change, so the firmware falls back on its own: after five minutes without a link it tries 11g, after another five minutes 11n again, and so on until a join succeeds. A router reboot is shorter than that, so a normal outage keeps 11n. Once joined, the mode is kept until the link is lost; after a loss the unit tries the mode it last joined with first. A reboot starts in 11n again. The `WIFI_PHY` status topic reports the mode the unit joined with, so a fallback shows in Home Assistant.
 
+### Rescue access point
+Wi-Fi credentials are compiled in, so a wrong value, a replaced router or a new password would take a unit off the network for good. With `RESCUE_AP_PASSWORD` defined (8..63 characters), a unit that has had no Wi-Fi link for `RESCUE_AP_AFTER_MIN` (15) minutes opens its own WPA2 access point `RESCUE_AP_SSID` (default `<HOSTNAME>-rescue`) for `RESCUE_AP_MIN` (10) minutes, then tries the normal join again, and repeats while there is no link. The access point serves only OTA, at 192.168.4.1 with the usual `OTA_PASSWORD`; while a station is connected to it, it stays up. The station is off while the access point is up. The AC keeps running throughout (MQTT is already down at that point); upload an image with the corrected credentials as described in [Troubleshooting](Troubleshooting.md#fire-unit-stopped-joining-wifi-after-a-router-change). Without `RESCUE_AP_PASSWORD` there is no access point: it is never open.
+```cpp
+//#define RESCUE_AP_PASSWORD "..."      // 8..63 characters; defining it turns the rescue access point on
+#define RESCUE_AP_SSID HOSTNAME "-rescue"
+#define RESCUE_AP_AFTER_MIN 15          // long enough for a router reboot and the 11g fallback
+#define RESCUE_AP_MIN 10
+```
+
 ## MQTT ([support.h](src/support.h))
 The program uses the MQTT client library [PubSubClient3](https://github.com/hmueller01/pubsubclient3) from Holger Müller (hmueller01), originally written by Nick O'Leary (knolleary).
 If you are not familiar with MQTT you find on the Internet endless numbers of descriptions and tutorials. My favorites are [here](https://www.hivemq.com/blog/how-to-get-started-with-mqtt/) and [here](https://www.heise.de/developer/artikel/Kommunikation-ueber-MQTT-3238975.html).
@@ -84,10 +93,12 @@ topic|r/w|value|comment
 -----|---|-----|------
 Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected: `set/Power` then answers `unknown command`, switch off with `set/Mode` "Off" instead.
 Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
-Tsetpoint|r/w|18 ... 30|Target room temperature (float) in °C, resolution is 0.5°C
+Tsetpoint|r/w|10 ... 30 in heat, 18 ... 30 otherwise|Target room temperature (float) in °C, resolution is 0.5°C. Heat accepts down to 10 °C, what the remote's NIGHT SETBACK sets (bus capture 25 Sep 2026); every other mode refuses below 18, and a change from heat to another mode with a setpoint below 18 writes 18 with it
 Fan|r/w|1,2,3,4,"Auto"|Fan level; define PAYLOAD_FAN_1..PAYLOAD_FAN_4 for named levels (default "1".."4", unchanged on the wire)
 Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing","?"|Vanes up/down position, top to bottom; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>; define `PAYLOAD_VANES_1` .. `PAYLOAD_VANES_4` as `"1"` .. `"4"` in `config_defaults.h` to keep v2.8's texts
 Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C <sup>2</sup>
+TroomExternal|r|"On", "Off"|"On" while a `set/Troom` value is the AC's room temperature, "Off" once it fell back to its own sensor <sup>2</sup>
+Cleaning|r|"On", "Off"|"On" while the remote's ALLERGEN CLEAR runs (1.5 h, the unit reads off with its mode on fan). Not seen when it was started from fan mode, or before the ESP8266 booted
 Tds1820|r|-10 ... 48|Temperature (float) by the additional DS18x20 sensor in °C, resolution is 0.5°C; readings outside this range are ignored <sup>3</sup>
 Errorcode|r|0 .. 255|error code (unsigned int), 0 when there is none; what a code means is in [Error codes](#error-codes)
 Action|r|"off", "idle", "cooling", "heating", "drying", "fan"|what the AC is doing <sup>5</sup>
@@ -116,14 +127,15 @@ fMISO    |r  |unsigned integer|frequency of the MISO pin in Hz during boot
 fMOSI    |r  |unsigned integer|frequency of the MOSI pin in Hz during boot
 fSCK     |r  |unsigned integer|frequency of the SCK pin in Hz during boot
 Wiring   |r  |"o.k." or a pin list|result of the boot-time wiring check, e.g. `MISO` or `SCK,MOSI`. A fault is reported and the unit keeps running so it stays reachable over OTA. After a `MISO` fault the MISO pin stays an input: the AC status is still read, but no commands reach the AC <sup>5</sup>
-reset|w|"reset", "crash"|"reset" restarts the ESP8266; "crash" raises one deliberate exception (reset reason 2), the proof of [crash-loop safe mode](#crash-loop-safe-mode). Never send it retained, see there
+reset|w|"reset", "crash"|"reset" restarts the ESP8266; "crash" (only in a build with `RESET_CRASH_COMMAND`, never in production) raises one deliberate exception (reset reason 2), the proof of [crash-loop safe mode](#crash-loop-safe-mode). Never send it retained, see there
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
 Uptime   |r  |integer         |seconds since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; keeps counting past the 49.7-day `millis()` wrap
 FreeHeap |r  |integer         |free heap in bytes, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
-FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; saturates, never wraps. 0 on both units over the batch C soak (18-19 Sep 2026)
+FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and, when it changed, at the next `TELEMETRY_PERIOD` tick; saturates, never wraps. 0 on both units over the batch C soak (18-19 Sep 2026)
 FrameTimeouts|r|integer         |SCK timeouts since boot, same publishing rhythm. Over the batch C soak only at boot, 0 or 1 per boot, and none after
 ResetReason|r|string          |why the ESP8266 last started, at MQTT (re-)connect: `Power On`, `Software/System restart` (also after an OTA flash or `set/reset`), `Hardware Watchdog`, `Software Watchdog`, `Exception`, `External System`
 SafeMode |r  |integer         |boots into [crash-loop safe mode](#crash-loop-safe-mode) since power-on, at MQTT (re-)connect; `0` on a healthy unit
+CrashInfo|r  |JSON            |the last crash before this boot, at MQTT (re-)connect: `{"exccause":29,"reason":2,"epc1":"0x4020abcd","excvaddr":"0x00000000"}`, or `{"exccause":-1}` when the boot was not after a crash. `exccause` is the CPU's exception cause and means something only with `reason` 2; `epc1` is the crashing instruction: `xtensa-lx106-elf-addr2line -e firmware.elf <epc1>` names the source line. Also filled after `abort()`, `panic()` or a stack overflow; a safe-mode boot keeps it for the normal boot after it
 WIFI_BSSID|r |string          |BSSID of the access point in use after MQTT (re-)connect
 WIFI_PHY |r  |"11b", "11g", "11n"|802.11 mode the unit joined with, after MQTT (re-)connect. `11n` unless the [PHY mode fallback](#wifi-phy-mode-fallback) had to switch to `11g`
 Version  |r  |string          |Short git commit hash the firmware was built from, e.g. `9d8886d`; `-dirty` is appended when the build had uncommitted changes, `unknown` when built without git
@@ -309,14 +321,14 @@ Usage of the room temperature sensor inside the AC is the default, but instead y
 ```cpp
 //#define ROOM_TEMP_DS18X20           // use room temperature from DS18x20
 
-#define ROOM_TEMP_MQTT_SET_TIMEOUT  40    // time in seconds, after this time w/o receiving a valid room temperature
+#define ROOM_TEMP_MQTT_SET_TIMEOUT  300   // time in seconds, after this time w/o receiving a valid room temperature
                                       // via MQTT fallback to IU temperature sensor value
 #define TROOM_FILTER_LIMIT 0.25       // A changed Troom is published only when it differs from the last published value by MORE than this.
                                       // With 0.25 a single 0.25°C step is held back and a 0.5°C change is published. Use 0 to publish every step.
 
 ```
 `ROOM_TEMP_MQTT_SET_TIMEOUT` must be greater than the period of room temperature update via MQTT. E.g. when the room temperature update via MQTT is done every minute, then `ROOM_TEMP_MQTT_SET_TIMEOUT` could be 2 minutes.
-If the timeout occurs, and the system falls back to IU temperature, it will return to using the MQTT room temperature if the MQTT messages resume.
+If the timeout occurs, and the system falls back to IU temperature, it will return to using the MQTT room temperature if the MQTT messages resume. The default is 300 s (upstream: 40 s), above a Home Assistant automation that repeats the value every minute; `TroomExternal` says which sensor is in use. A value on `set/Troom` is rounded to the nearest 0.25 °C, and while it is in use `Troom` publishes every step: `TROOM_FILTER_LIMIT` is for the AC's own sensor only.
 
 ## Enhance resolution of `Tsetpoint` ([support.h](src/support.h))
 The AC is only accepting a setpoint in x.0 degrees. If you send x.5 degrees, the AC will convert this to (x+1).0 degrees. So using .5 degrees as a setpoint will increase the setpoint on the AC not with .5 degrees but with 1 degree. This behaviour can be changed with:
