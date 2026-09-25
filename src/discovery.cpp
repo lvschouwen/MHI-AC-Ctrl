@@ -97,7 +97,7 @@ static MhiDiscoveryCtx ctx = {
   .t_frame_errors = TOPIC_FRAME_ERRORS, .t_frame_timeouts = TOPIC_FRAME_TIMEOUTS,
   .fan = {PAYLOAD_FAN_1, PAYLOAD_FAN_2, PAYLOAD_FAN_3, PAYLOAD_FAN_4},
   .group_base = group_base_topic,
-  .avty_topic = MQTT_PREFIX TOPIC_CONNECTED,
+  .avty_prefix = {NULL, NULL, NULL}, .avty_count = 0, .via_device = NULL,  // discovery_start_outdoor() (fork #29)
   .t_group = TOPIC_GROUP,
   .t_request_reset = TOPIC_REQUEST_RESET, .request_reset = PAYLOAD_REQUEST_RESET,
   .unit_op_prefix = MQTT_OP_PREFIX + (sizeof(MQTT_PREFIX) - 1), .t_op_total_iu_run = TOPIC_TOTAL_IU_RUN,
@@ -137,7 +137,15 @@ void discovery_restart() {
   status_ok = false;  // until the unit rows are through
 }
 
-void discovery_start_outdoor() {
+// The list the outdoor rows carry, copied: the group's peer table may change
+// while the rows go out one per pass (fork #29).
+static MhiGroupAvty avty;
+
+void discovery_start_outdoor(const MhiGroupAvty* list) {
+  avty = *list;
+  ctx.avty_count = avty.count;
+  for (uint8_t i = 0; i < MHI_DISCOVERY_AVTY_MAX; i++) ctx.avty_prefix[i] = avty.prefix[i];
+  ctx.via_device = avty.host[0];
   next_outdoor_row = MHI_DISCOVERY_OU_OUTDOOR;
   outdoor_row_skipped = false;
 }
@@ -206,7 +214,7 @@ void discovery_loop() {
 void discovery_setup() {}
 void discovery_restart() {}
 void discovery_loop() {}
-void discovery_start_outdoor() {}
+void discovery_start_outdoor(const MhiGroupAvty*) {}
 void discovery_cancel_outdoor() {}
 
 #endif

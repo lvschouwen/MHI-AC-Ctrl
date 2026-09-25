@@ -124,21 +124,27 @@ static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
 
 static void tail(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row, bool diagnostic) {
   if (diagnostic) put(o, FMT("\"ent_cat\":\"diagnostic\","));
-  // The outdoor rows are available while the unit that publishes them is: its
-  // connected topic in full, since their "~" is the group root (fork #22).
-  if (mhi_discovery_is_outdoor_row(row))
-    put(o, FMT("\"avty_t\":\"%s\","), c->avty_topic);
-  else
-    put(o, FMT("\"avty_t\":\"~/%s\","), c->t_connected);
-  put(o, FMT("\"pl_avail\":\"%s\",\"pl_not_avail\":\"%s\",\"dev\":{\"ids\":[\""), c->connected_on, c->connected_off);
   if (mhi_discovery_is_outdoor_row(row)) {
-    // The outdoor unit is its own HA device, seen through the unit that polls
-    // it (via_device) and available while that unit is: no sw of its own.
-    put(o, FMT("%s\"],\"name\":"), c->outdoor_id);
+    // Available while any unit of the group is connected (fork #29): each
+    // entry carries its own payloads, since Home Assistant applies the top-level
+    // pl_avail only to avty_t. Absolute topics: "~" is the group root.
+    if (c->avty_count == 0 || c->avty_count > MHI_DISCOVERY_AVTY_MAX || c->via_device == NULL) {
+      o->overflow = true;
+      return;
+    }
+    put(o, FMT("\"avty\":["));
+    for (uint8_t i = 0; i < c->avty_count; i++)
+      put(o, FMT("%s{\"t\":\"%s%s\",\"pl_avail\":\"%s\",\"pl_not_avail\":\"%s\"}"), i ? "," : "", c->avty_prefix[i],
+          c->t_connected, c->connected_on, c->connected_off);
+    // The outdoor unit is its own HA device, seen through the lowest unit of
+    // the list, the same from every publisher: no sw of its own.
+    put(o, FMT("],\"avty_mode\":\"any\",\"dev\":{\"ids\":[\"%s\"],\"name\":"), c->outdoor_id);
     put_str(o, c->outdoor_name);
-    put(o, FMT(",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"outdoor unit\",\"via_device\":\"%s\"}}"), c->hostname);
+    put(o, FMT(",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"outdoor unit\",\"via_device\":\"%s\"}}"), c->via_device);
   }
   else {
+    put(o, FMT("\"avty_t\":\"~/%s\",\"pl_avail\":\"%s\",\"pl_not_avail\":\"%s\",\"dev\":{\"ids\":[\""), c->t_connected,
+        c->connected_on, c->connected_off);
     put(o, FMT("%s\"],\"name\":"), c->hostname);
     put_str(o, c->device_name);
     put(o, FMT(",\"mf\":\"Mitsubishi Heavy Industries\",\"mdl\":\"MHI-AC-Ctrl\",\"sw\":\"%s\"}}"), c->version);

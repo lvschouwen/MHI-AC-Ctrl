@@ -13,6 +13,7 @@ extern MHI_AC_Ctrl_Core mhi_ac_ctrl_core;  // main.cpp
 static MhiGroup group;
 // Static, not on the stack: loop() runs on the ESP8266's 4 KB cont stack.
 static MhiGroupActions actions;
+static MhiGroupAvty avty;  // static for the same reason: about 300 bytes
 
 static const char kMembers[] PROGMEM = GROUP_ROOT "members/";
 
@@ -65,7 +66,10 @@ void group_loop() {
   if (actions.flags & MHI_GROUP_ACT_RECORD) publish_record();
   if (actions.flags & MHI_GROUP_ACT_STATE) publish_state(actions.state);
   if (actions.flags & MHI_GROUP_ACT_START) mhi_ac_ctrl_core.reset_system_values();
-  if (actions.flags & MHI_GROUP_ACT_CONFIGS) discovery_start_outdoor();
+  if (actions.flags & MHI_GROUP_ACT_CONFIGS) {
+    mhi_group_availability(&group, &avty);
+    discovery_start_outdoor(&avty);
+  }
 }
 
 static bool payload_is(const uint8_t* payload, unsigned int length, const char* text) {

@@ -19,8 +19,12 @@
 // The outdoor election (fork #22) adds: --group-base (GROUP_ROOT without its
 //   trailing slash, default --base: a single split), which the six outdoor
 //   rows read, and --name-group-role. --outdoor 1 adds those six rows as this
-//   unit publishes them when it is the group's publisher: availability is its
-//   own <--base>/connected. The retired energy row is never rendered.
+//   unit publishes them when it is the group's publisher. The retired energy
+//   row is never rendered.
+// Fork #29 adds --avty-member <hostname>=<MQTT_PREFIX>, once per unit of the
+//   group (at most 3, any order; the tool sorts them by hostname as the unit
+//   does): the outdoor rows' availability list and, from the first, their
+//   via_device. None: this unit alone.
 // The Restart button (fork #24) adds --name-restart.
 // The run-time row (fork #27) adds --name-run-time; it reads the unit's own
 //   OpData/TOTAL-IU-RUN.
@@ -98,7 +102,7 @@ int main(int argc, char** argv) {
     .vanes_lr = {"Left", "LeftCenter", "Center", "CenterRight", "Right", "Wide", "Spot", "Swing"},
     .threedauto_on = "On", .threedauto_off = "Off",
     .has_outdoor = false,
-    // outdoor_id, group_base and avty_topic are derived after the option loop
+    // outdoor_id, group_base and the availability list are derived after the option loop
     // (from --group-base and --base) unless given; these literals are the
     // same values for the defaults.
     .outdoor_id = "mhi_ac_ctrl_outdoor", .outdoor_name = "AC outdoor unit", .outdoor_entity_prefix = NULL,
@@ -108,7 +112,9 @@ int main(int argc, char** argv) {
     .defrost_on = "On", .defrost_off = "Off",
     .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
     .fan = {"1", "2", "3", "4"},
-    .group_base = "MHI-AC-Ctrl", .avty_topic = "MHI-AC-Ctrl/connected", .t_group = "Group",
+    .group_base = "MHI-AC-Ctrl",
+    .avty_prefix = {NULL, NULL, NULL}, .avty_count = 0, .via_device = NULL,
+    .t_group = "Group",
     .t_request_reset = "reset", .request_reset = "reset",
     .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
     .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
@@ -116,6 +122,11 @@ int main(int argc, char** argv) {
     .t_crash_info = "CrashInfo",
   };
   bool outdoor_id_given = false, group_base_given = false;
+  // --avty-member <host>=<MQTT_PREFIX>, once per unit of the group, sorted by
+  // hostname as the unit sorts them (fork #29); none: this unit alone.
+  char* member_host[MHI_DISCOVERY_AVTY_MAX];
+  char* member_prefix[MHI_DISCOVERY_AVTY_MAX];
+  uint8_t members = 0;
   for (int i = 1; i + 1 < argc; i += 2) {
     const char* opt = argv[i];
     char* val = argv[i + 1];
@@ -141,6 +152,15 @@ int main(int argc, char** argv) {
     else if (strcmp(opt, "--outdoor") == 0) known = flag(val, &c.has_outdoor);
     else if (strcmp(opt, "--outdoor-id") == 0) { c.outdoor_id = val; outdoor_id_given = true; }
     else if (strcmp(opt, "--outdoor-name") == 0) c.outdoor_name = val;
+    else if (strcmp(opt, "--avty-member") == 0) {
+      char* eq = strchr(val, '=');
+      known = eq != NULL && eq != val && eq[1] != '\0' && members < MHI_DISCOVERY_AVTY_MAX;
+      if (known) {
+        *eq = '\0';
+        member_host[members] = val;
+        member_prefix[members++] = eq + 1;
+      }
+    }
     else if (strcmp(opt, "--outdoor-entity-prefix") == 0) c.outdoor_entity_prefix = val;
     else if (strcmp(opt, "--fan-1") == 0) c.fan[0] = val;
     else if (strcmp(opt, "--fan-2") == 0) c.fan[1] = val;
@@ -161,17 +181,40 @@ int main(int argc, char** argv) {
     return 2;
   }
   // What the firmware derives, once the option loop is done: GROUP_ROOT
-  // defaults to MQTT_PREFIX, the outdoor rows' availability is the unit's own
-  // <MQTT_PREFIX>connected, and HA_OUTDOOR_ID defaults to the slug of
-  // GROUP_ROOT plus "_outdoor" (src/support.cpp, mhi_group_default_outdoor_id).
+  // defaults to MQTT_PREFIX, a lone unit's availability list is itself
+  // (<MQTT_PREFIX> = --base plus "/"), and HA_OUTDOOR_ID defaults to the slug
+  // of GROUP_ROOT plus "_outdoor" (src/support.cpp, mhi_group_default_outdoor_id).
   if (!group_base_given) c.group_base = c.base;
-  char avty_topic[MHI_DISCOVERY_TOPIC_MAX];
-  const int an = snprintf(avty_topic, sizeof(avty_topic), "%s/%s", c.base, c.t_connected);
-  if (an < 0 || (size_t)an >= sizeof(avty_topic)) {
-    fprintf(stderr, "discovery_payloads: --base is too long for the availability topic\n");
-    return 1;
+  char own_prefix[MHI_DISCOVERY_TOPIC_MAX];
+  if (members == 0) {
+    const int an = snprintf(own_prefix, sizeof(own_prefix), "%s/", c.base);
+    if (an < 0 || (size_t)an >= sizeof(own_prefix)) {
+      fprintf(stderr, "discovery_payloads: --base is too long for the availability topic\n");
+      return 1;
+    }
+    member_host[0] = (char*)c.hostname;
+    member_prefix[0] = own_prefix;
+    members = 1;
   }
-  c.avty_topic = avty_topic;
+  // Sorted by hostname as mhi_group_availability() sorts them, whatever order
+  // the caller gave; a hostname given twice is a mistake, not a list.
+  for (uint8_t i = 1; i < members; i++)
+    for (uint8_t j = i; j > 0 && strcmp(member_host[j], member_host[j - 1]) < 0; j--) {
+      char* th = member_host[j];
+      member_host[j] = member_host[j - 1];
+      member_host[j - 1] = th;
+      char* tp = member_prefix[j];
+      member_prefix[j] = member_prefix[j - 1];
+      member_prefix[j - 1] = tp;
+    }
+  for (uint8_t i = 1; i < members; i++)
+    if (strcmp(member_host[i], member_host[i - 1]) == 0) {
+      fprintf(stderr, "discovery_payloads: --avty-member %s given twice\n", member_host[i]);
+      return 2;
+    }
+  for (uint8_t i = 0; i < members; i++) c.avty_prefix[i] = member_prefix[i];
+  c.avty_count = members;
+  c.via_device = member_host[0];
   char derived_outdoor_id[MHI_GROUP_ID_MAX + 1];
   if (!outdoor_id_given) {
     // The slug ignores the trailing slash, so the group base derives what GROUP_ROOT does.

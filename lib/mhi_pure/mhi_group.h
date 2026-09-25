@@ -139,8 +139,8 @@ size_t mhi_group_default_outdoor_id(const char* group_root, char* out, size_t ou
 #define MHI_GROUP_GRACE_MS 5000        // after a connect: only collect (§6.1)
 #define MHI_GROUP_SETTLE_MS 5000       // no incumbent for this long before a claim (§6.2 rule 4)
 #define MHI_GROUP_DOWN_GONE_MS 30000   // connected 0 for this long: gone (§5.3)
-#define MHI_GROUP_CONFIGS_MS 30000     // claim or publisher start -> outdoor configs (§6.3)
-#define MHI_GROUP_RESEND_MS 35000      // a beaten claim -> the configs again, after the loser's (§6.2 rule 3)
+#define MHI_GROUP_AVTY_MAX 3           // units in the outdoor configs' availability list (fork #29); = MHI_DISCOVERY_AVTY_MAX
+#define MHI_GROUP_AVTY_SETTLE_MS 10000 // the list unchanged this long -> the publisher re-sends the configs (fork #29)
 
 enum MhiGroupKind : uint8_t { MHI_GROUP_KIND_MEMBER, MHI_GROUP_KIND_FOREIGN };
 enum MhiGroupLink : uint8_t { MHI_GROUP_LINK_UNKNOWN, MHI_GROUP_LINK_UP, MHI_GROUP_LINK_DOWN };
@@ -178,10 +178,10 @@ struct MhiGroup {
   uint32_t record_ms;       // when the record was last asked for
   bool settling;
   uint32_t settle_ms;
-  bool configs_pending;
-  uint32_t configs_ms;      // when the 30 s before the configs started
-  bool resend_pending;
-  uint32_t resend_ms;       // when the 35 s before the re-send started
+  bool configs_sent;        // the outdoor configs went out in this publisher period (fork #29)
+  uint32_t configs_hash;    // of the availability list they carried
+  uint32_t avty_hash;       // of the availability list as last seen
+  uint32_t avty_ms;         // when that list last changed
   MhiGroupPeer peers[MHI_GROUP_MAX_PEERS];
 };
 
@@ -190,7 +190,7 @@ enum : uint8_t {
   MHI_GROUP_ACT_STATE = 0x02,    // publish MhiGroupActions.state, retained, on <MQTT_PREFIX><TOPIC_GROUP>
   MHI_GROUP_ACT_START = 0x04,    // call reset_system_values(): a claim or a publisher start
   MHI_GROUP_ACT_DEMOTE = 0x08,   // call discovery_cancel_outdoor()
-  MHI_GROUP_ACT_CONFIGS = 0x10,  // call discovery_start_outdoor()
+  MHI_GROUP_ACT_CONFIGS = 0x10,  // call discovery_start_outdoor() with mhi_group_availability()
 };
 
 // What one tick asks the glue to do. The glue (group.cpp's group_loop()) runs
@@ -232,8 +232,25 @@ void mhi_group_on_connected(MhiGroup* g, const char* host, bool up, uint32_t now
 // The member peer whose <prefix><t_connected> is topic, or NULL.
 const char* mhi_group_host_of_connected_topic(const MhiGroup* g, const char* topic, const char* t_connected);
 
-// Every loop() pass while connected: the rules of §6.1-§6.3.
+// Every loop() pass while connected: the rules of §6.1-§6.3. From the
+// connect on it publishes Group 0 until the grace period has run (fork #29).
+// A publisher asks for the outdoor configs at once after a claim or a
+// publisher start, and again when its availability list has changed and then
+// stayed the same for MHI_GROUP_AVTY_SETTLE_MS (fork #29), which also lets a
+// rival's configs from a simultaneous claim go out first.
 void mhi_group_tick(MhiGroup* g, uint32_t now, MhiGroupActions* act);
+
+// The outdoor configs' availability list (fork #29): this unit and every peer
+// with a valid record of this protocol and this unit's outdoor ID, whether it
+// is alive or not (only an empty record removes one), at most
+// MHI_GROUP_AVTY_MAX: this unit and the lowest other hostnames, sorted by
+// hostname. Copies, so the glue may keep them across ticks.
+struct MhiGroupAvty {
+  uint8_t count;  // 1..MHI_GROUP_AVTY_MAX; [0] is the lowest hostname, the outdoor device's via_device
+  char host[MHI_GROUP_AVTY_MAX][MHI_GROUP_HOST_MAX + 1];
+  char prefix[MHI_GROUP_AVTY_MAX][MHI_GROUP_ROOT_MAX + 1];
+};
+void mhi_group_availability(const MhiGroup* g, MhiGroupAvty* out);
 
 // The system-value gate (§6.4): past the grace period, role 1 and state 1.
 bool mhi_group_may_publish_system(const MhiGroup* g);

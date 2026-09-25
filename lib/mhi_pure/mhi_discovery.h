@@ -17,6 +17,7 @@
 
 #define MHI_DISCOVERY_BUF 1024      // the payload buffer; the host test measures every row against it
 #define MHI_DISCOVERY_TOPIC_MAX 96
+#define MHI_DISCOVERY_AVTY_MAX 3    // units in the outdoor rows' availability list (fork #29); the host test measures the worst case
 
 enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_CLIMATE,       // climate  <climate_id>
@@ -114,7 +115,12 @@ struct MhiDiscoveryCtx {
   const char* fan[4];                 // PAYLOAD_FAN_1..4
   // Fork #22 (the outdoor election).
   const char* group_base;             // GROUP_ROOT without its trailing slash: the outdoor rows' "~"
-  const char* avty_topic;             // MQTT_PREFIX TOPIC_CONNECTED in full: the outdoor rows' availability
+  // Fork #29: the outdoor rows are available while any unit of the group is
+  // connected, and every unit sends the same payload, so a takeover changes
+  // nothing in Home Assistant.
+  const char* avty_prefix[MHI_DISCOVERY_AVTY_MAX];  // the MQTT_PREFIX of each unit in the list, sorted by hostname
+  uint8_t avty_count;                 // 1..MHI_DISCOVERY_AVTY_MAX; the outdoor rows do not build with 0
+  const char* via_device;             // the lowest hostname in the list: the outdoor device's via_device
   const char* t_group;                // TOPIC_GROUP, relative to base
   // Fork #24 (the Restart button).
   const char* t_request_reset;        // TOPIC_REQUEST_RESET, relative to the set prefix
@@ -156,7 +162,7 @@ bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx);
 
 // The outdoor device's rows, MHI_DISCOVERY_OU_OUTDOOR..MHI_DISCOVERY_OU_PROTECTION:
 // their own dev block, uniq_id and topic keyed by outdoor_id, "~" the group
-// base, absolute availability. A closed range: a row appended later is a unit
+// base, an availability list of absolute topics. A closed range: a row appended later is a unit
 // row unless it is added here.
 bool mhi_discovery_is_outdoor_row(MhiDiscoveryRow row);
 

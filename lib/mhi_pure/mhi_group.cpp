@@ -5,6 +5,8 @@
 
 #include "mhi_discovery.h"
 
+static_assert(MHI_GROUP_AVTY_MAX == MHI_DISCOVERY_AVTY_MAX, "the group's availability list fills the discovery context's");
+
 // --- the member record ----------------------------------------------------------
 
 // 1..10 digits, nothing else (no sign, no leading +), at most max.
@@ -278,8 +280,7 @@ void mhi_group_connect(MhiGroup* g, uint32_t now) {
   g->published_state = 0xff;
   g->record_ms = now;
   g->settling = false;
-  g->configs_pending = false;
-  g->resend_pending = false;
+  g->configs_sent = false;
 }
 
 MhiGroupResult mhi_group_on_record(MhiGroup* g, const char* host, const char* payload, size_t len, uint32_t now) {
@@ -342,15 +343,6 @@ MhiGroupResult mhi_group_on_record(MhiGroup* g, const char* host, const char* pa
     p->refreshed_ms = now;
     p->stale = false;
   }
-
-  // §6.2 rule 3: a compatible peer claims the role this unit holds and wins.
-  // The loser's next changed record (its uptime moves) does not push the
-  // re-send back (fork #25): it stays 35 s after the first.
-  if (changed && !g->in_grace && g->role == 1 && kind == MHI_GROUP_KIND_MEMBER && rec.role == 1 &&
-      compatible(g, p, now) && beats(g->term, g->host, rec.term, p->host) && !g->resend_pending) {
-    g->resend_pending = true;
-    g->resend_ms = now;
-  }
   return MHI_GROUP_REC_OK;
 }
 
@@ -393,8 +385,7 @@ static void next_subscription(MhiGroup* g, MhiGroupActions* act) {
 
 static void demote(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
   g->role = 0;
-  g->configs_pending = false;
-  g->resend_pending = false;
+  g->configs_sent = false;
   g->record_ms = now;
   act->flags |= MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_DEMOTE;
 }
@@ -406,12 +397,12 @@ static void claim(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
   note_term(g, g->term);
   g->settling = false;
   g->record_ms = now;
-  g->configs_pending = true;
-  g->configs_ms = now;
+  g->configs_sent = false;  // a new publisher period: the configs go out at the end of this tick
   act->flags |= MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_START;
 }
 
-// §6.2 rules 1, 2 and 4. Rule 3 is in mhi_group_on_record, rule 5 in the tick.
+// §6.2 rules 1, 2 and 4; rule 5 is in the tick. Rule 3, the re-send after a
+// beaten rival claim, went with fork #29: the list's settle time covers it.
 static void apply_rules(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
   uint8_t state = compute_state(g, now);
   if (g->role == 1 && (state == 2 || state == 3 || an_incumbent_beats_this_unit(g, now))) {
@@ -442,6 +433,50 @@ static void latch_gone(MhiGroup* g, uint32_t now) {
   }
 }
 
+// The list as pointers into the group, no copies: the tick runs it on every
+// loop() pass of the publisher, on the ESP8266's 4 KB cont stack. Returns the
+// count; host[0] is the lowest hostname.
+static uint8_t select_avty(const MhiGroup* g, const char* host[MHI_GROUP_AVTY_MAX], const char* prefix[MHI_GROUP_AVTY_MAX]);
+
+static uint32_t avty_hash(const MhiGroup* g) {
+  const char* host[MHI_GROUP_AVTY_MAX];
+  const char* prefix[MHI_GROUP_AVTY_MAX];
+  const uint8_t n = select_avty(g, host, prefix);
+  uint32_t h = payload_hash((const char*)&n, 1);
+  for (uint8_t i = 0; i < n; i++) {
+    h ^= payload_hash(host[i], strlen(host[i]));
+    h *= 16777619u;
+    h ^= payload_hash(prefix[i], strlen(prefix[i]));
+    h *= 16777619u;
+  }
+  return h;
+}
+
+// Fork #29: the configs no longer depend on who publishes, so they go out at
+// once in a new publisher period, and again once a changed list has settled.
+static void outdoor_configs(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
+  if (!mhi_group_may_publish_system(g)) {
+    g->configs_sent = false;
+    return;
+  }
+  const uint32_t h = avty_hash(g);
+  if (!g->configs_sent) {
+    g->configs_sent = true;
+    g->configs_hash = h;
+    g->avty_hash = h;
+    act->flags |= MHI_GROUP_ACT_CONFIGS;
+    return;
+  }
+  if (h != g->avty_hash) {
+    g->avty_hash = h;
+    g->avty_ms = now;
+  }
+  else if (h != g->configs_hash && now - g->avty_ms >= MHI_GROUP_AVTY_SETTLE_MS) {
+    g->configs_hash = h;
+    act->flags |= MHI_GROUP_ACT_CONFIGS;
+  }
+}
+
 void mhi_group_tick(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
   act->flags = 0;
   act->state = 0;
@@ -450,7 +485,15 @@ void mhi_group_tick(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
   latch_gone(g, now);
   next_subscription(g, act);
   if (g->in_grace) {
-    if (now - g->connect_ms < MHI_GROUP_GRACE_MS) return;  // only collect (§6.1 step 4)
+    if (now - g->connect_ms < MHI_GROUP_GRACE_MS) {  // only collect (§6.1 step 4)
+      // A retained Group 1 from before the connect is not true yet: Group 0
+      // at once, so no second publisher shows for 5 s (fork #29).
+      if (g->published_state == 0xff) {
+        g->published_state = 0;
+        act->flags |= MHI_GROUP_ACT_STATE;
+      }
+      return;
+    }
     // §6.1 step 5: the rules once, then the record and the Group, then the
     // publisher start when the role survived.
     g->in_grace = false;
@@ -459,8 +502,7 @@ void mhi_group_tick(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
     g->record_ms = now;
     if (g->role == 1) {
       act->flags |= MHI_GROUP_ACT_START;
-      g->configs_pending = true;
-      g->configs_ms = now;
+      g->configs_sent = false;
     }
   }
   else {
@@ -470,19 +512,12 @@ void mhi_group_tick(MhiGroup* g, uint32_t now, MhiGroupActions* act) {
       g->record_ms = now;
     }
   }
-  if (g->configs_pending && now - g->configs_ms >= MHI_GROUP_CONFIGS_MS) {
-    g->configs_pending = false;
-    act->flags |= MHI_GROUP_ACT_CONFIGS;
-  }
-  if (g->resend_pending && now - g->resend_ms >= MHI_GROUP_RESEND_MS) {
-    g->resend_pending = false;
-    act->flags |= MHI_GROUP_ACT_CONFIGS;
-  }
   g->state = compute_state(g, now);
   if (g->state != g->published_state) {
     g->published_state = g->state;
     act->flags |= MHI_GROUP_ACT_STATE;
   }
+  outdoor_configs(g, now, act);
   if (act->flags & MHI_GROUP_ACT_STATE) act->state = g->state;
 }
 
@@ -501,4 +536,55 @@ size_t mhi_group_own_record(const MhiGroup* g, uint32_t uptime_s, char* out, siz
   copy_bounded(r.outdoor_id, sizeof(r.outdoor_id), g->outdoor_id);
   copy_bounded(r.prefix, sizeof(r.prefix), g->prefix);
   return mhi_group_format_record(&r, out, out_len);
+}
+
+// A unit of the list: this one, or a peer with this protocol's record and this
+// unit's outdoor ID (fork #29). Liveness plays no part, so a unit that is down
+// stays listed and the configs do not change when it comes and goes.
+static bool listed(const MhiGroup* g, const MhiGroupPeer* p) {
+  return p->used && p->kind == MHI_GROUP_KIND_MEMBER && strcmp(p->rec.outdoor_id, g->outdoor_id) == 0;
+}
+
+static uint8_t select_avty(const MhiGroup* g, const char* host[MHI_GROUP_AVTY_MAX], const char* prefix[MHI_GROUP_AVTY_MAX]) {
+  // This unit, then the lowest other hostnames by selection, then sorted.
+  uint8_t n = 0;
+  host[n] = g->host;
+  prefix[n++] = g->prefix;
+  const char* floor = NULL;  // the last hostname taken: the next is the lowest above it
+  while (n < MHI_GROUP_AVTY_MAX) {
+    const MhiGroupPeer* best = NULL;
+    for (int i = 0; i < MHI_GROUP_MAX_PEERS; i++) {
+      const MhiGroupPeer* p = &g->peers[i];
+      if (!listed(g, p) || strcmp(p->host, g->host) == 0) continue;
+      if (floor != NULL && strcmp(p->host, floor) <= 0) continue;
+      if (best == NULL || strcmp(p->host, best->host) < 0) best = p;
+    }
+    if (best == NULL) break;
+    host[n] = best->host;
+    prefix[n++] = best->rec.prefix;
+    floor = best->host;
+  }
+  // Insertion sort by hostname: at most MHI_GROUP_AVTY_MAX entries.
+  for (uint8_t i = 1; i < n; i++)
+    for (uint8_t j = i; j > 0 && strcmp(host[j], host[j - 1]) < 0; j--) {
+      const char* th = host[j];
+      host[j] = host[j - 1];
+      host[j - 1] = th;
+      const char* tp = prefix[j];
+      prefix[j] = prefix[j - 1];
+      prefix[j - 1] = tp;
+    }
+  return n;
+}
+
+void mhi_group_availability(const MhiGroup* g, MhiGroupAvty* out) {
+  const char* host[MHI_GROUP_AVTY_MAX];
+  const char* prefix[MHI_GROUP_AVTY_MAX];
+  const uint8_t n = select_avty(g, host, prefix);
+  memset(out, 0, sizeof(*out));
+  out->count = n;
+  for (uint8_t i = 0; i < n; i++) {
+    copy_bounded(out->host[i], sizeof(out->host[i]), host[i]);
+    copy_bounded(out->prefix[i], sizeof(out->prefix[i]), prefix[i]);
+  }
 }

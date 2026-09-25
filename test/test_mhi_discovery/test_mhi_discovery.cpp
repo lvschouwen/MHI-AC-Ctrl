@@ -53,7 +53,9 @@ static const MhiDiscoveryCtx kDefault = {
   .defrost_on = "On", .defrost_off = "Off",
   .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
   .fan = {"1", "2", "3", "4"},
-  .group_base = "MHI-AC-Ctrl", .avty_topic = "MHI-AC-Ctrl/connected", .t_group = "Group",  // a single split: GROUP_ROOT = MQTT_PREFIX
+  .group_base = "MHI-AC-Ctrl",  // a single split: GROUP_ROOT = MQTT_PREFIX
+  .avty_prefix = {"MHI-AC-Ctrl/", NULL, NULL}, .avty_count = 1, .via_device = "MHI-AC-Ctrl",  // a lone unit (fork #29)
+  .t_group = "Group",
   .t_request_reset = "reset", .request_reset = "reset",
   .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
   .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
@@ -102,7 +104,9 @@ static const MhiDiscoveryCtx kUitkijk = {
   .defrost_on = "On", .defrost_off = "Off",
   .t_frame_errors = "FrameErrors", .t_frame_timeouts = "FrameTimeouts",
   .fan = {"1", "2", "3", "4"},
-  .group_base = "airco/uitkijk", .avty_topic = "airco/uitkijk/connected", .t_group = "Group",
+  .group_base = "airco/uitkijk",
+  .avty_prefix = {"airco/uitkijk/", NULL, NULL}, .avty_count = 1, .via_device = "airco-uitkijk",
+  .t_group = "Group",
   .t_request_reset = "reset", .request_reset = "reset",
   .unit_op_prefix = "OpData/", .t_op_total_iu_run = "TOTAL-IU-RUN",
   .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
@@ -125,9 +129,12 @@ static MhiDiscoveryCtx make_slaapkamer() {
   c.outdoor_id = "ac_slaapkamer_outdoor";
   c.outdoor_entity_prefix = "ac_outdoor";
   // Lucas's group (fork #22): the outdoor rows read airco/outdoor/ and are
-  // available while Slaapkamer, their publisher, is.
+  // available while either unit is (fork #29), whoever publishes them.
   c.group_base = "airco/outdoor";
-  c.avty_topic = "airco/slaapkamer/connected";
+  c.avty_prefix[0] = "airco/slaapkamer/";
+  c.avty_prefix[1] = "airco/uitkijk/";
+  c.avty_count = 2;
+  c.via_device = "airco-slaapkamer";
   return c;
 }
 static const MhiDiscoveryCtx kSlaapkamer = make_slaapkamer();
@@ -215,12 +222,18 @@ static size_t every_row_fits(const MhiDiscoveryCtx* ctx, const char* label) {
     TEST_ASSERT_EQUAL_size_t_MESSAGE(strlen(out), n, msg);
     TEST_ASSERT_TRUE_MESSAGE(json_shape_ok(out), msg);
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"uniq_id\":\""), msg);
-    char avty[128];
-    if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r))  // the publisher's connected topic in full (fork #22)
-      snprintf(avty, sizeof(avty), "\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\"", ctx->avty_topic);
-    else
+    char avty[160];
+    if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) {  // every unit's connected topic in full (fork #29)
+      snprintf(avty, sizeof(avty), "\"avty\":[{\"t\":\"%sconnected\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\"}",
+               ctx->avty_prefix[0]);
+      TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, avty), msg);
+      TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "}],\"avty_mode\":\"any\",\"dev\":{"), msg);
+      TEST_ASSERT_NULL_MESSAGE(strstr(out, "\"avty_t\""), msg);
+    }
+    else {
       snprintf(avty, sizeof(avty), "\"avty_t\":\"~/connected\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\"");
-    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, avty), msg);
+      TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, avty), msg);
+    }
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "\"dev\":{\"ids\":[\""), msg);
     // The outdoor rows carry their own device: each kind of row has its own
     // full model check.
@@ -484,27 +497,70 @@ static void test_outdoor_rows_use_the_group_base_and_absolute_availability(void)
     if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kSlaapkamer)) continue;
     TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &kSlaapkamer, out, sizeof(out)) > 0);
     TEST_ASSERT_EQUAL_STRING_LEN("{\"~\":\"airco/outdoor\",", out, strlen("{\"~\":\"airco/outdoor\","));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"avty_t\":\"airco/slaapkamer/connected\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\","));
-    TEST_ASSERT_NULL(strstr(out, "\"avty_t\":\"~/"));
+    // Both units, each entry with its own payloads: Home Assistant applies the
+    // top-level pl_avail only to avty_t (hass-config's sandbox, fork #29).
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"avty\":[{\"t\":\"airco/slaapkamer/connected\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\"},"
+                                     "{\"t\":\"airco/uitkijk/connected\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\"}],"
+                                     "\"avty_mode\":\"any\",\"dev\":{"));
+    TEST_ASSERT_NULL(strstr(out, "\"avty_t\""));
     TEST_ASSERT_NOT_NULL(strstr(out, "\"via_device\":\"airco-slaapkamer\"}}"));
   }
   // The topic and the uniq_id stay keyed by the outdoor ID: the same for every publisher.
   TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_OU_CT, &kSlaapkamer, topic, sizeof(topic)) > 0);
   TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_outdoor_current/config", topic);
-  // Another publisher changes only avty_t and via_device (spec §8.2).
+  // Another publisher sends byte-identical outdoor payloads (fork #29): only
+  // the list decides availability and via_device, not the unit sending them.
   MhiDiscoveryCtx uitkijk = kSlaapkamer;
   uitkijk.base = "airco/uitkijk";
   uitkijk.hostname = "airco-uitkijk";
-  uitkijk.avty_topic = "airco/uitkijk/connected";
   char other[MHI_DISCOVERY_BUF];
-  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_CT, &kSlaapkamer, out, sizeof(out)) > 0);
-  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_CT, &uitkijk, other, sizeof(other)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(other, "\"avty_t\":\"airco/uitkijk/connected\","));
-  TEST_ASSERT_NOT_NULL(strstr(other, "\"via_device\":\"airco-uitkijk\"}}"));
-  const char* cut_out = strstr(out, "\"avty_t\"");
-  const char* cut_other = strstr(other, "\"avty_t\"");
-  TEST_ASSERT_EQUAL_size_t((size_t)(cut_out - out), (size_t)(cut_other - other));
-  TEST_ASSERT_EQUAL_STRING_LEN(out, other, (size_t)(cut_out - out));  // everything before avty_t is identical
+  for (int r = MHI_DISCOVERY_OU_OUTDOOR; r <= MHI_DISCOVERY_OU_PROTECTION; r++) {
+    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kSlaapkamer)) continue;
+    TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &kSlaapkamer, out, sizeof(out)) > 0);
+    TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &uitkijk, other, sizeof(other)) > 0);
+    TEST_ASSERT_EQUAL_STRING(out, other);
+  }
+}
+
+// Fork #29: the list is bounded, and an empty one never builds an outdoor row
+// (it would never become available).
+static void test_the_availability_list_is_bounded_and_never_empty(void) {
+  char out[MHI_DISCOVERY_BUF];
+  MhiDiscoveryCtx c = kSlaapkamer;
+  c.avty_count = 0;
+  TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_build(MHI_DISCOVERY_OU_CT, &c, out, sizeof(out)));
+  c.avty_count = MHI_DISCOVERY_AVTY_MAX + 1;
+  TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_build(MHI_DISCOVERY_OU_CT, &c, out, sizeof(out)));
+  c = kSlaapkamer;
+  c.via_device = NULL;
+  TEST_ASSERT_EQUAL_size_t(0, mhi_discovery_build(MHI_DISCOVERY_OU_CT, &c, out, sizeof(out)));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_CLIMATE, &c, out, sizeof(out)) > 0);  // unit rows need no list
+}
+
+// The worst outdoor row the firmware can build (fork #29): a full list of
+// 64-character prefixes, a 32-character via_device, a 40-character outdoor ID
+// and a 63-character group base. It must fit MHI_DISCOVERY_BUF, or the
+// Discovery topic says "skipped" on the unit.
+static void test_the_worst_outdoor_row_fits(void) {
+  static const char kPrefix[] = "p123456789012345678901234567890123456789012345678901234567890ab/";
+  static_assert(sizeof(kPrefix) - 1 == 64, "MHI_GROUP_ROOT_MAX");
+  MhiDiscoveryCtx c = kSlaapkamer;
+  for (int i = 0; i < MHI_DISCOVERY_AVTY_MAX; i++) c.avty_prefix[i] = kPrefix;
+  c.avty_count = MHI_DISCOVERY_AVTY_MAX;
+  c.via_device = "h1234567890123456789012345678901";                                    // 32
+  c.outdoor_id = "o123456789012345678901234567890123456789";                            // 40
+  c.group_base = "g12345678901234567890123456789012345678901234567890123456789012";     // 63
+  c.outdoor_entity_prefix = "e1234567890123456789012345678901234567";
+  size_t longest = 0;
+  for (int r = MHI_DISCOVERY_OU_OUTDOOR; r <= MHI_DISCOVERY_OU_PROTECTION; r++) {
+    if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &c)) continue;
+    char out[MHI_DISCOVERY_BUF];
+    const size_t n = mhi_discovery_build((MhiDiscoveryRow)r, &c, out, sizeof(out));
+    TEST_ASSERT_TRUE_MESSAGE(n > 0, kFixtureName[r]);
+    if (n > longest) longest = n;
+  }
+  printf("  worst outdoor row: %u of %u bytes\n", (unsigned)longest, (unsigned)MHI_DISCOVERY_BUF);
+  TEST_ASSERT_LESS_OR_EQUAL_size_t(980, longest);  // 941 B with three entries: the same headroom gate as the unit rows
 }
 
 static void test_the_retired_energy_row_is_never_built(void) {
@@ -723,6 +779,8 @@ int main(void) {
   RUN_TEST(test_the_group_role_row_is_a_unit_row);
   RUN_TEST(test_is_outdoor_row_is_the_closed_outdoor_block);
   RUN_TEST(test_outdoor_rows_use_the_group_base_and_absolute_availability);
+  RUN_TEST(test_the_availability_list_is_bounded_and_never_empty);
+  RUN_TEST(test_the_worst_outdoor_row_fits);
   RUN_TEST(test_the_retired_energy_row_is_never_built);
   RUN_TEST(test_no_expanded_topic_contains_a_double_slash);
   RUN_TEST(test_no_row_builds_an_empty_payload);

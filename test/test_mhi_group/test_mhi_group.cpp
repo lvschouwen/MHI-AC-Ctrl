@@ -260,14 +260,18 @@ static void own_record(char* out) {
   TEST_ASSERT_TRUE(mhi_group_own_record(&g, 7, out, MHI_GROUP_RECORD_MAX + 1) > 0);
 }
 
-// 1. A lone unit, cold start: grace, record role 0, claim term 1 at 10 s, configs at 40 s.
+// 1. A lone unit, cold start: Group 0 at once, grace, record role 0, claim
+// term 1 at 10 s with the configs in the same tick (fork #29).
 static void test_scenario_1_lone_unit_cold_start(void) {
   boot("airco-slaapkamer", 0);
-  run(100, 4900);
-  TEST_ASSERT_EQUAL_UINT8(0, seen);  // 16. nothing in the grace period
-  tick(5000);
-  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE, act.flags);
+  tick(100);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_STATE, act.flags);  // Group 0 at once (fork #29)
   TEST_ASSERT_EQUAL_UINT8(0, act.state);
+  reset_seen();
+  run(200, 4800);
+  TEST_ASSERT_EQUAL_UINT8(0, seen);  // 16. nothing else in the grace period
+  tick(5000);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD, act.flags);  // Group 0 is already out
   char rec[MHI_GROUP_RECORD_MAX + 1];
   own_record(rec);
   TEST_ASSERT_EQUAL_STRING("1;0;0;7;60;ac_outdoor;airco/me/", rec);
@@ -275,14 +279,15 @@ static void test_scenario_1_lone_unit_cold_start(void) {
   run(5100, 4900);
   TEST_ASSERT_EQUAL_UINT8(0, seen);
   tick(10000);  // the settle clock started at 5 s
-  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE | MHI_GROUP_ACT_START, act.flags);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE | MHI_GROUP_ACT_START | MHI_GROUP_ACT_CONFIGS,
+                          act.flags);
   TEST_ASSERT_EQUAL_UINT8(1, act.state);
   own_record(rec);
   TEST_ASSERT_EQUAL_STRING("1;1;1;7;60;ac_outdoor;airco/me/", rec);
   TEST_ASSERT_TRUE(mhi_group_may_publish_system(&g));
   reset_seen();
-  run(10100, 30000);
-  TEST_ASSERT_EQUAL_UINT32(40000, when(MHI_GROUP_ACT_CONFIGS));
+  run(10100, 120000);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));  // once: the list did not change
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_START));
 }
 
@@ -292,16 +297,19 @@ static void test_scenario_2_rebooted_publisher_resumes(void) {
   record("airco-slaapkamer", "1;1;3;900;60;ac_outdoor;airco/me/", 0);
   TEST_ASSERT_FALSE(mhi_group_may_publish_system(&g));  // still in the grace period
   run(100, 4900);
-  TEST_ASSERT_EQUAL_UINT8(0, seen);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_STATE, seen);  // only Group 0, at once (fork #29)
+  TEST_ASSERT_EQUAL_UINT32(100, when(MHI_GROUP_ACT_STATE));
   tick(5000);
-  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE | MHI_GROUP_ACT_START, act.flags);
+  // The publisher start: the configs at once, not 30 s later (fork #29).
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE | MHI_GROUP_ACT_START | MHI_GROUP_ACT_CONFIGS,
+                          act.flags);
   TEST_ASSERT_EQUAL_UINT8(1, act.state);
   char rec[MHI_GROUP_RECORD_MAX + 1];
   own_record(rec);
   TEST_ASSERT_EQUAL_STRING("1;1;3;7;60;ac_outdoor;airco/me/", rec);
   reset_seen();
   run(5100, 30000);
-  TEST_ASSERT_EQUAL_UINT32(35000, when(MHI_GROUP_ACT_CONFIGS));
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_START));  // no claim: the term stays 3
   own_record(rec);
   TEST_ASSERT_EQUAL_STRING("1;1;3;7;60;ac_outdoor;airco/me/", rec);
@@ -314,7 +322,7 @@ static void member_with_publisher(uint32_t t0) {
   record("airco-slaapkamer", "1;1;1;500;60;ac_outdoor;airco/slaapkamer/", t0);
   mhi_group_on_connected(&g, "airco-slaapkamer", true, t0);
   run(t0 + 100, 9900);
-  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE, seen);  // the record at 5 s, no claim
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE, seen);  // Group 0 at once, the record at 5 s, no claim
   TEST_ASSERT_EQUAL_UINT8(0, g.state);
   reset_seen();
 }
@@ -327,10 +335,20 @@ static void test_scenario_3_takeover_after_30_s_and_5_s(void) {
   run(20000, 35000);  // up to 54.9 s, 34.9 s after connected 0
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_START));
   tick(55000);
-  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE | MHI_GROUP_ACT_START, act.flags);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_RECORD | MHI_GROUP_ACT_STATE | MHI_GROUP_ACT_START | MHI_GROUP_ACT_CONFIGS,
+                          act.flags);
   char rec[MHI_GROUP_RECORD_MAX + 1];
   own_record(rec);
   TEST_ASSERT_EQUAL_STRING("1;1;2;7;60;ac_outdoor;airco/me/", rec);
+  // The ex-publisher is down but stays in the list, so the configs are the
+  // ones it sent itself (fork #29).
+  MhiGroupAvty list;
+  mhi_group_availability(&g, &list);
+  TEST_ASSERT_EQUAL_UINT8(2, list.count);
+  TEST_ASSERT_EQUAL_STRING("airco-slaapkamer", list.host[0]);
+  TEST_ASSERT_EQUAL_STRING("airco/slaapkamer/", list.prefix[0]);
+  TEST_ASSERT_EQUAL_STRING("airco-uitkijk", list.host[1]);
+  TEST_ASSERT_EQUAL_STRING("airco/me/", list.prefix[1]);
 }
 
 // 4. connected 0 then 1 within 30 s: no takeover.
@@ -364,7 +382,7 @@ static void test_scenario_6_the_peers_own_period_decides(void) {
   TEST_ASSERT_EQUAL_UINT32(905000, when(MHI_GROUP_ACT_START));
 }
 
-// 7a. Simultaneous claims, equal terms: the higher hostname demotes and cancels its configs.
+// 7a. Simultaneous claims, equal terms: the higher hostname demotes and sends no more configs.
 static void test_scenario_7_the_higher_hostname_yields(void) {
   boot("airco-uitkijk", 0);
   run(100, 10000);
@@ -379,29 +397,29 @@ static void test_scenario_7_the_higher_hostname_yields(void) {
   own_record(rec);
   TEST_ASSERT_EQUAL_STRING("1;0;1;7;60;ac_outdoor;airco/me/", rec);
   run(10200, 60000);
-  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));  // the 40 s configs were cancelled
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));  // a member never sends them
 }
 
-// 7b. ... and the lower hostname re-sends its configs 35 s after the loser's
-// record: after its own configs (30 s after its claim) and after the loser's.
+// 7b. ... and the lower hostname sends its configs again once the list that
+// now holds the loser has settled for 10 s: after the loser's own configs from
+// its claim, which listed only itself (fork #29; rule 3 is gone).
 static void test_scenario_7_the_lower_hostname_resends(void) {
   boot("airco-slaapkamer", 0);
   run(100, 10000);
   TEST_ASSERT_EQUAL_UINT32(10000, when(MHI_GROUP_ACT_START));
+  TEST_ASSERT_EQUAL_UINT32(10000, when(MHI_GROUP_ACT_CONFIGS));  // the claim's own configs: itself alone
   record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 10050);
   reset_seen();
-  run(10100, 30000);  // up to 40.0 s
-  TEST_ASSERT_EQUAL_UINT32(40000, when(MHI_GROUP_ACT_CONFIGS));  // the claim's own configs
-  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_DEMOTE));
-  reset_seen();
-  run(40100, 4900);  // up to 44.9 s
+  run(10100, 9900);  // up to 19.9 s
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
-  run(45000, 1000);  // due at 45.05 s: the first tick after it
-  TEST_ASSERT_EQUAL_UINT32(45100, when(MHI_GROUP_ACT_CONFIGS));
-  // The loser's record delivered again, unchanged: no second re-send.
-  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 46000);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_DEMOTE));
+  run(20000, 1000);  // the list changed at the 10.1 s tick: due at 20.1 s
+  TEST_ASSERT_EQUAL_UINT32(20100, when(MHI_GROUP_ACT_CONFIGS));
+  // The loser's record delivered again, or with a new uptime and its demote:
+  // the list is the same, so no further configs.
+  record("airco-uitkijk", "1;0;1;530;60;ac_outdoor;airco/uitkijk/", 21000);
   reset_seen();
-  run(46000, 60000);
+  run(21000, 60000);
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
 }
 
@@ -548,14 +566,15 @@ static void test_scenario_15_the_millis_wrap(void) {
   TEST_ASSERT_TRUE(act.flags & MHI_GROUP_ACT_START);
 }
 
-// 16. Nothing is published during the grace period, whatever arrives.
+// 16. Nothing but Group 0 is published during the grace period, whatever arrives.
 static void test_scenario_16_nothing_in_the_grace_period(void) {
   boot("airco-a", 0);
   record("airco-a", "1;1;4;900;60;ac_outdoor;airco/me/", 0);
   record("airco-b", "1;1;9;900;60;ac_outdoor;airco/b/", 0);
   mhi_group_on_connected(&g, "airco-b", true, 0);
   run(100, 4900);
-  TEST_ASSERT_EQUAL_UINT8(0, seen);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_STATE, seen);
+  TEST_ASSERT_EQUAL_UINT32(100, when(MHI_GROUP_ACT_STATE));
   TEST_ASSERT_FALSE(mhi_group_may_publish_system(&g));
 }
 
@@ -626,36 +645,38 @@ static void test_scenario_21_a_shorter_peer_period(void) {
   TEST_ASSERT_TRUE(act.flags & MHI_GROUP_ACT_START);
 }
 
-// 22. A third unit with a higher term arrives while a re-send is pending: the
-// demote cancels the re-send, so no configs.
+// 22. A third unit with a higher term arrives while a list change settles:
+// the demote drops it, so no configs.
 static void test_scenario_22_a_demote_cancels_the_resend(void) {
   boot("airco-slaapkamer", 0);
-  run(100, 10000);                                                           // claims term 1 at 10 s
-  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 10050);  // loses: the re-send is due at 45.05 s
-  run(10100, 30000);                                                         // the claim's own configs at 40 s
-  record("airco-zolder", "1;1;2;900;60;ac_outdoor;airco/zolder/", 41000);    // term 2 beats this unit
+  run(100, 10000);                                                           // claims term 1 at 10 s, configs at once
+  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 10050);  // loses: the list settles at 20.1 s
+  run(10100, 5000);
+  record("airco-zolder", "1;1;2;900;60;ac_outdoor;airco/zolder/", 15100);    // term 2 beats this unit
   reset_seen();
-  tick(41000);
+  tick(15100);
   TEST_ASSERT_TRUE(act.flags & MHI_GROUP_ACT_DEMOTE);
-  run(41100, 60000);
+  run(15200, 60000);
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
 }
 
-// 23. A reconnect while a re-send is pending: nothing pending from before the
-// connect goes out; the configs come 30 s after the grace period.
+// 23. A reconnect while a list change settles: nothing pending from before
+// the connect goes out; the publisher start after the grace period sends the
+// configs at once, with the list as the broker delivered it again.
 static void test_scenario_23_a_reconnect_drops_what_was_pending(void) {
   boot("airco-slaapkamer", 0);
-  run(100, 10000);                                                           // claims at 10 s: configs due at 40 s
-  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 10050);  // the re-send is due at 45.05 s
-  run(10100, 9900);
-  mhi_group_connect(&g, 20000);  // the broker connection dropped and came back
+  run(100, 10000);                                                           // claims at 10 s
+  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 10050);  // the list settles at 20.1 s
+  run(10100, 4900);
+  mhi_group_connect(&g, 15000);  // the broker connection dropped and came back
   reset_seen();
-  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 20000);  // retained, delivered again
-  run(20000, 35000);  // up to 54.9 s
-  TEST_ASSERT_EQUAL_UINT32(25000, when(MHI_GROUP_ACT_START));  // the publisher start after the grace period
-  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
-  tick(55000);
-  TEST_ASSERT_TRUE(act.flags & MHI_GROUP_ACT_CONFIGS);
+  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 15000);  // retained, delivered again
+  run(15100, 35000);
+  TEST_ASSERT_EQUAL_UINT32(20000, when(MHI_GROUP_ACT_START));    // the publisher start after the grace period
+  TEST_ASSERT_EQUAL_UINT32(20000, when(MHI_GROUP_ACT_CONFIGS));  // with it, both units listed; nothing at 20.1 s
+  MhiGroupAvty list;
+  mhi_group_availability(&g, &list);
+  TEST_ASSERT_EQUAL_UINT8(2, list.count);
 }
 
 // 24. A second connected 0 does not restart the 30 s: the takeover is 35 s after the first.
@@ -758,8 +779,8 @@ static void test_scenario_29_a_down_entry_stays_gone_across_the_wrap(void) {
   TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_DEMOTE));
 }
 
-// 30. A losing claim seen during the grace period arms no re-send: the
-// publisher start's configs, 30 s after the grace period, come after it anyway.
+// 30. A losing claim seen during the grace period: the publisher start after
+// it sends the configs once, with that unit already in the list.
 static void test_scenario_30_no_resend_armed_in_the_grace_period(void) {
   mhi_group_init(&g, "airco-slaapkamer", "ac_outdoor", "airco/me/", 60);
   g.role = 1;  // a publisher that reconnects without a reboot
@@ -769,12 +790,12 @@ static void test_scenario_30_no_resend_armed_in_the_grace_period(void) {
   reset_seen();
   run(100, 1900);
   record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 2000);  // loses to this unit
-  run(2000, 33100);  // up to 35.0 s
+  run(2000, 3100);  // up to 5.0 s
   TEST_ASSERT_EQUAL_UINT32(5000, when(MHI_GROUP_ACT_START));
-  TEST_ASSERT_EQUAL_UINT32(35000, when(MHI_GROUP_ACT_CONFIGS));
+  TEST_ASSERT_EQUAL_UINT32(5000, when(MHI_GROUP_ACT_CONFIGS));
   reset_seen();
-  run(35100, 60000);
-  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));  // none at 37 s
+  run(5100, 60000);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
 }
 
 // --- the plumbing the glue relies on ------------------------------------------
@@ -805,18 +826,110 @@ static void test_scenario_32_the_group_state_leaves_a_mismatch(void) {
   TEST_ASSERT_EQUAL_UINT8(0, act.state);
 }
 
-// 33. Rule 3's re-send is not pushed back by the loser's next changed record
-// (fork #25): it goes out 35 s after the first.
+// 33. A record that changes only its role, term or uptime leaves the list as
+// it was: no configs (fork #29).
 static void test_scenario_33_the_resend_is_not_restarted(void) {
   boot("airco-slaapkamer", 0);
+  record("airco-uitkijk", "1;0;0;500;60;ac_outdoor;airco/uitkijk/", 0);
   run(100, 10000);
-  TEST_ASSERT_EQUAL_UINT32(10000, when(MHI_GROUP_ACT_START));
-  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 10050);
-  run(10100, 30000);  // the claim's own configs at 40 s
-  record("airco-uitkijk", "1;1;1;530;60;ac_outdoor;airco/uitkijk/", 40050);  // changed: its uptime
+  TEST_ASSERT_EQUAL_UINT32(10000, when(MHI_GROUP_ACT_CONFIGS));
   reset_seen();
-  run(40100, 10000);
-  TEST_ASSERT_EQUAL_UINT32(45100, when(MHI_GROUP_ACT_CONFIGS));
+  record("airco-uitkijk", "1;0;0;560;60;ac_outdoor;airco/uitkijk/", 60000);
+  record("airco-uitkijk", "1;0;3;620;60;ac_outdoor;airco/uitkijk/", 120000);
+  run(10100, 180000);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
+}
+
+// --- fork #29: the availability list -------------------------------------------
+
+// 34. Who is listed: this unit and every member with its outdoor ID, alive or
+// not; never a foreign record or another outdoor ID; sorted by hostname.
+static void test_scenario_34_the_list_holds_the_compatible_members(void) {
+  boot("airco-m", 0);
+  record("airco-z", "1;0;0;500;60;ac_outdoor;airco/z/", 0);
+  record("airco-b", "1;0;0;500;60;ac_outdoor;airco/b/", 0);
+  record("airco-a", "2;foreign", 0);
+  record("airco-c", "1;0;0;500;60;other_outdoor;airco/c/", 0);
+  mhi_group_on_connected(&g, "airco-b", false, 0);  // down: still listed
+  MhiGroupAvty list;
+  mhi_group_availability(&g, &list);
+  TEST_ASSERT_EQUAL_UINT8(3, list.count);
+  TEST_ASSERT_EQUAL_STRING("airco-b", list.host[0]);
+  TEST_ASSERT_EQUAL_STRING("airco/b/", list.prefix[0]);
+  TEST_ASSERT_EQUAL_STRING("airco-m", list.host[1]);
+  TEST_ASSERT_EQUAL_STRING("airco/me/", list.prefix[1]);
+  TEST_ASSERT_EQUAL_STRING("airco-z", list.host[2]);
+  // Days later, stale and gone: still listed.
+  run(100, 1000);
+  tick(400000);
+  mhi_group_availability(&g, &list);
+  TEST_ASSERT_EQUAL_UINT8(3, list.count);
+  // An empty record (a unit taken out of the group) removes it.
+  record("airco-z", "", 400000);
+  mhi_group_availability(&g, &list);
+  TEST_ASSERT_EQUAL_UINT8(2, list.count);
+  TEST_ASSERT_EQUAL_STRING("airco-m", list.host[1]);
+}
+
+// 35. More units than MHI_GROUP_AVTY_MAX: this unit always, then the lowest others.
+static void test_scenario_35_the_list_is_capped_and_keeps_this_unit(void) {
+  boot("airco-y", 0);
+  record("airco-d", "1;0;0;500;60;ac_outdoor;airco/d/", 0);
+  record("airco-b", "1;0;0;500;60;ac_outdoor;airco/b/", 0);
+  record("airco-c", "1;0;0;500;60;ac_outdoor;airco/c/", 0);
+  record("airco-z", "1;0;0;500;60;ac_outdoor;airco/z/", 0);
+  MhiGroupAvty list;
+  mhi_group_availability(&g, &list);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_AVTY_MAX, list.count);
+  TEST_ASSERT_EQUAL_STRING("airco-b", list.host[0]);
+  TEST_ASSERT_EQUAL_STRING("airco-c", list.host[1]);
+  TEST_ASSERT_EQUAL_STRING("airco-y", list.host[2]);
+  // A lone unit lists itself.
+  boot("airco-solo", 0);
+  mhi_group_availability(&g, &list);
+  TEST_ASSERT_EQUAL_UINT8(1, list.count);
+  TEST_ASSERT_EQUAL_STRING("airco-solo", list.host[0]);
+  TEST_ASSERT_EQUAL_STRING("airco/me/", list.prefix[0]);
+}
+
+// 36. A publisher sends the configs again when a unit joins or leaves, once
+// the list has held still for 10 s; changes inside that time restart the wait.
+static void test_scenario_36_a_list_change_resends_after_it_settles(void) {
+  boot("airco-a", 0);
+  run(100, 10000);
+  TEST_ASSERT_EQUAL_UINT32(10000, when(MHI_GROUP_ACT_CONFIGS));
+  reset_seen();
+  record("airco-b", "1;0;0;500;60;ac_outdoor;airco/b/", 20000);  // joins
+  run(20000, 5000);
+  record("airco-c", "1;0;0;500;60;ac_outdoor;airco/c/", 25000);  // joins before the first settled
+  run(25000, 9900);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));
+  run(34900, 1000);
+  TEST_ASSERT_EQUAL_UINT32(35000, when(MHI_GROUP_ACT_CONFIGS));  // one re-send, 10 s after the last change
+  reset_seen();
+  record("airco-c", "", 40000);                                  // leaves
+  record("airco-c", "1;0;0;500;60;ac_outdoor;airco/c/", 42000);  // and is back before it settled
+  run(40000, 30000);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_CONFIGS));  // the same list as sent: nothing
+}
+
+// 37. Group 0 goes out at the first tick after every connect, even for a
+// publisher that resumes, so a retained Group 1 from before never stands next
+// to the real publisher's (fork #29); a member publishes no second 0.
+static void test_scenario_37_group_0_at_once_after_a_connect(void) {
+  member_with_publisher(0);  // asserts Group 0 and the record, no claim
+  mhi_group_connect(&g, 20000);
+  reset_seen();
+  record("airco-slaapkamer", "1;1;1;500;60;ac_outdoor;airco/slaapkamer/", 20000);
+  mhi_group_on_connected(&g, "airco-slaapkamer", true, 20000);
+  tick(20000);
+  TEST_ASSERT_EQUAL_UINT8(MHI_GROUP_ACT_STATE, act.flags);
+  TEST_ASSERT_EQUAL_UINT8(0, act.state);
+  reset_seen();
+  run(20100, 10000);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, when(MHI_GROUP_ACT_STATE));
+  TEST_ASSERT_EQUAL_UINT32(25000, when(MHI_GROUP_ACT_RECORD));
+  TEST_ASSERT_FALSE(mhi_group_may_publish_system(&g));
 }
 
 static void test_connected_topics_are_subscribed_from_the_tick_even_in_the_grace_period(void) {
@@ -918,6 +1031,10 @@ int main(void) {
   RUN_TEST(test_scenario_31_a_claim_at_the_highest_term_saturates);
   RUN_TEST(test_scenario_32_the_group_state_leaves_a_mismatch);
   RUN_TEST(test_scenario_33_the_resend_is_not_restarted);
+  RUN_TEST(test_scenario_34_the_list_holds_the_compatible_members);
+  RUN_TEST(test_scenario_35_the_list_is_capped_and_keeps_this_unit);
+  RUN_TEST(test_scenario_36_a_list_change_resends_after_it_settles);
+  RUN_TEST(test_scenario_37_group_0_at_once_after_a_connect);
   RUN_TEST(test_connected_topics_are_subscribed_from_the_tick_even_in_the_grace_period);
   RUN_TEST(test_a_connected_topic_maps_to_its_peer);
   RUN_TEST(test_own_record_after_the_grace_period_is_ignored);
