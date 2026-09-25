@@ -344,8 +344,10 @@ MhiGroupResult mhi_group_on_record(MhiGroup* g, const char* host, const char* pa
   }
 
   // §6.2 rule 3: a compatible peer claims the role this unit holds and wins.
+  // The loser's next changed record (its uptime moves) does not push the
+  // re-send back (fork #25): it stays 35 s after the first.
   if (changed && !g->in_grace && g->role == 1 && kind == MHI_GROUP_KIND_MEMBER && rec.role == 1 &&
-      compatible(g, p, now) && beats(g->term, g->host, rec.term, p->host)) {
+      compatible(g, p, now) && beats(g->term, g->host, rec.term, p->host) && !g->resend_pending) {
     g->resend_pending = true;
     g->resend_ms = now;
   }

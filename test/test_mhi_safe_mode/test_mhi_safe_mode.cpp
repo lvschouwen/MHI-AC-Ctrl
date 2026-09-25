@@ -254,6 +254,16 @@ static void test_three_aborts_in_a_row_enter_safe_mode(void) {
   TEST_ASSERT_EQUAL_UINT8(1, b.entries);
 }
 
+// An invalid record's entries byte is garbage too: it counts as 0 (fork #25).
+static void test_a_garbage_records_entries_count_as_0(void) {
+  const uint32_t in[3] = {0xdeadbeefu, 0x0000ff05u, 0u};
+  uint32_t out[3];
+  const MhiSafeBoot b = mhi_safe_boot(MHI_RESET_EXCEPTION, in, out);
+  TEST_ASSERT_EQUAL_UINT8(1, b.count);
+  TEST_ASSERT_EQUAL_UINT8(0, b.entries);
+  TEST_ASSERT_FALSE(b.safe_mode);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_the_crash_reasons_count_up);
@@ -272,5 +282,6 @@ int main(void) {
   RUN_TEST(test_a_power_on_ignores_the_crashed_bit);
   RUN_TEST(test_marking_sets_the_bit_and_keeps_the_record);
   RUN_TEST(test_three_aborts_in_a_row_enter_safe_mode);
+  RUN_TEST(test_a_garbage_records_entries_count_as_0);
   return UNITY_END();
 }

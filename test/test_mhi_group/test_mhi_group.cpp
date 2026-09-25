@@ -779,6 +779,46 @@ static void test_scenario_30_no_resend_armed_in_the_grace_period(void) {
 
 // --- the plumbing the glue relies on ------------------------------------------
 
+// 31. A claim when a peer's term is already UINT32_MAX saturates rather than
+// wrapping to the invalid term 0 (fork #25).
+static void test_scenario_31_a_claim_at_the_highest_term_saturates(void) {
+  boot("airco-a", 0);
+  record("airco-b", "1;0;4294967295;500;60;ac_outdoor;airco/b/", 0);
+  run(100, 10000);
+  TEST_ASSERT_EQUAL_UINT32(10000, when(MHI_GROUP_ACT_START));
+  char rec[MHI_GROUP_RECORD_MAX + 1];
+  own_record(rec);
+  TEST_ASSERT_EQUAL_STRING("1;1;4294967295;7;60;ac_outdoor;airco/me/", rec);
+}
+
+// 32. A mismatch that is fixed publishes the Group state again (fork #25).
+static void test_scenario_32_the_group_state_leaves_a_mismatch(void) {
+  boot("airco-b", 0);
+  record("airco-a", "1;0;0;500;60;other_outdoor;airco/a/", 0);
+  mhi_group_on_connected(&g, "airco-a", true, 0);
+  run(100, 10000);
+  TEST_ASSERT_EQUAL_UINT8(2, g.state);
+  record("airco-a", "1;0;0;510;60;ac_outdoor;airco/a/", 10100);  // the leader now shares our ID
+  reset_seen();
+  tick(10200);
+  TEST_ASSERT_EQUAL_UINT32(10200, when(MHI_GROUP_ACT_STATE));
+  TEST_ASSERT_EQUAL_UINT8(0, act.state);
+}
+
+// 33. Rule 3's re-send is not pushed back by the loser's next changed record
+// (fork #25): it goes out 35 s after the first.
+static void test_scenario_33_the_resend_is_not_restarted(void) {
+  boot("airco-slaapkamer", 0);
+  run(100, 10000);
+  TEST_ASSERT_EQUAL_UINT32(10000, when(MHI_GROUP_ACT_START));
+  record("airco-uitkijk", "1;1;1;500;60;ac_outdoor;airco/uitkijk/", 10050);
+  run(10100, 30000);  // the claim's own configs at 40 s
+  record("airco-uitkijk", "1;1;1;530;60;ac_outdoor;airco/uitkijk/", 40050);  // changed: its uptime
+  reset_seen();
+  run(40100, 10000);
+  TEST_ASSERT_EQUAL_UINT32(45100, when(MHI_GROUP_ACT_CONFIGS));
+}
+
 static void test_connected_topics_are_subscribed_from_the_tick_even_in_the_grace_period(void) {
   boot("airco-uitkijk", 0);
   record("airco-slaapkamer", "1;0;1;500;60;ac_outdoor;airco/slaapkamer/", 0);
@@ -875,6 +915,9 @@ int main(void) {
   RUN_TEST(test_scenario_28_a_stale_entry_stays_gone_across_the_wrap);
   RUN_TEST(test_scenario_29_a_down_entry_stays_gone_across_the_wrap);
   RUN_TEST(test_scenario_30_no_resend_armed_in_the_grace_period);
+  RUN_TEST(test_scenario_31_a_claim_at_the_highest_term_saturates);
+  RUN_TEST(test_scenario_32_the_group_state_leaves_a_mismatch);
+  RUN_TEST(test_scenario_33_the_resend_is_not_restarted);
   RUN_TEST(test_connected_topics_are_subscribed_from_the_tick_even_in_the_grace_period);
   RUN_TEST(test_a_connected_topic_maps_to_its_peer);
   RUN_TEST(test_own_record_after_the_grace_period_is_ignored);
