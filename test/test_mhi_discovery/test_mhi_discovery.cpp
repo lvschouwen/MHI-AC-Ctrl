@@ -30,7 +30,8 @@ static const MhiDiscoveryCtx kDefault = {
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
             "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
-            "Remote", "Indoor fan speed", "Internal setpoint"},
+            "Remote", "Indoor fan speed", "Internal setpoint",
+            "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -63,6 +64,8 @@ static const MhiDiscoveryCtx kDefault = {
   .t_crash_info = "CrashInfo",
   .t_remote = "Remote", .remote_on = "On", .remote_off = "Off",
   .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
+  .t_op_ou_eev1 = "OU-EEV1", .t_op_thi_r1 = "THI-R1", .t_version = "Version",
+  .t_op_td = "TD", .t_op_tdsh = "TDSH",
 };
 
 // Lucas's Uitkijk: custom names throughout, a template, an entity prefix, and a
@@ -84,7 +87,8 @@ static const MhiDiscoveryCtx kUitkijk = {
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
             "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
-            "Remote", "Indoor fan speed", "Internal setpoint"},
+            "Remote", "Indoor fan speed", "Internal setpoint",
+            "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat"},
   .reset_reason_tpl = "{{ {'Power On': 'power applied', 'Software/System restart': 'software restart (update or reset)', 'Hardware Watchdog': 'hardware watchdog', 'Software Watchdog': 'software watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'woke from deep sleep', 'External System': 'external reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -117,6 +121,8 @@ static const MhiDiscoveryCtx kUitkijk = {
   .t_crash_info = "CrashInfo",
   .t_remote = "Remote", .remote_on = "On", .remote_off = "Off",
   .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
+  .t_op_ou_eev1 = "OU-EEV1", .t_op_thi_r1 = "THI-R1", .t_version = "Version",
+  .t_op_td = "TD", .t_op_tdsh = "TDSH",
 };
 
 // Slaapkamer: has_lr and the outdoor device both on (batch C spec §3), as the
@@ -149,7 +155,8 @@ static const char* const kFixtureName[MHI_DISCOVERY_ROWS] = {
   "vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_code",
   "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection",
   "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info",
-  "remote", "iu_fan_speed", "internal_setpoint"};
+  "remote", "iu_fan_speed", "internal_setpoint",
+  "expansion_valve", "coil_temp", "version", "ou_discharge_temp", "ou_superheat"};
 
 // Balanced braces and brackets outside strings, every string closed, no
 // printf conversion left over and no NULL argument printed.
@@ -492,14 +499,35 @@ static void test_the_group_role_row_is_a_unit_row(void) {
 
 static void test_is_outdoor_row_is_the_closed_outdoor_block(void) {
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++)
-    TEST_ASSERT_EQUAL(r >= MHI_DISCOVERY_OU_OUTDOOR && r <= MHI_DISCOVERY_OU_PROTECTION,
+    TEST_ASSERT_EQUAL((r >= MHI_DISCOVERY_OU_OUTDOOR && r <= MHI_DISCOVERY_OU_PROTECTION) ||
+                          (r >= MHI_DISCOVERY_OU_DISCHARGE_TEMP && r <= MHI_DISCOVERY_OU_SUPERHEAT),
                       mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r));
   TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_ROWS));
 }
 
+// The group's outdoor pass (src/discovery.cpp) walks both blocks and skips the
+// unit rows between them (fork #41).
+static void test_next_outdoor_row_walks_both_blocks(void) {
+  int visited[MHI_DISCOVERY_ROWS] = {0};
+  int count = 0;
+  for (MhiDiscoveryRow r = mhi_discovery_next_outdoor_row(MHI_DISCOVERY_OU_OUTDOOR); r < MHI_DISCOVERY_ROWS;
+       r = mhi_discovery_next_outdoor_row(r + 1)) {
+    TEST_ASSERT_TRUE(mhi_discovery_is_outdoor_row(r));
+    visited[r]++;
+    count++;
+  }
+  TEST_ASSERT_EQUAL_INT(9, count);
+  TEST_ASSERT_EQUAL_INT(1, visited[MHI_DISCOVERY_OU_PROTECTION]);
+  TEST_ASSERT_EQUAL_INT(1, visited[MHI_DISCOVERY_OU_DISCHARGE_TEMP]);
+  TEST_ASSERT_EQUAL_INT(1, visited[MHI_DISCOVERY_OU_SUPERHEAT]);
+  TEST_ASSERT_EQUAL(MHI_DISCOVERY_OU_DISCHARGE_TEMP, mhi_discovery_next_outdoor_row(MHI_DISCOVERY_GROUP_ROLE));
+  TEST_ASSERT_EQUAL(MHI_DISCOVERY_ROWS, mhi_discovery_next_outdoor_row(MHI_DISCOVERY_ROWS));
+  TEST_ASSERT_EQUAL(MHI_DISCOVERY_ROWS, mhi_discovery_next_outdoor_row(255));
+}
+
 static void test_outdoor_rows_use_the_group_base_and_absolute_availability(void) {
   char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
-  for (int r = MHI_DISCOVERY_OU_OUTDOOR; r <= MHI_DISCOVERY_OU_PROTECTION; r++) {
+  for (int r = mhi_discovery_next_outdoor_row(0); r < MHI_DISCOVERY_ROWS; r = mhi_discovery_next_outdoor_row(r + 1)) {
     if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kSlaapkamer)) continue;
     TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &kSlaapkamer, out, sizeof(out)) > 0);
     TEST_ASSERT_EQUAL_STRING_LEN("{\"~\":\"airco/outdoor\",", out, strlen("{\"~\":\"airco/outdoor\","));
@@ -520,7 +548,7 @@ static void test_outdoor_rows_use_the_group_base_and_absolute_availability(void)
   uitkijk.base = "airco/uitkijk";
   uitkijk.hostname = "airco-uitkijk";
   char other[MHI_DISCOVERY_BUF];
-  for (int r = MHI_DISCOVERY_OU_OUTDOOR; r <= MHI_DISCOVERY_OU_PROTECTION; r++) {
+  for (int r = mhi_discovery_next_outdoor_row(0); r < MHI_DISCOVERY_ROWS; r = mhi_discovery_next_outdoor_row(r + 1)) {
     if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kSlaapkamer)) continue;
     TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &kSlaapkamer, out, sizeof(out)) > 0);
     TEST_ASSERT_TRUE(mhi_discovery_build((MhiDiscoveryRow)r, &uitkijk, other, sizeof(other)) > 0);
@@ -558,7 +586,7 @@ static void test_the_worst_outdoor_row_fits(void) {
   c.group_base = "g12345678901234567890123456789012345678901234567890123456789012";     // 63
   c.outdoor_entity_prefix = "e1234567890123456789012345678901234567";
   size_t longest = 0;
-  for (int r = MHI_DISCOVERY_OU_OUTDOOR; r <= MHI_DISCOVERY_OU_PROTECTION; r++) {
+  for (int r = mhi_discovery_next_outdoor_row(0); r < MHI_DISCOVERY_ROWS; r = mhi_discovery_next_outdoor_row(r + 1)) {
     if (!mhi_discovery_row_enabled((MhiDiscoveryRow)r, &c)) continue;
     char out[MHI_DISCOVERY_BUF];
     const size_t n = mhi_discovery_build((MhiDiscoveryRow)r, &c, out, sizeof(out));
@@ -740,15 +768,48 @@ static void test_the_fan_speed_and_internal_setpoint_rows_read_the_units_op_data
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/Tsetpoint\",\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\",\"ent_cat\":\"diagnostic\","));
 }
 
-static void test_a_unit_has_24_entities_with_the_33_byte_frame(void) {
+// Fork #41: the unit's valve, coil and version, and the outdoor unit's
+// discharge temperature and superheat.
+static void test_the_fork_41_diagnostic_rows(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_EXPANSION_VALVE));
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_COIL_TEMP));
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_VERSION));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_EXPANSION_VALVE, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_expansion_valve/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_EXPANSION_VALVE, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"default_entity_id\":\"sensor.ac_slaapkamer_expansion_valve\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/OU-EEV1\",\"unit_of_meas\":\"pulses\",\"stat_cla\":\"measurement\",\"ic\":\"mdi:valve\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_COIL_TEMP, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_coil_temp\",\"default_entity_id\":\"sensor.ac_slaapkamer_coil_temperature\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/THI-R1\",\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_VERSION, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_version\",\"default_entity_id\":\"sensor.ac_slaapkamer_version\",\"stat_t\":\"~/Version\",\"ic\":\"mdi:tag-outline\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_NULL(strstr(out, "stat_cla"));
+  // The outdoor pair: the group root, keyed by the outdoor ID.
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_OU_DISCHARGE_TEMP, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_outdoor_discharge_temp/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_DISCHARGE_TEMP, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "{\"~\":\"airco/outdoor\",\"name\":\"Discharge temperature\",\"uniq_id\":\"ac_slaapkamer_outdoor_discharge_temp\",\"default_entity_id\":\"sensor.ac_outdoor_discharge_temperature\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/TD\",\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_OU_SUPERHEAT, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_outdoor_discharge_superheat\",\"default_entity_id\":\"sensor.ac_outdoor_discharge_superheat\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/TDSH\",\"unit_of_meas\":\"K\",\"stat_cla\":\"measurement\",\"ic\":\"mdi:thermometer-lines\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_NULL(strstr(out, "dev_cla"));  // a difference: HA would convert kelvin as an absolute temperature
+  // Only the group's publisher sends them.
+  TEST_ASSERT_FALSE(mhi_discovery_row_enabled(MHI_DISCOVERY_OU_SUPERHEAT, &kUitkijk));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_OU_SUPERHEAT, &kSlaapkamer));
+}
+
+static void test_a_unit_has_27_entities_with_the_33_byte_frame(void) {
   int with_lr = 0, without_lr = 0;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
     if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) continue;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kUitkijk)) with_lr++;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) without_lr++;
   }
-  TEST_ASSERT_EQUAL_INT(24, with_lr);
-  TEST_ASSERT_EQUAL_INT(22, without_lr);
+  TEST_ASSERT_EQUAL_INT(27, with_lr);
+  TEST_ASSERT_EQUAL_INT(25, without_lr);
 }
 
 // --- the committed reference payloads ---------------------------------------
@@ -813,6 +874,7 @@ int main(void) {
   RUN_TEST(test_outdoor_rows_read_the_group_roots_opdata_topics);
   RUN_TEST(test_the_group_role_row_is_a_unit_row);
   RUN_TEST(test_is_outdoor_row_is_the_closed_outdoor_block);
+  RUN_TEST(test_next_outdoor_row_walks_both_blocks);
   RUN_TEST(test_outdoor_rows_use_the_group_base_and_absolute_availability);
   RUN_TEST(test_the_availability_list_is_bounded_and_never_empty);
   RUN_TEST(test_the_worst_outdoor_row_fits);
@@ -827,7 +889,8 @@ int main(void) {
   RUN_TEST(test_the_crash_info_row_reads_the_json);
   RUN_TEST(test_the_remote_row_is_a_binary_sensor_on_the_remote_topic);
   RUN_TEST(test_the_fan_speed_and_internal_setpoint_rows_read_the_units_op_data);
-  RUN_TEST(test_a_unit_has_24_entities_with_the_33_byte_frame);
+  RUN_TEST(test_the_fork_41_diagnostic_rows);
+  RUN_TEST(test_a_unit_has_27_entities_with_the_33_byte_frame);
   RUN_TEST(test_reference_fixtures_are_written);
   RUN_TEST(test_second_fixture_set_is_written);
   return UNITY_END();

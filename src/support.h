@@ -81,7 +81,7 @@ static_assert(RESCUE_AP_AFTER_MIN >= 1 && RESCUE_AP_MIN >= 1, "the rescue access
 #define HA_CLIMATE_ID HOSTNAME                      // unique_id of the climate entity
 #endif
 #ifndef HA_ID_PREFIX
-#define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart, _run_time, _cleaning, _external_troom, _crash_info, _remote, _iu_fan_speed, _internal_setpoint
+#define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart, _run_time, _cleaning, _external_troom, _crash_info, _remote, _iu_fan_speed, _internal_setpoint, _expansion_valve, _coil_temp, _version
 #endif
 //#define HA_ENTITY_PREFIX "ac_slaapkamer"          // when defined, every entity gets default_entity_id: climate.<prefix>, and <domain>.<prefix>_<slug of its name> for the rest (what HA derives itself); lower case a-z 0-9 _
 #ifndef HA_NAME_VANES
@@ -176,6 +176,21 @@ static_assert(RESCUE_AP_AFTER_MIN >= 1 && RESCUE_AP_MIN >= 1, "the rescue access
 #endif
 #ifndef HA_NAME_INTERNAL_SETPOINT
 #define HA_NAME_INTERNAL_SETPOINT "Internal setpoint"  // OpData/Tsetpoint; +0.5 = ECO (fork #39)
+#endif
+#ifndef HA_NAME_EXPANSION_VALVE
+#define HA_NAME_EXPANSION_VALVE "Expansion valve"   // OpData/OU-EEV1, this indoor circuit's valve in pulses (fork #41)
+#endif
+#ifndef HA_NAME_COIL_TEMP
+#define HA_NAME_COIL_TEMP "Coil temperature"        // OpData/THI-R1, the indoor heat exchanger, rough (fork #41)
+#endif
+#ifndef HA_NAME_VERSION
+#define HA_NAME_VERSION "Version"                   // the Version topic, the build's git hash (fork #41)
+#endif
+#ifndef HA_NAME_OU_DISCHARGE_TEMP
+#define HA_NAME_OU_DISCHARGE_TEMP "Discharge temperature"  // OpData/TD, the outdoor device (fork #41)
+#endif
+#ifndef HA_NAME_OU_SUPERHEAT
+#define HA_NAME_OU_SUPERHEAT "Discharge superheat"  // OpData/TDSH, the outdoor device (fork #41)
 #endif
 #ifndef HA_NAME_CRASH_INFO
 #define HA_NAME_CRASH_INFO "Crash info"             // the last crash's exccause, CrashInfo (fork #25)

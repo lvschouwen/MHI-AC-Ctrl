@@ -1,0 +1,2 @@
+homeassistant/sensor/ac_slaapkamer_coil_temp/config
+{"~":"airco/slaapkamer","name":"Coil temperature","uniq_id":"ac_slaapkamer_coil_temp","default_entity_id":"sensor.ac_slaapkamer_coil_temperature","stat_t":"~/OpData/THI-R1","dev_cla":"temperature","unit_of_meas":"°C","stat_cla":"measurement","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

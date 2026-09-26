@@ -1,0 +1,2 @@
+homeassistant/sensor/MHI-AC-Ctrl_coil_temp/config
+{"~":"MHI-AC-Ctrl","name":"Coil temperature","uniq_id":"MHI-AC-Ctrl_coil_temp","stat_t":"~/OpData/THI-R1","dev_cla":"temperature","unit_of_meas":"°C","stat_cla":"measurement","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["MHI-AC-Ctrl"],"name":"MHI-AC-Ctrl","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"fixture"}}

@@ -1,0 +1,2 @@
+homeassistant/sensor/ac_slaapkamer_version/config
+{"~":"airco/slaapkamer","name":"Version","uniq_id":"ac_slaapkamer_version","default_entity_id":"sensor.ac_slaapkamer_version","stat_t":"~/Version","ic":"mdi:tag-outline","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

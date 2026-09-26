@@ -59,7 +59,8 @@ static MhiDiscoveryCtx ctx = {
             HA_NAME_OU_OUTDOOR, HA_NAME_OU_CT, HA_NAME_OU_KWH, HA_NAME_OU_COMP, HA_NAME_OU_DEFROST,
             HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION, HA_NAME_GROUP_ROLE, HA_NAME_RESTART, HA_NAME_RUN_TIME,
             HA_NAME_CLEANING, HA_NAME_TROOM_EXTERNAL, HA_NAME_CRASH_INFO,
-            HA_NAME_REMOTE, HA_NAME_IU_FAN_SPEED, HA_NAME_INTERNAL_SETPOINT},
+            HA_NAME_REMOTE, HA_NAME_IU_FAN_SPEED, HA_NAME_INTERNAL_SETPOINT,
+            HA_NAME_EXPANSION_VALVE, HA_NAME_COIL_TEMP, HA_NAME_VERSION, HA_NAME_OU_DISCHARGE_TEMP, HA_NAME_OU_SUPERHEAT},
 #ifdef HA_RESET_REASON_TPL
   .reset_reason_tpl = HA_RESET_REASON_TPL,
 #else
@@ -108,6 +109,8 @@ static MhiDiscoveryCtx ctx = {
   .t_crash_info = TOPIC_CRASH_INFO,
   .t_remote = TOPIC_REMOTE, .remote_on = PAYLOAD_REMOTE_ON, .remote_off = PAYLOAD_REMOTE_OFF,
   .t_op_iu_fanspeed = TOPIC_IU_FANSPEED, .t_op_tsetpoint = TOPIC_TSETPOINT,
+  .t_op_ou_eev1 = TOPIC_OU_EEV1, .t_op_thi_r1 = TOPIC_THI_R1, .t_version = TOPIC_VERSION,
+  .t_op_td = TOPIC_TD, .t_op_tdsh = TOPIC_TDSH,
 };
 
 static bool modes_ok = false;
@@ -196,13 +199,14 @@ void discovery_loop() {
     }
   }
   else if (next_outdoor_row < MHI_DISCOVERY_ROWS) {  // after the unit rows, one per pass
-    const MhiDiscoveryRow row = (MhiDiscoveryRow)next_outdoor_row++;
-    if (mhi_discovery_is_outdoor_row(row)) {
+    const MhiDiscoveryRow row = mhi_discovery_next_outdoor_row(next_outdoor_row);  // both blocks (fork #41)
+    if (row < MHI_DISCOVERY_ROWS) {
+      next_outdoor_row = row + 1;
       if (!publish_row(row)) outdoor_row_skipped = true;
     }
     else {
-      next_outdoor_row = MHI_DISCOVERY_ROWS;  // past the outdoor block: done
-      // Nothing when all six fit (fork #24 spec §2.1), and never over modes or
+      next_outdoor_row = MHI_DISCOVERY_ROWS;  // past the last outdoor row: done
+      // Nothing when all fit (fork #24 spec §2.1), and never over modes or
       // an earlier skipped: modes > skipped > ok across both passes.
       if (outdoor_row_skipped && status_ok) {
         status_ok = false;

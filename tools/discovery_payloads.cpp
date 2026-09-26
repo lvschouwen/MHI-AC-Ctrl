@@ -18,7 +18,7 @@
 //   --name-ou-defrost, --name-ou-comp-run, --name-ou-protection.
 // The outdoor election (fork #22) adds: --group-base (GROUP_ROOT without its
 //   trailing slash, default --base: a single split), which the six outdoor
-//   rows read, and --name-group-role. --outdoor 1 adds those six rows as this
+//   rows read, and --name-group-role. --outdoor 1 adds the outdoor rows (eight since fork #41) as this
 //   unit publishes them when it is the group's publisher. The retired energy
 //   row is never rendered.
 // Fork #29 adds --avty-member <hostname>=<MQTT_PREFIX>, once per unit of the
@@ -30,6 +30,8 @@
 //   OpData/TOTAL-IU-RUN.
 // The cleaning and external-Troom rows (fork #25) add --name-cleaning and
 //   --name-troom-external; the crash-info row adds --name-crash-info.
+// Fork #41 adds --name-expansion-valve, --name-coil-temp, --name-version and,
+//   for the outdoor rows, --name-ou-discharge-temp and --name-ou-superheat.
 // Every option has the repo default; --modes and --vanes take exactly six
 // comma-separated items and --vanes-lr exactly eight; --lr and --outdoor take
 // exactly 0 or 1; --outdoor-id defaults to the slug of --group-base plus
@@ -50,7 +52,8 @@ static const char* kNameOption[MHI_DISCOVERY_ROWS] = {
   "--name-ou-outdoor", "--name-ou-ct", "--name-ou-kwh", "--name-ou-comp", "--name-ou-defrost",
   "--name-ou-comp-run", "--name-ou-protection", "--name-group-role", "--name-restart",
   "--name-run-time", "--name-cleaning", "--name-troom-external", "--name-crash-info",
-  "--name-remote", "--name-iu-fan-speed", "--name-internal-setpoint"};
+  "--name-remote", "--name-iu-fan-speed", "--name-internal-setpoint",
+  "--name-expansion-valve", "--name-coil-temp", "--name-version", "--name-ou-discharge-temp", "--name-ou-superheat"};
 
 // A 0/1 option; anything else is malformed. External callers compare live
 // payloads against this output, so "--lr true" has to be an error rather than a
@@ -88,7 +91,8 @@ int main(int argc, char** argv) {
               "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
               "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
               "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
-              "Remote", "Indoor fan speed", "Internal setpoint"},
+              "Remote", "Indoor fan speed", "Internal setpoint",
+              "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat"},
     .reset_reason_tpl = NULL,
     .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
     .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -124,6 +128,8 @@ int main(int argc, char** argv) {
     .t_crash_info = "CrashInfo",
     .t_remote = "Remote", .remote_on = "On", .remote_off = "Off",
     .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
+    .t_op_ou_eev1 = "OU-EEV1", .t_op_thi_r1 = "THI-R1", .t_version = "Version",
+    .t_op_td = "TD", .t_op_tdsh = "TDSH",
   };
   bool outdoor_id_given = false, group_base_given = false;
   // --avty-member <host>=<MQTT_PREFIX>, once per unit of the group, sorted by

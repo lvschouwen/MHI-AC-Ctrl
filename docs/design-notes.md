@@ -52,7 +52,7 @@ on one outdoor unit"; this section is the internal rules that back it.
   (no hand-back).
 - **Outdoor discovery availability** (fork #29): rather than tie the outdoor
   device's availability to the current publisher's `connected` (which made it
-  flicker unavailable for ~20 s on every publisher reboot), the six outdoor
+  flicker unavailable for ~20 s on every publisher reboot), the outdoor
   configs list up to `MHI_GROUP_AVTY_MAX` (3) units' `connected` topics with
   `avty_mode: any`, and use the lowest hostname as `via_device`. Every
   publisher computes the same list, so a takeover changes nothing in the

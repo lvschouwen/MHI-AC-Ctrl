@@ -657,7 +657,7 @@ class StatusHandler : public CallbackInterface_Status {
         case erropdata_td:
         case opdata_td:
           if (value < 0x12)
-            strcpy(strtmp, "<=30");
+            strcpy(strtmp, "30");  // 30 °C or less; a number, so HA can keep it as a measurement (fork #41)
           else
             itoa(value / 2 + 32, strtmp, 10);
           output_P(status, PSTR(TOPIC_TD), strtmp);

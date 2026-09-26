@@ -52,6 +52,12 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_REMOTE,         // binary_sensor <id_prefix>_remote, the last change came from the IR remote (fork #39): a unit row
   MHI_DISCOVERY_IU_FAN_SPEED,   // sensor   <id_prefix>_iu_fan_speed, the unit's OpData/IU-FANSPEED (fork #39): a unit row
   MHI_DISCOVERY_INTERNAL_SETPOINT,  // sensor <id_prefix>_internal_setpoint, the unit's OpData/Tsetpoint (fork #39): a unit row
+  MHI_DISCOVERY_EXPANSION_VALVE,    // sensor <id_prefix>_expansion_valve, the unit's OpData/OU-EEV1 (fork #41): a unit row
+  MHI_DISCOVERY_COIL_TEMP,          // sensor <id_prefix>_coil_temp, the unit's OpData/THI-R1 (fork #41): a unit row
+  MHI_DISCOVERY_VERSION,            // sensor <id_prefix>_version, the Version topic (fork #41): a unit row
+  // OU_DISCHARGE_TEMP..OU_SUPERHEAT: the outdoor device's second block (fork #41).
+  MHI_DISCOVERY_OU_DISCHARGE_TEMP,  // sensor <outdoor_id>_discharge_temp, OpData/TD
+  MHI_DISCOVERY_OU_SUPERHEAT,       // sensor <outdoor_id>_discharge_superheat, OpData/TDSH
   MHI_DISCOVERY_ROWS
 };
 
@@ -141,6 +147,11 @@ struct MhiDiscoveryCtx {
   const char* remote_on, *remote_off; // PAYLOAD_REMOTE_ON/OFF
   const char* t_op_iu_fanspeed;       // TOPIC_IU_FANSPEED, relative to unit_op_prefix
   const char* t_op_tsetpoint;         // TOPIC_TSETPOINT, relative to unit_op_prefix
+  // Fork #41 (diagnostics for hass-config's per-room power split and coil icing).
+  const char* t_op_ou_eev1;           // TOPIC_OU_EEV1, relative to unit_op_prefix
+  const char* t_op_thi_r1;            // TOPIC_THI_R1, relative to unit_op_prefix
+  const char* t_version;              // TOPIC_VERSION, relative to base
+  const char* t_op_td, *t_op_tdsh;    // TOPIC_TD, TOPIC_TDSH, relative to op_prefix (the group's)
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,
@@ -167,11 +178,16 @@ size_t mhi_discovery_slug(const char* name, char* out, size_t out_len);
 // a disabled row entirely.
 bool mhi_discovery_row_enabled(MhiDiscoveryRow row, const MhiDiscoveryCtx* ctx);
 
-// The outdoor device's rows, MHI_DISCOVERY_OU_OUTDOOR..MHI_DISCOVERY_OU_PROTECTION:
+// The outdoor device's rows, MHI_DISCOVERY_OU_OUTDOOR..MHI_DISCOVERY_OU_PROTECTION
+// and MHI_DISCOVERY_OU_DISCHARGE_TEMP..MHI_DISCOVERY_OU_SUPERHEAT (fork #41):
 // their own dev block, uniq_id and topic keyed by outdoor_id, "~" the group
-// base, an availability list of absolute topics. A closed range: a row appended later is a unit
-// row unless it is added here.
+// base, an availability list of absolute topics. Closed ranges: a row appended
+// later is a unit row unless it is added here.
 bool mhi_discovery_is_outdoor_row(MhiDiscoveryRow row);
+
+// The first outdoor row at or after from, MHI_DISCOVERY_ROWS when there is
+// none: the group's outdoor pass walks the two blocks with it.
+MhiDiscoveryRow mhi_discovery_next_outdoor_row(uint8_t from);
 
 // One row's JSON. Returns the length, 0 (and an empty string) when it does
 // not fit out_len or the row is retired (MHI_DISCOVERY_OU_KWH): a caller
