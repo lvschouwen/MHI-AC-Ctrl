@@ -1,6 +1,5 @@
 // Protocol discovery tooling: turning a raw MOSI frame and unknown operating
-// data into text a human can read on an MQTT topic (fork issue #4, batch A,
-// spec docs/superpowers/specs/2026-09-16-phase-4-batches-design.md §3).
+// data into text a human can read on an MQTT topic (fork issue #4, batch A).
 //
 // Pure logic, no Arduino. main.cpp owns the MQTT client, the Diag switch and
 // the rate limit; this file only compares, formats and parses.

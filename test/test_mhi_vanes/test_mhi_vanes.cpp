@@ -1,5 +1,4 @@
-// Host tests for the named vane positions (fork issue #4, batch B; spec
-// docs/superpowers/specs/2026-09-16-phase-4-batches-design.md §4.2).
+// Host tests for the named vane positions (fork issue #4, batch B).
 //
 // The texts belong to the caller (PAYLOAD_VANES_* in MHI-AC-Ctrl.h, overridable
 // from config_defaults.h); this module only maps them to the core's numbers.

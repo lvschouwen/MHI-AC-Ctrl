@@ -1,5 +1,4 @@
-// Home Assistant MQTT discovery payloads (fork issue #4, batch B; spec
-// docs/superpowers/specs/2026-09-16-phase-4-batches-design.md §4.4).
+// Home Assistant MQTT discovery payloads (fork issue #4, batch B).
 //
 // One JSON config per entity, published retained under
 // <discovery_prefix>/<component>/<uniq_id>/config after every MQTT connect.

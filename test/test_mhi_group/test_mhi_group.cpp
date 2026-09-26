@@ -1,7 +1,7 @@
-// Host tests for the outdoor election (fork #22; spec
-// docs/superpowers/specs/2026-09-19-outdoor-election-design.md §9): the member
-// record, the configuration rules support.h applies at compile time, the
-// default outdoor ID, and the election scenarios with a simulated clock.
+// Host tests for the outdoor election (fork #22; rules in
+// docs/design-notes.md): the member record, the configuration rules support.h
+// applies at compile time, the default outdoor ID, and the election
+// scenarios with a simulated clock.
 
 #include <stdio.h>
 #include <string.h>

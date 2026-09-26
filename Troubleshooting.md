@@ -1,5 +1,5 @@
 # Troubleshooting
-You find here problems and solutions collected by users. I spend some time to write this documentation. Please take your time to read it before you open a new issue.
+Problems and solutions collected by users. Please read this before opening a new issue.
 
 If you can't find the solution for your problem here and not in the existing  [Issues](https://github.com/absalom-muc/MHI-AC-Ctrl/issues?q=is%3Aissue) you can open a new issue. But please consider the following topics:
 - You should have a basic understanding how to use an ESP8266. That includes the usage of an IDE for programming, compile, flash, OTA and log output via the serial terminal.
@@ -51,7 +51,7 @@ Typical faults seen in the past:
 - SCK frequency < MOSI frequency => SCK and MOSI pins swapped
 - MISO frequency = SCK frequency => MISO and SCK pins shorted
 
-For reference: With a multimeter I measure for SCK and MOSI approx. 4.7V on the HV pins of the level shifter (and X1) and approx. 3V on the LV pins of the level shifter (and D5/D7)
+Typical multimeter readings for SCK and MOSI: ~4.7V on the level shifter's HV pins (and X1), ~3V on the LV pins (and D5/D7).
 
 ### :fire: You use PubSubClient v2.8.0
 There was a [bug](https://github.com/knolleary/pubsubclient/issues/747) introduced in PubSubClient version 2.8.0. Please use [PubSubClient3](https://github.com/hmueller01/pubsubclient3) instead, or downgrade to PubSubClient v2.7.0.
@@ -69,7 +69,7 @@ If the credentials themselves are wrong (a new password or SSID), a build with `
 4. the unit restarts on the new image and joins the network. If the upload does not start, the unit may have closed the access point: wait for it to come back.
 
 ## :fire: AC switches power off sometimes
-When there is for >=120 seconds no valid MISO frame, the AC goes into an error state (MQTT topic Errorcode=1) and the AC switches off. You can leave the error state by sending a command via IR-RC or by sending a command via SPI. To switch on the AC again via SPI you have to send the Power On command. I assume this is some kind of safety function. This happens when there is >=120 seconds no WiFi or MQTT connection, because the SW loop related to SPI is not served.
+When there is for >=120 seconds no valid MISO frame (e.g. >=120 s without WiFi or MQTT, since the SPI loop then isn't served), the AC goes into an error state (MQTT topic Errorcode=1) and switches off, presumably as a safety function. Leave the error state with a command via IR-RC or SPI; switching on again via SPI needs the Power On command.
 
 ## :fire: Receiving the AC status works, but can't change values
 Different root causes are possible:

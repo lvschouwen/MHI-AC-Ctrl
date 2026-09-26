@@ -1,5 +1,4 @@
-// Host tests for the left/right louvers and 3D auto (fork #20; spec
-// docs/superpowers/specs/2026-09-18-batch-c-louvers-outdoor-counters-design.md §2.1).
+// Host tests for the left/right louvers and 3D auto (fork #20).
 // The upstream commands are coupled (see MHI-AC-Ctrl-core.cpp before Task 2);
 // decode must mask the AC's echo of both set flags (DB16 & 0x10, DB17 & 0x0a).
 

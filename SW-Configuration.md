@@ -52,9 +52,7 @@ Wi-Fi credentials are compiled in, so a wrong value, a replaced router or a new 
 ```
 
 ## MQTT ([support.h](src/support.h))
-The program uses the MQTT client library [PubSubClient3](https://github.com/hmueller01/pubsubclient3) from Holger Müller (hmueller01), originally written by Nick O'Leary (knolleary).
-If you are not familiar with MQTT you find on the Internet endless numbers of descriptions and tutorials. My favorites are [here](https://www.hivemq.com/blog/how-to-get-started-with-mqtt/) and [here](https://www.heise.de/developer/artikel/Kommunikation-ueber-MQTT-3238975.html).
-I recommend [MQTT Explorer](http://mqtt-explorer.com/) a great all-round MQTT client that provides a structured topic overview for the first steps.
+The program uses the MQTT client library [PubSubClient3](https://github.com/hmueller01/pubsubclient3) from Holger Müller (hmueller01), originally written by Nick O'Leary (knolleary). Unfamiliar with MQTT? [HiveMQ's intro](https://www.hivemq.com/blog/how-to-get-started-with-mqtt/) and a client such as [MQTT Explorer](http://mqtt-explorer.com/) cover the basics.
 
 ### MQTT General Settings (broker, port, account data)
 Adapt the server (broker) name and the port if needed:
@@ -93,7 +91,7 @@ topic|r/w|value|comment
 -----|---|-----|------
 Power|r/w|"On", "Off"|Not writable when [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected: `set/Power` then answers `unknown command`, switch off with `set/Mode` "Off" instead.
 Mode|r/w|"Auto", "Dry", "Cool", "Fan", "Heat" and "Off"|"Off" is only supported when option [POWERON_WHEN_CHANGING_MODE](#behaviour-when-changing-ac-mode-supporth) is selected. `ErrOpData/Mode` publishes "Stop" in place of "Auto".
-Tsetpoint|r/w|10 ... 30 in heat, 18 ... 30 otherwise|Target room temperature (float) in °C, resolution is 0.5°C; a value off the 0.5 step, or anything but a number, is refused. Heat accepts down to 10 °C; every other mode refuses below 18, and a change from heat to another mode with a setpoint below 18 writes 18 with it. The AC itself does not heat below 18, so a heat target below 18 is reached with a shifted room temperature (see [Heating below 18 °C](#heating-below-18-c)); `Tsetpoint` then shows that target
+Tsetpoint|r/w|10 ... 30 in heat, 18 ... 30 otherwise|Target room temperature (float) in °C, resolution is 0.5°C; a value off the 0.5 step, or anything but a number, is refused. Heat accepts down to 10 °C; every other mode refuses below 18, and a change from heat to another mode with a setpoint below 18 writes 18 with it. The AC itself does not heat below 18, so a heat target below 18 is reached with a shifted room temperature (see [Heating below 18 °C](#heating-below-18-c-supporth-fork-30)); `Tsetpoint` then shows that target
 Fan|r/w|1,2,3,4,"Auto"|Fan level; define PAYLOAD_FAN_1..PAYLOAD_FAN_4 for named levels (default "1".."4", unchanged on the wire)
 Vanes|r/w|"Up","UpCenter","CenterDown","Down","Swing"|Vanes up/down position, top to bottom, also after a change on the infrared remote; writing 1,2,3,4 or 5 (= "Swing") still works <sup>1</sup>; define `PAYLOAD_VANES_1` .. `PAYLOAD_VANES_4` as `"1"` .. `"4"` in `config_defaults.h` to keep v2.8's texts
 Troom|r/w|above -10, below 48|Room temperature (float) in °C, resolution is 0.25°C; anything but a number is refused <sup>2</sup>
@@ -108,7 +106,7 @@ Discovery|r|"ok", "modes", "skipped"|Only with `HA_DISCOVERY`: the Home Assistan
 Group|r|0, 1, 2, 3|this unit's part in the outdoor election: `0` member, `1` publisher, `2` its outdoor ID differs from the group's, `3` a unit with another group protocol version leads the group; see [Several indoor units on one outdoor unit](#several-indoor-units-on-one-outdoor-unit)
 ErrOpData|w||triggers the reading of last error operating data
 VanesLR|r/w|"Left","LeftCenter","Center","CenterRight","Right","Wide","Spot","Swing"|Vanes left/right position, as seen on the unit: 1 leftmost .. 7 spot; writing 1..7 or 8 (="Swing") still works; define `PAYLOAD_VANESLR_1`..`PAYLOAD_VANESLR_7` as `"1"`..`"7"` to keep the numeric texts <sup>4</sup>
-3Dauto|r/w|"On", "Off"|3D auto only works for mode Auto, Cool and heat; choosing a left/right louver position leaves it on (seen 18 Sep 2026: `DB17 0f>0e`) <sup>4</sup>
+3Dauto|r/w|"On", "Off"|3D auto only works for mode Auto, Cool and heat; choosing a left/right louver position leaves it on <sup>4</sup>
 
 <sup>1</sup> The remote reports its vane setting in the same bits a write uses (`DB1 & 0x30`, swing `DB0 & 0x40`) and leaves out only the set flags a write adds; measured on an SRK20ZS-WF (fork #38). v2.8 published `?` after a remote press; the text `?` (`PAYLOAD_VANES_UNKNOWN`) stays in Home Assistant's option lists for older configurations but is no longer published.
 <sup>2</sup> Please compare with section [Room temperature](#room-temperature) for writing.
@@ -134,8 +132,8 @@ reset|w|"reset", "crash"|"reset" restarts the ESP8266; "crash" (only in a build 
 RSSI     |r  |integer         |WiFI RSSI / signal Strength in dBm at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
 Uptime   |r  |integer         |seconds since boot, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds; keeps counting past the 49.7-day `millis()` wrap
 FreeHeap |r  |integer         |free heap in bytes, at MQTT (re-)connect and every `TELEMETRY_PERIOD` seconds
-FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and, when it changed, at the next `TELEMETRY_PERIOD` tick; saturates, never wraps. 0 on both units over the batch C soak (18-19 Sep 2026)
-FrameTimeouts|r|integer         |SCK timeouts since boot, same publishing rhythm. Over the batch C soak only at boot, 0 or 1 per boot, and none after
+FrameErrors|r  |integer         |frames rejected for a bad signature or checksum since boot, at MQTT (re-)connect and, when it changed, at the next `TELEMETRY_PERIOD` tick; saturates, never wraps
+FrameTimeouts|r|integer         |SCK timeouts since boot, same publishing rhythm; typically only at boot
 ResetReason|r|string          |why the ESP8266 last started, at MQTT (re-)connect: `Power On`, `Software/System restart` (also after an OTA flash or `set/reset`), `Hardware Watchdog`, `Software Watchdog`, `Exception`, `External System`
 SafeMode |r  |integer         |boots into [crash-loop safe mode](#crash-loop-safe-mode) since power-on, at MQTT (re-)connect; `0` on a healthy unit
 CrashInfo|r  |JSON            |the last crash before this boot, at MQTT (re-)connect: `{"exccause":29,"reason":2,"epc1":"0x4020abcd","excvaddr":"0x00000000"}`, or `{"exccause":-1}` when the boot was not after a crash. `exccause` is the CPU's exception cause and means something only with `reason` 2; `epc1` is the crashing instruction: `xtensa-lx106-elf-addr2line -e firmware.elf <epc1>` names the source line. Also filled after `abort()`, `panic()` or a stack overflow; a safe-mode boot keeps it for the normal boot after it
@@ -163,9 +161,7 @@ The path to the operating data topic can be adapted.
 #define MQTT_OP_PREFIX "OpData/"    // prefix for publishing operating data
 ```
 
-Without changes of the path, subscribe to `MHI-AC-Ctrl/OpData/#` for receiving all operating data. Please see section [Operating data](#operating-data-mhi-ac-ctrl-coreh) to find all supported operating data.
-
-Note: The topic and the payload text is adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h).
+Without changes of the path, subscribe to `MHI-AC-Ctrl/OpData/#` for receiving all operating data. Please see section [Operating data](#operating-data-mhi-ac-ctrl-coreh) to find all supported operating data. (Topic and payload text are adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), as noted under [MQTT status](#mqtt-status).)
 
 ### Several indoor units on one outdoor unit
 
@@ -178,12 +174,12 @@ On a multi-split every indoor unit reads the same outdoor unit, so eleven operat
 
 Give every unit of one outdoor unit the same `GROUP_ROOT`, and the same `TOPIC_CONNECTED`, `PAYLOAD_CONNECTED_TRUE` and `PAYLOAD_CONNECTED_FALSE`: each unit watches the others' `<prefix>connected`. `GROUP_ROOT` is at most 64 characters so that the largest record message (5 bytes of header, 2 of topic length, the root, `members/`, a 32-character hostname and a 140-byte record: 251 bytes) fits PubSubClient's 256-byte receive buffer, which drops a larger message whole: with a longer root the units would never see each other's records, and two of them could publish at once. The build refuses a longer root, and a `HOSTNAME` longer than 32 characters.
 
-Which values go where, measured on 17 Sep 2026 with two indoor units cooling on one outdoor unit:
+Which values go where, on a multi-split:
 - written by the publisher only, under `GROUP_OP_PREFIX`: `OUTDOOR`, `CT`, `COMP`, `DEFROST`, `TOTAL-COMP-RUN`, `PROTECTION-NO`, `TD`, `TDSH`, `THO-R1`, `THI-R2`, `OU-FANSPEED`;
-- written by every unit under its own `MQTT_OP_PREFIX`, as before: `RETURN-AIR`, `THI-R1`, `THI-R3`, `IU-FANSPEED`, `TOTAL-IU-RUN`, `Tsetpoint`, `Mode`, `unknown`, `OU-EEV1` (each indoor circuit has its own valve: 97 and 164 on 17 Sep) and `KWH`;
+- written by every unit under its own `MQTT_OP_PREFIX`, as before: `RETURN-AIR`, `THI-R1`, `THI-R3`, `IU-FANSPEED`, `TOTAL-IU-RUN`, `Tsetpoint`, `Mode`, `unknown`, `OU-EEV1` (each indoor circuit has its own valve) and `KWH`;
 - `ErrOpData/` stays per unit, the eleven included: it is the snapshot the unit read from its own indoor unit.
 
-`KWH` is the outdoor unit's energy counted while *this* indoor unit is on, and it starts from 0 again when this unit is switched on (measured 18-19 Sep 2026: it followed the integral of `CT` × 230 V only while the unit was on). For the whole outdoor unit's energy, integrate the power, `CT` × 230 V, in Home Assistant.
+`KWH` is the outdoor unit's energy counted while *this* indoor unit is on, and it starts from 0 again when this unit is switched on (it follows the integral of `CT` × 230 V only while the unit is on). For the whole outdoor unit's energy, integrate the power, `CT` × 230 V, in Home Assistant.
 
 The election in short:
 - Every unit keeps a retained record at `<GROUP_ROOT>members/<HOSTNAME>`: `<proto>;<role>;<term>;<uptime>;<period>;<outdoor_id>;<prefix>`, e.g. `1;1;1;41382;60;ac_outdoor;airco/slaapkamer/`. That is the group protocol version (1), the role (0 member, 1 publisher), the publisher generation, the unit's `Uptime` in seconds, its `TELEMETRY_PERIOD`, its outdoor ID and its `MQTT_PREFIX`. The unit sends it again every `TELEMETRY_PERIOD`, which is why `TELEMETRY_PERIOD` must be 1..86400.
@@ -207,8 +203,6 @@ The path to the operating data topic is defined in
 #define MQTT_ERR_OP_PREFIX "ErrOpData/"    // prefix for publishing operating data from last error
 ```
 The readout of last error operating data is triggered by publishing `ErrOpData` to topic ErrOpData. Not all of the operating data from section [Operating data](#operating-data-mhi-ac-ctrl-coreh) might be available as last error operating data.
-
-Note: The topic and the payload text is adaptable by defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h).
 
 ### Error codes
 
@@ -320,7 +314,7 @@ Note: the according libraries [OneWire](https://www.pjrc.com/teensy/td_libs_OneW
 If the DS18x20 should replace the room temperature sensor of the AC, you have to configure it as described in the next clause.
 
 ## Room temperature
-Usage of the room temperature sensor inside the AC is the default, but instead you can use the DS18x20 sensor on the MHI-AC-Ctrl board or the received temperature via the MQTT topic `Troom`. Setting `Troom` via MQTT works per default. But you should adapt `ROOM_TEMP_MQTT_TIMEOUT`. For using DS18x20 as `Troom` you have to use `ROOM_TEMP_DS18X20`.
+Default: the AC's own room sensor. Instead, use the DS18x20 on the MHI-AC-Ctrl board (`ROOM_TEMP_DS18X20`) or a temperature published to MQTT topic `Troom` (works by default; adapt `ROOM_TEMP_MQTT_SET_TIMEOUT`).
 ```cpp
 //#define ROOM_TEMP_DS18X20           // use room temperature from DS18x20
 
@@ -353,13 +347,9 @@ The AC is only accepting a setpoint in x.0 degrees. If you send x.5 degrees, the
                                                     // uncomment this to compensate (offset) Troom for this.
                                                     // this will simulate .x degrees resolution
 ```
-If you now send x.5 degrees as setpoint, still the setpoint on the AC will be (x+1). But when sending the received `Troom` (from MQTT or the external temperature sensor) to the AC, `Troom` with an offset of .5 degrees will be send to the AC. This way the AC will increase the temperature in the room with .5 degrees instead of 1 degree.
+The AC's setpoint stays at (x+1).0, but the `Troom` sent to the AC gets the same .5° offset, so the AC ends up regulating .5° warmer/cooler than its own setpoint suggests — simulating .5° resolution. Example: setpoint 20.5, incoming `Troom` 19.5 (MQTT or DS18x20) is sent to the AC as 20.0, and the `Troom` topic also shows 20.0.
 
-**This behaviour won't work if you are using the internal temperature sensor of the AC!**
-
-The MQTT topic `Troom` will show (like before) the `Troom` received by the AC (including the offset).
-
-For example: when setpoint is 20.5. When `Troom` 19.5 is received (from MQTT or DS18x20), `Troom` sent to the AC will be 20.0. Topic `Troom` will also show 20.0.
+**Requires an external `Troom` source (MQTT or DS18x20) — does not work with the AC's internal temperature sensor.**
 
 ## Behaviour when changing AC mode ([support.h](src/support.h))
 Per default the power on/off state is not changed, when you change the AC mode (e.g. heat, dry, cold etc.).
@@ -379,29 +369,11 @@ But when you uncomment the following line, the frame size is extended to 33 byte
 
 ## Passive Mode
 
-A [known limitation](../Troubleshooting.md#known-limitations) is
-that the timer of the IR remote control does no longer work
-as soon as a device is connected to the SPI port.
+Connecting to the SPI port [disables the IR remote's timer](Troubleshooting.md#known-limitations). Workaround: `set/PassiveMode` `On`/`Off` toggles between:
+- **active** (default): monitor and control the AC, RC timer disabled;
+- **passive**: monitor only, RC timer works (e.g. _SLEEP_ lights the indoor unit's orange LED).
 
-There's a workaround for this limitation: toggle the AC from _active mode_ to _passive mode_.
-In _active mode_, the default behavior of MHI-AC-Ctrl,
-it is possible to both monitor and control the AC while the RC timer is not working.
-In _passive mode_, the AC is monitored but cannot be controlled, and the RC timer is working.
-
-It is possible to switch between active and passive mode via MQTT topic `set/PassiveMode`:
-publish `On` to enable and `Off` to disable passive mode.
-Both commands send an acknowledge value of `o.k.` to topic `cmd_received` on success.
-
-Enabling passive mode does not have immediate effect but involves a delay of ~2 minutes.
-Setting `PassiveMode` to `On` while the AC is running causes that after the delay,
-the AC reports a value of `1` on topic `Errorcode` and turns off.
-Now the AC is in passive mode: it cannot be controlled via MHI-AC-Ctrl anymore.
-The `Errorcode` will automatically be reset to `0` as soon as the AC it turned on next time.
-The RC timer is working now, i.e. pressing _SLEEP_ enlightens the indoor unit's orange LED.
-
-Publishing `Off` to `set/PassiveMode` enables active mode immediately.
-The RC timer is disabled and the AC can be controlled by MHI-AC-Ctrl again.
-The AC does not power off when active mode is enabled.
+Both commands ack `o.k.` on `cmd_received`. Switching to `On` takes effect after a ~2 minute delay: the AC then reports `Errorcode` `1` and turns off — it is now in passive mode and cannot be controlled via MHI-AC-Ctrl; `Errorcode` resets to `0` once the AC is turned on again. Switching to `Off` re-enables active mode immediately, without powering the AC off.
 
 ## Finding out what a remote button does
 
@@ -419,11 +391,18 @@ topic | r/w | value | comment
 `set/Diag` | w | `On`, `Off` | switch `diag/frame` at runtime; answers on `cmd_received`
 `set/OpDataRequest` | w | four hex digits, e.g. `c021` | ask the AC once for operating-data code `0x21` with request prefix `c0` (indoor) or `40` (outdoor), the same request the built-in codes use, in place of the next code of the normal cycle. The answer arrives on `diag/opdata`, or on the code's own topic if it is a known one and its value changed. `cmd_received` answers `o.k.`, or `invalid parameter` for any other prefix or length
 
-Worked example (16 Sep 2026, `airco/uitkijk/#` captured while pressing the remote): SILENT on and off each produced `OpData/unknown 32989` (`0x80DD`), so Silent is reported as `DB9 = 0xDD`, `DB10 = 0x80`, with the on/off state in `DB11`. Batch B decodes that answer into the `Silent` topic, so a press no longer shows on `OpData/unknown` or `diag/opdata`; a code the firmware does not decode still appears on `diag/opdata` with its value bytes the same way. HI/ECO produced no operating data at all; its only trace was `Fan` and the internal setpoint changing. With `diag/frame` running, a press that flips a bit anywhere in the status frame shows up as one line naming the byte.
+Example: SILENT produced `OpData/unknown 32989` (`0x80DD`), i.e. `DB9 = 0xDD`, `DB10 = 0x80`, on/off in `DB11` — now decoded into the `Silent` topic instead. HI/ECO produce no operating data at all; their only trace is `Fan` and the internal setpoint changing (see `Remote` footnote above). With `diag/frame` running, a press that flips a bit anywhere in the status frame shows up as one line naming the byte.
 
 ## Home Assistant discovery ([support.h](src/support.h))
 
-With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit: a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`, and with `USE_EXTENDED_FRAME_SIZE` the left/right louvers as swing_horizontal mode), a select for the vane position, a switch for `Silent`, two problem binary sensors and eight diagnostic sensors (`Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`, `FrameErrors`, `FrameTimeouts` and the `Errorcode` number), all under one device, a diagnostic sensor for `Group` (fork #22), a Restart button (fork #24: it sends `set/reset` `reset`, entity category config) and a diagnostic sensor "Run time" (fork #27: the indoor unit's own run hours from its `OpData/TOTAL-IU-RUN`, in hours with 100 h steps, the base for a filter-cleaning reminder in Home Assistant), a binary sensor "Remote" (fork #39: the `Remote` topic) and two diagnostic sensors "Indoor fan speed" and "Internal setpoint" (fork #39: `OpData/IU-FANSPEED` and `OpData/Tsetpoint`, from which Home Assistant derives the remote's HI POWER and ECO). With `USE_EXTENDED_FRAME_SIZE`, also a select for the left/right louvers and a switch for `3Dauto`: 22 entities per unit without that option, 24 with it. The outdoor unit has a device of its own with six entities (temperature, current, compressor frequency, defrost, compressor run time, compressor-protection number), linked with `via_device` to the unit that publishes them: only the group's publisher sends these configs, 30 s after it took over, reading the group root's `OpData/` topics and available while the publisher is (see [Several indoor units on one outdoor unit](#several-indoor-units-on-one-outdoor-unit)). There is no energy entity: `KWH` counts per indoor unit. Availability comes from `connected`. `HA_OUTDOOR_DEVICE` is gone: a build that still defines it stops with an error; give the units of one outdoor unit the same `GROUP_ROOT` instead.
+With `HA_DISCOVERY` defined, the unit publishes [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs after every MQTT connect, retained, one per `loop()` pass, so Home Assistant creates and updates the entities itself and no YAML is needed. Per unit, under one device:
+- a climate (mode, setpoint, room temperature, fan, vane position as swing mode, `Action`, and with `USE_EXTENDED_FRAME_SIZE` the left/right louvers as swing_horizontal mode);
+- a select for the vane position, a switch for `Silent`;
+- binary sensors: `Problem` (Errorcode != 0), `Wiring`, `Cleaning` (Allergen Clear running, fork #25), `External Troom` (a fresh `set/Troom` is in use, fork #25), `Remote` (fork #39: the `Remote` topic);
+- diagnostic sensors: `Uptime`, `FreeHeap`, `RSSI`, `ResetReason`, `WIFI_PHY`, `FrameErrors`, `FrameTimeouts`, `Errorcode`, `Group role` (fork #22), `Crash info` (the last crash's exccause, fork #25), `Run time` (fork #27: the indoor unit's own run hours from `OpData/TOTAL-IU-RUN`, in hours with 100 h steps, the base for a filter-cleaning reminder), `Indoor fan speed` and `Internal setpoint` (fork #39: `OpData/IU-FANSPEED` and `OpData/Tsetpoint`, from which Home Assistant derives the remote's HI POWER and ECO);
+- a Restart button (fork #24: sends `set/reset` `reset`, entity category config).
+
+With `USE_EXTENDED_FRAME_SIZE`, also a select for the left/right louvers and a switch for `3Dauto`: **22 entities per unit without that option, 24 with it** (counted from the row table in `lib/mhi_pure/mhi_discovery.h`). The outdoor unit has a device of its own with **six entities** (temperature, current, compressor frequency, defrost, compressor run time, compressor-protection number), linked with `via_device` to the unit that publishes them: only the group's publisher sends these configs, 30 s after it took over, reading the group root's `OpData/` topics and available while the publisher is (see [Several indoor units on one outdoor unit](#several-indoor-units-on-one-outdoor-unit)). There is no energy entity: `KWH` counts per indoor unit. Availability comes from `connected`. `HA_OUTDOOR_DEVICE` is gone: a build that still defines it stops with an error; give the units of one outdoor unit the same `GROUP_ROOT` instead.
 
 Home Assistant's climate accepts only its own mode names, so a discovery build also needs `POWERON_WHEN_CHANGING_MODE` (the climate's `off` mode is `set/Mode off`; the build refuses `HA_DISCOVERY` without the option) and the `PAYLOAD_MODE_*` texts of [Topic and payload text](#topic-and-payload-text-mhi-ac-ctrlh). The `PAYLOAD_ACTION_*` texts must stay Home Assistant's `hvac_action` names as well: the climate reads `Action` without a template. The firmware checks them at boot: with other texts the climate config is skipped, Serial says so and the retained `Discovery` topic reads `modes` instead of `ok`. A config that does not fit its 1024-byte buffer is not published either: Serial says so, and `Discovery` reads `skipped`, after the unit rows, and after the outdoor rows only when one of those did not fit.
 
@@ -432,14 +411,14 @@ Home Assistant's climate accepts only its own mode names, so a discovery build a
 #define HA_DISCOVERY_PREFIX "homeassistant"
 #define HA_DEVICE_NAME HOSTNAME           // the device; Home Assistant shows every entity as "<device> <entity name>"
 #define HA_CLIMATE_ID HOSTNAME            // unique_id of the climate
-#define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart, _run_time
+#define HA_ID_PREFIX HOSTNAME             // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart, _run_time, _cleaning, _external_troom, _crash_info, _remote, _iu_fan_speed, _internal_setpoint
 //#define HA_ENTITY_PREFIX "ac_bedroom"   // optional: pins the entity IDs to climate.ac_bedroom and <domain>.ac_bedroom_<slug of the entity name> (select.ac_bedroom_vanes, sensor.ac_bedroom_free_heap, ...), what Home Assistant derives itself for a device without an area, so an area or a lost registry never changes them (lower case a-z 0-9 _; needs Home Assistant 2025.10 or newer, which knows default_entity_id)
 #define HA_NAME_VANES "Vanes"             // entity names; likewise HA_NAME_SILENT, _PROBLEM, _WIRING, _UPTIME, _FREE_HEAP, _RSSI, _RESET_REASON, _WIFI_PHY
 //#define HA_RESET_REASON_TPL "{{ value }}" // optional value_template of the reset-reason sensor
 //#define HA_OUTDOOR_ID "ac_outdoor"        // the outdoor device's id and unique_id prefix, 1..40 characters; default <slug of GROUP_ROOT>_outdoor, derived at boot so every unit of the group derives the same
 #define HA_OUTDOOR_NAME "AC outdoor unit"
 //#define HA_OUTDOOR_ENTITY_PREFIX "ac_outdoor"
-#define HA_NAME_VANES_LR "Vanes left/right"  // entity names; likewise HA_NAME_3DAUTO, _FRAME_ERRORS, _FRAME_TIMEOUTS, _ERROR_CODE, _GROUP_ROLE, _RESTART, _RUN_TIME, _OU_OUTDOOR, _OU_CT, _OU_COMP, _OU_DEFROST, _OU_COMP_RUN, _OU_PROTECTION
+#define HA_NAME_VANES_LR "Vanes left/right"  // entity names; likewise HA_NAME_3DAUTO, _FRAME_ERRORS, _FRAME_TIMEOUTS, _ERROR_CODE, _GROUP_ROLE, _RESTART, _RUN_TIME, _CLEANING, _REMOTE, _IU_FAN_SPEED, _INTERNAL_SETPOINT, _CRASH_INFO, _TROOM_EXTERNAL, _OU_OUTDOOR, _OU_CT, _OU_COMP, _OU_DEFROST, _OU_COMP_RUN, _OU_PROTECTION
 ```
 
 The `unique_id`s never change once entities exist: Home Assistant keys entities by them and keeps their entity IDs, history and automations across firmware updates and renames. A config with a `unique_id` that a YAML entity still uses is rejected as a duplicate, so remove the YAML entity (and reload the MQTT YAML) before the unit's first discovery build connects.
@@ -509,41 +488,25 @@ Note 3: The energy-used (`KWH`) is the outdoor unit's energy in kWh counted whil
 Hint: The error operating data is usually a sub-set of the operating data above. If user requests error operating data, all available error operating data is provided independent from the list above.
 
 ## Access Speed ([MHI-AC-Ctrl-core.h](src/MHI-AC-Ctrl-core.h))
-Default the above operating data is requested within 400 frames. Because 20 frames takes 1 second, the update interval for all operating data will be  400/20 = 20 seconds. If you disable some operating data (above), the update interval will stay 20 seconds.
-With the following parameter you can change this interval of 20 seconds.
+All operating data above is requested within 400 frames (20 frames/s, so a 20 s update interval); disabling some operating data does not shorten it.
 ```cpp
 #define NoFramesPerOpDataCycle 400             // number of frames used for a OpData request cycle; will be 20s (20 frames are 1s)
 ```
-Some operating data (32 -38) will take some time at the AC for processing. So don't decrease this value too much.
-
-Changes to Power, Mode, Tsetpoint, Fan and Vanes wll be written to the AC right away. Above parameter will not influence this.
+Codes 32-38 take the AC some time to process, so don't lower this much. `Power`, `Mode`, `Tsetpoint`, `Fan` and `Vanes` writes reach the AC right away regardless of this setting.
 
 ## Jitter internal temperature sensor ([MHI-AC-Ctrl-core.h](src/MHI-AC-Ctrl-core.h))
-If the AC internal temperature sensor is used, the received `Troom` can changes (+/- 0.25 degrees) sometimes several times in a second. This will give a burst of MQTT `Troom` messages.
-To avoid this behaviour, the changed received `Troom` will only be published after at least 5 seconds. This is ONLY the case when the AC internal temperature sensor is used.
-With the following parameter you can change this minimum interval of 5 seconds.
+The AC's own temperature sensor can report `Troom` changes (±0.25 °C) several times a second, bursting MQTT messages. Only when that sensor is in use, a changed value is published at most every `minTimeInternalTroom` ms:
 ```cpp
 #define minTimeInternalTroom 5000              // minimal time in ms used for Troom internal sensor changes for publishing to avoid jitter
 ```
-
-This jitter can also be avoided by using the `TROOM_FILTER_LIMIT` as descibed above. But this filter is also used if the temperature is provided by an external temperature sensor or a connected DS18B20. With above it will be also possible to see smaller changes.
+`TROOM_FILTER_LIMIT` (above) also dampens this jitter and additionally applies to an external/DS18B20 sensor, at the cost of hiding smaller changes.
 
 ## Not switching off AC when MQTT connections fails ([support.h](src/support.h))
-Default the module stops communicating with the AC when the MQTT connection get disconnected. After 120 sec the AC will power off because of [this](https://github.com/absalom-muc/MHI-AC-Ctrl/blob/master/Troubleshooting.md#fire-ac-switches-power-off-sometimes).
-When using a DS18x20 as room temperature sensor, this can be unwanted behaviour. Also at night or when not at home when this happens, can be unwanted behaviour.
-This behaviour can be changed by changing the following line:
-```cpp
-//#define CONTINUE_WITHOUT_MQTT true
-```
-to
+By default the module stops talking to the AC when MQTT disconnects, and the AC [powers off after 120 s](Troubleshooting.md#fire-ac-switches-power-off-sometimes). This can be unwanted, e.g. with a DS18x20 room sensor or while away from home.
 ```cpp
 #define CONTINUE_WITHOUT_MQTT true
 ```
-
-Warning: be aware that there might be some safety implication and that the deactivation of this feature is on your own risk.
-The AC now keeps running and no control is possible anymore when MQTT is disconnected. Also of course no MQTT topics are updated anymore. Of course control is still possible with the remote control.
-
-Consider it when the broker or Home Assistant is restarted from time to time, for updates or a host reboot: without it, an outage of 120 seconds or more switches the AC off. With it, the AC keeps its last setting until MQTT is back, and its current state is published again after the reconnect.
+**Warning**: possible safety implication, enable at your own risk. With it, the AC keeps running and its last setting (but is not controllable, and no MQTT topics update) until MQTT is back, when its state is republished; the remote still works throughout. Useful when the broker or Home Assistant restarts routinely for updates or a host reboot.
 
 ## MHI-AC-Ctrl partitioning
 MHI-AC-Ctrl-core implements the core functions (SPI read/write, communication with the wrapper).
@@ -552,9 +515,7 @@ Wifi, MQTT, OTA and DS18x20 stuff is located in `support.h` and `support.cpp`.
 `lib/mhi_pure` holds the logic that needs neither Arduino nor hardware - the frame checksums and the room temperature conversions - so it can be tested on the build machine with `pio test -e native`.
 
 ### `MHI-AC-Ctrl-core.h` and `MHI-AC-Ctrl-core.cpp`
-Usually it should be not touched, only configured via [MHI-AC-Ctrl-core.h](src/MHI-AC-Ctrl-core.h).
-AC status information change will trigger the callback function `cbiStatusFunction` located in [main.cpp](src/main.cpp)
-It is controlled via the functions:
+Configured via [MHI-AC-Ctrl-core.h](src/MHI-AC-Ctrl-core.h), otherwise left alone. An AC status change triggers the callback `cbiStatusFunction` in [main.cpp](src/main.cpp). Controlled via the functions:
 ```cpp
 void init(bool drive_miso = true);    // initialization called once after boot
 void reset_old_values();              // resets the 'old' variables ensuring that all status information are resend
@@ -568,7 +529,6 @@ void set_troom(byte temperature);     // set the room temperature used by AC
 void set_passive_mode(bool mode);     // enable or disable passive mode
 void request_ErrOpData();             // request that the AC provides the error data
 ```
-The following sections describe the usage of these functions.
 
 #### `void init(bool drive_miso = true)`
 Configures the input /output state of the SPI pins. Resets old values. Pass `false` when the boot-time wiring check found a signal on MISO: the pin then stays an input, so the ESP8266 never drives against it. Frames are still received, but none are sent.
@@ -591,8 +551,6 @@ err_msg_invalid_checksum | a frame with an invalid checksum was received
 err_msg_timeout_SCK_low | the specified time max_time_ms has been exceeded because SCK is const low and not toggling
 err_msg_timeout_SCK_high | the specified time max_time_ms has been exceeded because SCK is const high and not toggling
 
-Note: The input parameters and return values could be changed in future.
-
 ### `set_*()`
 Controls the AC.
 
@@ -611,8 +569,7 @@ It provides beside the standard `setup()` and `loop()` functions the following t
 This is a member of the class `StatusHandler : public CallbackInterface_Status`. It is a callback function called by MHI-AC-Ctrl-core in case of AC status changes.
 
 #### `void MQTT_subscribe_callback(char* topic, byte* payload, unsigned int length)`
-This function is called for incoming MQTT messages, the message is analyzed and translated to function calls.
-From systematic point of view this function should actually be located in [support.h](src/support.h) but in order to keep it simple it resides in [main.cpp](src/main.cpp).
+Called for incoming MQTT messages: analyzes the message and translates it into function calls. Lives in [main.cpp](src/main.cpp) for simplicity.
 
 # Integration examples
 You find here some examples for integration of MHI-AC-Ctrl

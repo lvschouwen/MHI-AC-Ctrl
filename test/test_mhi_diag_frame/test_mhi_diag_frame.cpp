@@ -1,5 +1,4 @@
-// Host tests for the protocol discovery tooling (fork issue #4, batch A;
-// spec docs/superpowers/specs/2026-09-16-phase-4-batches-design.md §3).
+// Host tests for the protocol discovery tooling (fork issue #4, batch A).
 //
 // main.cpp publishes what these functions produce: the bytes of the AC's
 // status frame that changed, the value bytes of unknown operating data, and

@@ -1,6 +1,5 @@
-// Crash-loop safe mode on the unit (fork #23; spec
-// docs/superpowers/specs/2026-09-19-safe-mode-and-ride-alongs-design.md §1):
-// the glue around lib/mhi_pure/mhi_safe_mode. The reset reason and three words
+// Crash-loop safe mode on the unit (fork #23): the glue around
+// lib/mhi_pure/mhi_safe_mode. The reset reason and three words
 // of RTC user memory go in, the decision comes out. Nothing here blocks, loops
 // or touches the network. safe_mode.cpp also defines the core's crash hook,
 // custom_crash_callback(), which marks the record at every software crash.

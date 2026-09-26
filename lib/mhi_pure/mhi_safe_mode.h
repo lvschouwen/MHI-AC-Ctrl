@@ -1,7 +1,6 @@
-// Crash-loop safe mode (fork #23; spec
-// docs/superpowers/specs/2026-09-19-safe-mode-and-ride-alongs-design.md §1).
-// A unit that crashes three times in a row, each time within 120 s of its
-// boot, starts in safe mode: Wi-Fi and OTA only, for 10 minutes. The count is
+// Crash-loop safe mode (fork #23). A unit that crashes three times in a row,
+// each time within 120 s of its boot, starts in safe mode: Wi-Fi and OTA
+// only, for 10 minutes. The count is
 // kept in three words of RTC user memory, which survive a reset but not a
 // power loss.
 //

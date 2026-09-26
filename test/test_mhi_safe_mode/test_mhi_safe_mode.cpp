@@ -1,5 +1,4 @@
-// Host tests for the crash-loop safe mode (fork #23; spec
-// docs/superpowers/specs/2026-09-19-safe-mode-and-ride-alongs-design.md §1.5).
+// Host tests for the crash-loop safe mode (fork #23).
 
 #include <string.h>
 #include <unity.h>

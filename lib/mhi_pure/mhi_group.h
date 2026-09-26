@@ -1,9 +1,8 @@
-// The outdoor election (fork #22; spec
-// docs/superpowers/specs/2026-09-19-outdoor-election-design.md). The indoor
-// units that share one outdoor unit keep a retained record each under
-// <GROUP_ROOT>members/<HOSTNAME> and elect, from those records and their
-// connected topics, the one unit that publishes the outdoor unit's values and
-// its Home Assistant device.
+// The outdoor election (fork #22; rules and invariants in
+// docs/design-notes.md). The indoor units that share one outdoor unit keep a
+// retained record each under <GROUP_ROOT>members/<HOSTNAME> and elect, from
+// those records and their connected topics, the one unit that publishes the
+// outdoor unit's values and its Home Assistant device.
 //
 // Pure logic, no Arduino and no clock of its own: every entry point takes now,
 // a millis() value, and every time is an unsigned difference, so the 49.7-day

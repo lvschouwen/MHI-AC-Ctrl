@@ -1,7 +1,7 @@
-// The outdoor election on the unit (fork #22; spec
-// docs/superpowers/specs/2026-09-19-outdoor-election-design.md §7): owns the
-// election state, feeds it the group's MQTT messages and carries out what its
-// tick asks for. The rules themselves are lib/mhi_pure/mhi_group, host-tested.
+// The outdoor election on the unit (fork #22; see docs/design-notes.md for
+// the election's rules): owns the election state, feeds it the group's MQTT
+// messages and carries out what its tick asks for. The rules themselves are
+// lib/mhi_pure/mhi_group, host-tested.
 
 #pragma once
 
