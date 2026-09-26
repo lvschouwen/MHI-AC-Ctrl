@@ -49,7 +49,8 @@ static const char* kNameOption[MHI_DISCOVERY_ROWS] = {
   "--name-vanes-lr", "--name-3dauto", "--name-frame-errors", "--name-frame-timeouts", "--name-error-code",
   "--name-ou-outdoor", "--name-ou-ct", "--name-ou-kwh", "--name-ou-comp", "--name-ou-defrost",
   "--name-ou-comp-run", "--name-ou-protection", "--name-group-role", "--name-restart",
-  "--name-run-time", "--name-cleaning", "--name-troom-external", "--name-crash-info"};
+  "--name-run-time", "--name-cleaning", "--name-troom-external", "--name-crash-info",
+  "--name-remote", "--name-iu-fan-speed", "--name-internal-setpoint"};
 
 // A 0/1 option; anything else is malformed. External callers compare live
 // payloads against this output, so "--lr true" has to be an error rather than a
@@ -86,7 +87,8 @@ int main(int argc, char** argv) {
     .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
               "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
               "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-              "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info"},
+              "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
+              "Remote", "Indoor fan speed", "Internal setpoint"},
     .reset_reason_tpl = NULL,
     .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
     .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -120,6 +122,8 @@ int main(int argc, char** argv) {
     .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
     .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
     .t_crash_info = "CrashInfo",
+    .t_remote = "Remote", .remote_on = "On", .remote_off = "Off",
+    .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
   };
   bool outdoor_id_given = false, group_base_given = false;
   // --avty-member <host>=<MQTT_PREFIX>, once per unit of the group, sorted by

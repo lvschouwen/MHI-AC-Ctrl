@@ -1,0 +1,2 @@
+homeassistant/sensor/ac_slaapkamer_iu_fan_speed/config
+{"~":"airco/slaapkamer","name":"Indoor fan speed","uniq_id":"ac_slaapkamer_iu_fan_speed","default_entity_id":"sensor.ac_slaapkamer_indoor_fan_speed","stat_t":"~/OpData/IU-FANSPEED","stat_cla":"measurement","ic":"mdi:fan","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

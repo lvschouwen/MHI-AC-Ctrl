@@ -30,7 +30,8 @@ static const MhiDiscoveryCtx kDefault = {
   .names = {NULL, "Vanes", "Silent", "Problem", "Wiring", "Uptime", "Free heap", "Wi-Fi signal", "Reset reason", "Wi-Fi PHY",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info"},
+            "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
+            "Remote", "Indoor fan speed", "Internal setpoint"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -61,6 +62,8 @@ static const MhiDiscoveryCtx kDefault = {
   .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
   .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
   .t_crash_info = "CrashInfo",
+  .t_remote = "Remote", .remote_on = "On", .remote_off = "Off",
+  .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
 };
 
 // Lucas's Uitkijk: custom names throughout, a template, an entity prefix, and a
@@ -81,7 +84,8 @@ static const MhiDiscoveryCtx kUitkijk = {
   .names = {NULL, "louvers", "quiet mode", "fault", "wiring fault", "time since boot", "heap free", "wifi-signal", "restart reason", "wifi-standard",
             "Vanes left/right", "3D auto", "Frame errors", "Frame timeouts", "Error code",
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
-            "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info"},
+            "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
+            "Remote", "Indoor fan speed", "Internal setpoint"},
   .reset_reason_tpl = "{{ {'Power On': 'power applied', 'Software/System restart': 'software restart (update or reset)', 'Hardware Watchdog': 'hardware watchdog', 'Software Watchdog': 'software watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'woke from deep sleep', 'External System': 'external reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -112,6 +116,8 @@ static const MhiDiscoveryCtx kUitkijk = {
   .t_cleaning = "Cleaning", .cleaning_on = "On", .cleaning_off = "Off",
   .t_troom_external = "TroomExternal", .troom_external_on = "On", .troom_external_off = "Off",
   .t_crash_info = "CrashInfo",
+  .t_remote = "Remote", .remote_on = "On", .remote_off = "Off",
+  .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
 };
 
 // Slaapkamer: has_lr and the outdoor device both on (batch C spec §3), as the
@@ -143,7 +149,8 @@ static const char* const kFixtureName[MHI_DISCOVERY_ROWS] = {
   "climate", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3dauto", "frame_errors", "frame_timeouts", "error_code",
   "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection",
-  "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info"};
+  "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info",
+  "remote", "iu_fan_speed", "internal_setpoint"};
 
 // Balanced braces and brackets outside strings, every string closed, no
 // printf conversion left over and no NULL argument printed.
@@ -705,15 +712,44 @@ static void test_the_crash_info_row_reads_the_json(void) {
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/CrashInfo\",\"val_tpl\":\"{{ value_json.exccause }}\",\"json_attr_t\":\"~/CrashInfo\",\"ic\":\"mdi:bug-outline\",\"ent_cat\":\"diagnostic\","));
 }
 
-static void test_a_unit_has_21_entities_with_the_33_byte_frame(void) {
+// On while the IR remote made the last change (fork #39); not diagnostic,
+// HA's automations read it.
+static void test_the_remote_row_is_a_binary_sensor_on_the_remote_topic(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_REMOTE));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_REMOTE, &kDefault));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_REMOTE, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/binary_sensor/ac_slaapkamer_remote/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_REMOTE, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_remote\",\"default_entity_id\":\"binary_sensor.ac_slaapkamer_remote\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/Remote\",\"pl_on\":\"On\",\"pl_off\":\"Off\",\"ic\":\"mdi:remote\","));
+  TEST_ASSERT_NULL(strstr(out, "ent_cat"));
+}
+
+// The unit's own operating data, the inputs HA derives HI POWER and ECO from.
+static void test_the_fan_speed_and_internal_setpoint_rows_read_the_units_op_data(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_IU_FAN_SPEED));
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_INTERNAL_SETPOINT));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_IU_FAN_SPEED, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_iu_fan_speed/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_IU_FAN_SPEED, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"default_entity_id\":\"sensor.ac_slaapkamer_indoor_fan_speed\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/IU-FANSPEED\",\"stat_cla\":\"measurement\",\"ic\":\"mdi:fan\",\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_INTERNAL_SETPOINT, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_internal_setpoint\",\"default_entity_id\":\"sensor.ac_slaapkamer_internal_setpoint\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/Tsetpoint\",\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\",\"ent_cat\":\"diagnostic\","));
+}
+
+static void test_a_unit_has_24_entities_with_the_33_byte_frame(void) {
   int with_lr = 0, without_lr = 0;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
     if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) continue;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kUitkijk)) with_lr++;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) without_lr++;
   }
-  TEST_ASSERT_EQUAL_INT(21, with_lr);
-  TEST_ASSERT_EQUAL_INT(19, without_lr);
+  TEST_ASSERT_EQUAL_INT(24, with_lr);
+  TEST_ASSERT_EQUAL_INT(22, without_lr);
 }
 
 // --- the committed reference payloads ---------------------------------------
@@ -790,7 +826,9 @@ int main(void) {
   RUN_TEST(test_the_cleaning_row_is_a_running_binary_sensor);
   RUN_TEST(test_the_external_troom_row_is_a_diagnostic_binary_sensor);
   RUN_TEST(test_the_crash_info_row_reads_the_json);
-  RUN_TEST(test_a_unit_has_21_entities_with_the_33_byte_frame);
+  RUN_TEST(test_the_remote_row_is_a_binary_sensor_on_the_remote_topic);
+  RUN_TEST(test_the_fan_speed_and_internal_setpoint_rows_read_the_units_op_data);
+  RUN_TEST(test_a_unit_has_24_entities_with_the_33_byte_frame);
   RUN_TEST(test_reference_fixtures_are_written);
   RUN_TEST(test_second_fixture_set_is_written);
   return UNITY_END();

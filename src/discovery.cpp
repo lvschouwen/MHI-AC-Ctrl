@@ -58,7 +58,8 @@ static MhiDiscoveryCtx ctx = {
             HA_NAME_VANES_LR, HA_NAME_3DAUTO, HA_NAME_FRAME_ERRORS, HA_NAME_FRAME_TIMEOUTS, HA_NAME_ERROR_CODE,
             HA_NAME_OU_OUTDOOR, HA_NAME_OU_CT, HA_NAME_OU_KWH, HA_NAME_OU_COMP, HA_NAME_OU_DEFROST,
             HA_NAME_OU_COMP_RUN, HA_NAME_OU_PROTECTION, HA_NAME_GROUP_ROLE, HA_NAME_RESTART, HA_NAME_RUN_TIME,
-            HA_NAME_CLEANING, HA_NAME_TROOM_EXTERNAL, HA_NAME_CRASH_INFO},
+            HA_NAME_CLEANING, HA_NAME_TROOM_EXTERNAL, HA_NAME_CRASH_INFO,
+            HA_NAME_REMOTE, HA_NAME_IU_FAN_SPEED, HA_NAME_INTERNAL_SETPOINT},
 #ifdef HA_RESET_REASON_TPL
   .reset_reason_tpl = HA_RESET_REASON_TPL,
 #else
@@ -105,6 +106,8 @@ static MhiDiscoveryCtx ctx = {
   .t_troom_external = TOPIC_TROOM_EXTERNAL,
   .troom_external_on = PAYLOAD_TROOM_EXTERNAL_ON, .troom_external_off = PAYLOAD_TROOM_EXTERNAL_OFF,
   .t_crash_info = TOPIC_CRASH_INFO,
+  .t_remote = TOPIC_REMOTE, .remote_on = PAYLOAD_REMOTE_ON, .remote_off = PAYLOAD_REMOTE_OFF,
+  .t_op_iu_fanspeed = TOPIC_IU_FANSPEED, .t_op_tsetpoint = TOPIC_TSETPOINT,
 };
 
 static bool modes_ok = false;

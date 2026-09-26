@@ -3,7 +3,9 @@
 
 #include "MHI-AC-Ctrl-core.h"
 #include "mhi_action.h"
+#include "mhi_remote.h"
 #include "mhi_status.h"
+#include "mhi_vanes.h"
 #include "mhi_vanes_lr.h"
 
 // The checksum helpers moved to lib/mhi_pure/mhi_frame.cpp, where they can be
@@ -20,6 +22,7 @@ void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection t
   status_errorcode_old = 0xff;
   status_action_old = 0xff;
   status_silent_old = 0xff;
+  status_remote_old = 0xff;
   status_vanesLR_old = 0xff;
   status_3Dauto_old = 0xff;
 
@@ -344,17 +347,17 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
       m_cbiStatus->cbiStatusFunction(status_fan, status_fan_old);
     }
 
-    // Only updated when Vanes command via wired RC
-    uint vanestmp = (MOSI_frame[DB0] & 0xc0) + ((MOSI_frame[DB1] & 0xB0) >> 4);
+    // The IR remote leaves the echo flags clear but still reports the setting (fork #38).
+    const byte vanestmp = (byte)mhi_vanes_decode(MOSI_frame[DB0], MOSI_frame[DB1]);
     if (vanestmp != status_vanes_old) {
-      if ((vanestmp & 0x88) == 0) // last vanes update was via IR-RC, so status is not known
-        m_cbiStatus->cbiStatusFunction(status_vanes, vanes_unknown);
-      else if ((vanestmp & 0x40) != 0) // Vanes status swing
-        m_cbiStatus->cbiStatusFunction(status_vanes, vanes_swing);
-      else {
-        m_cbiStatus->cbiStatusFunction(status_vanes, (vanestmp & 0x03) + 1);
-      }
       status_vanes_old = vanestmp;
+      m_cbiStatus->cbiStatusFunction(status_vanes, vanestmp);
+    }
+
+    const byte remotetmp = mhi_remote_last(MOSI_frame, frameSize) ? 1 : 0;
+    if (remotetmp != status_remote_old) {
+      status_remote_old = remotetmp;
+      m_cbiStatus->cbiStatusFunction(status_remote, remotetmp);
     }
 
     

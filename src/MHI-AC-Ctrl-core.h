@@ -50,7 +50,7 @@ enum ACType {   // Type enum
 };
 
 enum ACStatus { // Status enum
-  status_power = type_status, status_mode, status_fan, status_vanes, status_vanesLR, status_3Dauto, status_troom, status_tsetpoint, status_errorcode, status_action, status_silent,
+  status_power = type_status, status_mode, status_fan, status_vanes, status_vanesLR, status_3Dauto, status_troom, status_tsetpoint, status_errorcode, status_action, status_silent, status_remote,
   raw_frame, raw_opdata,  // cbiRawFunction only: the whole MOSI frame, and DB9..DB12 of unknown operating data. Never published through output_P
   opdata_mode = type_opdata, opdata_kwh, opdata_tsetpoint, opdata_return_air, opdata_outdoor, opdata_tho_r1, opdata_iu_fanspeed, opdata_thi_r1, opdata_thi_r2, opdata_thi_r3,
   opdata_ou_fanspeed, opdata_total_iu_run, opdata_total_comp_run, opdata_comp, opdata_ct, opdata_td,
@@ -104,6 +104,7 @@ class MHI_AC_Ctrl_Core {
     byte status_errorcode_old;
     byte status_action_old;
     byte status_silent_old;
+    byte status_remote_old;
 
     byte status_vanesLR_old;
     byte status_3Dauto_old;

@@ -600,6 +600,9 @@ class StatusHandler : public CallbackInterface_Status {
               break;
           }
           break;
+        case status_remote:
+          output_P(status, PSTR(TOPIC_REMOTE), value ? PSTR(PAYLOAD_REMOTE_ON) : PSTR(PAYLOAD_REMOTE_OFF));
+          break;
         case status_silent:
           if (value)
             output_P(status, PSTR(TOPIC_SILENT), PSTR(PAYLOAD_SILENT_ON));

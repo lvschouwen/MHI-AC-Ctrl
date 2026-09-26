@@ -170,6 +170,9 @@
 #ifndef TOPIC_CRASH_INFO
 #define TOPIC_CRASH_INFO "CrashInfo"          // retained JSON: the last crash's rst_info, {"exccause":-1} without one (fork #25)
 #endif
+#ifndef TOPIC_REMOTE
+#define TOPIC_REMOTE "Remote"                 // retained: the last change came from the IR remote, see mhi_remote.h (fork #39)
+#endif
 #ifndef TOPIC_CLEANING
 #define TOPIC_CLEANING "Cleaning"             // retained: Allergen Clear running, see mhi_cleaning.h (fork #25)
 #endif
@@ -365,6 +368,12 @@
 #endif
 #ifndef PAYLOAD_SILENT_OFF
 #define PAYLOAD_SILENT_OFF "Off"
+#endif
+#ifndef PAYLOAD_REMOTE_ON
+#define PAYLOAD_REMOTE_ON "On"
+#endif
+#ifndef PAYLOAD_REMOTE_OFF
+#define PAYLOAD_REMOTE_OFF "Off"
 #endif
 #ifndef PAYLOAD_CLEANING_ON
 #define PAYLOAD_CLEANING_ON "On"

@@ -8,6 +8,11 @@ const char* mhi_vanes_text(const MhiVanesNames* names, int value) {
   return names->unknown;
 }
 
+int mhi_vanes_decode(uint8_t db0, uint8_t db1) {
+  if (db0 & 0x40) return MHI_VANES_SWING;
+  return ((db1 & 0x30) >> 4) + 1;
+}
+
 int mhi_vanes_parse(const MhiVanesNames* names, const char* payload) {
   if (!payload || !*payload) return MHI_VANES_UNKNOWN;
   for (int i = 0; i < 4; i++)

@@ -50,6 +50,9 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_CLEANING,       // binary_sensor <id_prefix>_cleaning, Allergen Clear running (fork #25): a unit row
   MHI_DISCOVERY_TROOM_EXTERNAL, // binary_sensor <id_prefix>_external_troom, a room sensor is Troom (fork #25 C3): a unit row
   MHI_DISCOVERY_CRASH_INFO,     // sensor   <id_prefix>_crash_info, the last crash's exccause (fork #25): a unit row
+  MHI_DISCOVERY_REMOTE,         // binary_sensor <id_prefix>_remote, the last change came from the IR remote (fork #39): a unit row
+  MHI_DISCOVERY_IU_FAN_SPEED,   // sensor   <id_prefix>_iu_fan_speed, the unit's OpData/IU-FANSPEED (fork #39): a unit row
+  MHI_DISCOVERY_INTERNAL_SETPOINT,  // sensor <id_prefix>_internal_setpoint, the unit's OpData/Tsetpoint (fork #39): a unit row
   MHI_DISCOVERY_ROWS
 };
 
@@ -134,6 +137,11 @@ struct MhiDiscoveryCtx {
   const char* t_troom_external;       // TOPIC_TROOM_EXTERNAL
   const char* troom_external_on, *troom_external_off;  // PAYLOAD_TROOM_EXTERNAL_ON/OFF
   const char* t_crash_info;           // TOPIC_CRASH_INFO
+  // Fork #39 (remote use; HI POWER and ECO are derived from these in Home Assistant).
+  const char* t_remote;               // TOPIC_REMOTE
+  const char* remote_on, *remote_off; // PAYLOAD_REMOTE_ON/OFF
+  const char* t_op_iu_fanspeed;       // TOPIC_IU_FANSPEED, relative to unit_op_prefix
+  const char* t_op_tsetpoint;         // TOPIC_TSETPOINT, relative to unit_op_prefix
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,

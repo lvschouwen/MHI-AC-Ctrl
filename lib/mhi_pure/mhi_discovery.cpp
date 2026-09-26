@@ -21,12 +21,14 @@ static const char* const kComponent[MHI_DISCOVERY_ROWS] = {
   "climate", "select", "switch", "binary_sensor", "binary_sensor", "sensor", "sensor", "sensor", "sensor", "sensor",
   "select", "switch", "sensor", "sensor", "sensor",
   "sensor", "sensor", "sensor", "sensor", "binary_sensor", "sensor", "sensor",
-  "sensor", "button", "sensor", "binary_sensor", "binary_sensor", "sensor"};
+  "sensor", "button", "sensor", "binary_sensor", "binary_sensor", "sensor",
+  "binary_sensor", "sensor", "sensor"};
 static const char* const kSuffix[MHI_DISCOVERY_ROWS] = {
   "", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3d_auto", "frame_errors", "frame_timeouts", "error_code",
   "outdoor_temp", "current", "energy", "comp_freq", "defrost", "comp_run", "protection",
-  "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info"};
+  "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info",
+  "remote", "iu_fan_speed", "internal_setpoint"};
 static const char* const kHaModes[6] = {"off", "auto", "dry", "cool", "fan_only", "heat"};
 
 struct Out {
@@ -89,12 +91,12 @@ bool mhi_discovery_is_outdoor_row(MhiDiscoveryRow row) {
 }
 
 // The outdoor block is the seven rows of fork #19, and the table ends with the
-// crash-info row. MhiDiscoveryRow is append-only: whoever appends a row decides
+// internal-setpoint row. MhiDiscoveryRow is append-only: whoever appends a row decides
 // in mhi_discovery_is_outdoor_row() whether it is an outdoor row, then moves
 // this line.
 static_assert(MHI_DISCOVERY_OU_PROTECTION - MHI_DISCOVERY_OU_OUTDOOR == 6, "the outdoor block is OU_OUTDOOR..OU_PROTECTION");
-static_assert(MHI_DISCOVERY_CRASH_INFO + 1 == MHI_DISCOVERY_ROWS,
-              "a row appended after MHI_DISCOVERY_CRASH_INFO: classify it in mhi_discovery_is_outdoor_row() first");
+static_assert(MHI_DISCOVERY_INTERNAL_SETPOINT + 1 == MHI_DISCOVERY_ROWS,
+              "a row appended after MHI_DISCOVERY_INTERNAL_SETPOINT: classify it in mhi_discovery_is_outdoor_row() first");
 
 static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
   // The outdoor rows read the group root (fork #22); it never ends in "/", so
@@ -370,6 +372,25 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
       // epc1 and excvaddr as attributes (fork #25, mhi_crash_info.h).
       put(&o, FMT("\"stat_t\":\"~/%s\",\"val_tpl\":\"{{ value_json.exccause }}\",\"json_attr_t\":\"~/%s\",\"ic\":\"mdi:bug-outline\","),
           c->t_crash_info, c->t_crash_info);
+      break;
+    case MHI_DISCOVERY_REMOTE:
+      // On while no SPI echo flag is set: the IR remote made the last change
+      // (fork #39, mhi_remote.h). Home Assistant's re-asserts yield to it.
+      diagnostic = false;
+      put(&o, FMT("\"stat_t\":\"~/%s\",\"pl_on\":\"%s\",\"pl_off\":\"%s\",\"ic\":\"mdi:remote\","),
+          c->t_remote, c->remote_on, c->remote_off);
+      break;
+    case MHI_DISCOVERY_IU_FAN_SPEED:
+      // The indoor fan's actual step: 8 while the remote's HI POWER runs, which
+      // Fan (3) does not show (fork #39). A number; HA derives HI POWER.
+      put(&o, FMT("\"stat_t\":\"~/%s%s\",\"stat_cla\":\"measurement\",\"ic\":\"mdi:fan\","),
+          c->unit_op_prefix, c->t_op_iu_fanspeed);
+      break;
+    case MHI_DISCOVERY_INTERNAL_SETPOINT:
+      // The setpoint the unit regulates on: Tsetpoint +2 in heat, +0.5 in the
+      // remote's ECO (fork #39). HA derives ECO from it.
+      put(&o, FMT("\"stat_t\":\"~/%s%s\",\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\","),
+          c->unit_op_prefix, c->t_op_tsetpoint);
       break;
     case MHI_DISCOVERY_OU_KWH:  // retired (fork #22): never built, so never published, and never empty
     case MHI_DISCOVERY_ROWS:    // excluded above; keeps -Wswitch exhaustive

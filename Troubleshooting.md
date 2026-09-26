@@ -21,7 +21,6 @@ This is done via the [SPI-logger](https://github.com/absalom-muc/MHI-AC-Ctrl/blo
 
 ## Known limitations
 MHI-AC-Ctrl doesn't support all functions of the infrared remote control. This is because some functions are not reflected by the SPI payload (or I'm not aware of the according SPI codes):
-- Vanes up/down is supported, but with the limitation that if the last command was issued by the IR RC, then the vanes up/down status is not visible in MHI-AC-Ctrl
 - ECO, Silent and Night set back mode
 
 This should be considered especially when you use the IR RC in parallel to MHI-AC-Ctrl.
@@ -79,8 +78,8 @@ Please check this [section](#fire-pins-not-properly-connected)
 
 ### :fire: Wrong MQTT set path used
 The MQTT path for receiving the status is different from the MQTT path for setting values. Re-check that you use the set-path described in [SW-Configuration.md](https://github.com/absalom-muc/MHI-AC-Ctrl/blob/master/SW-Configuration.md#mqtt-status). Please pay attention to the case sensitivity.
-## :fire: Last Vanes up/down status not visible in MHI-AC-Ctrl
-That is no bug, but a restriction because the SPI unfortunately doesn't provide the Vanes status when the IR remote control was used for the last command. The `Vanes` topic then reads `?`, and so do the climate's swing mode and the vane select in Home Assistant, until the vanes are set over MQTT again.
+## :fire: Vanes up/down after a change on the IR remote
+v2.8 published `?` on `Vanes` after the IR remote was used, because the set flags a write over SPI adds were missing. The position itself is in the frame: on an SRK20ZS-WF every remote vane press showed up in `DB1 & 0x30` (swing in `DB0 & 0x40`), so `Vanes` now always shows the setting (fork #38). The `Remote` topic says whether the remote made the last change.
 
 ## :fire: Log shows errors, but it works nevertheless
 With some ACs the SPI connection is fragile because of a different timing. E.g.
