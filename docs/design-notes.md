@@ -62,6 +62,13 @@ on one outdoor unit"; this section is the internal rules that back it.
   counted only while *that* indoor unit is on, reset when that unit powers on
   — it is not comparable across units, so it is never written to the group
   root and the outdoor device has no energy entity.
+  Measured with both units on (26 Sep 2026, 20:42-21:59 UTC): **each** unit's
+  KWH counts the **whole** outdoor energy, not its share (ticks at 0.89 and
+  0.92 of ∫CT×230 V, still counting while that unit's `Action` is idle), and
+  a full-state command to a unit that is already on does not reset it. So KWH
+  cannot split energy per room; Home Assistant splits `CT`×230 V over the units
+  whose `Action` is active, by their `OU-EEV1` (Expansion valve, fork #41)
+  share. An idle unit's valve drops to 0.
 
 ## MQTT buffer sizing
 
