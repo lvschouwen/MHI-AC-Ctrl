@@ -618,16 +618,22 @@ class StatusHandler : public CallbackInterface_Status {
         case erropdata_thi_r1:
           itoa(0.327f * value - 11.4f, strtmp, 10); // only rough approximation
           output_P(status, PSTR(TOPIC_THI_R1), strtmp);
+          itoa(value, strtmp, 10);
+          output_P(status, PSTR(TOPIC_THI_R1 TOPIC_RAW_SUFFIX), strtmp);
           break;
         case opdata_thi_r2:
         case erropdata_thi_r2:
           itoa(0.327f * value - 11.4f, strtmp, 10); // formula for calculation not known
           output_P(status, PSTR(TOPIC_THI_R2), strtmp);
+          itoa(value, strtmp, 10);
+          output_P(status, PSTR(TOPIC_THI_R2 TOPIC_RAW_SUFFIX), strtmp);
           break;
         case opdata_thi_r3:
         case erropdata_thi_r3:
           itoa(0.327f * value - 11.4f, strtmp, 10); // only rough approximation
           output_P(status, PSTR(TOPIC_THI_R3), strtmp);
+          itoa(value, strtmp, 10);
+          output_P(status, PSTR(TOPIC_THI_R3 TOPIC_RAW_SUFFIX), strtmp);
           break;
         case opdata_iu_fanspeed:
         case erropdata_iu_fanspeed:
@@ -648,6 +654,8 @@ class StatusHandler : public CallbackInterface_Status {
         case erropdata_tho_r1:
           itoa(0.327f * value - 11.4f, strtmp, 10); // formula for calculation not known
           output_P(status, PSTR(TOPIC_THO_R1), strtmp);
+          itoa(value, strtmp, 10);
+          output_P(status, PSTR(TOPIC_THO_R1 TOPIC_RAW_SUFFIX), strtmp);
           break;
         case opdata_comp:
         case erropdata_comp:
@@ -668,8 +676,10 @@ class StatusHandler : public CallbackInterface_Status {
           output_P(status, PSTR(TOPIC_CT), strtmp);
           break;
         case opdata_tdsh:
-          itoa(value, strtmp, 10); // formula for calculation not known
+          itoa(value / 2, strtmp, 10); // formula for calculation not known
           output_P(status, PSTR(TOPIC_TDSH), strtmp);
+          itoa(value, strtmp, 10);
+          output_P(status, PSTR(TOPIC_TDSH TOPIC_RAW_SUFFIX), strtmp);
           break;
         case opdata_protection_no:
           itoa(value, strtmp, 10);

@@ -585,7 +585,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
           if (MOSI_type_opdata) {
             if (MOSI_frame[DB11] != op_tdsh_old) {
               op_tdsh_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_tdsh, op_tdsh_old / 2);
+              m_cbiStatus->cbiStatusFunction(opdata_tdsh, op_tdsh_old);  // main.cpp halves it (fork #42)
             }
           }
         }

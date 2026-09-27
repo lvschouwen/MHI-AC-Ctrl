@@ -175,7 +175,7 @@ On a multi-split every indoor unit reads the same outdoor unit, so eleven operat
 Give every unit of one outdoor unit the same `GROUP_ROOT`, and the same `TOPIC_CONNECTED`, `PAYLOAD_CONNECTED_TRUE` and `PAYLOAD_CONNECTED_FALSE`: each unit watches the others' `<prefix>connected`. `GROUP_ROOT` is at most 64 characters so that the largest record message (5 bytes of header, 2 of topic length, the root, `members/`, a 32-character hostname and a 140-byte record: 251 bytes) fits PubSubClient's 256-byte receive buffer, which drops a larger message whole: with a longer root the units would never see each other's records, and two of them could publish at once. The build refuses a longer root, and a `HOSTNAME` longer than 32 characters.
 
 Which values go where, on a multi-split:
-- written by the publisher only, under `GROUP_OP_PREFIX`: `OUTDOOR`, `CT`, `COMP`, `DEFROST`, `TOTAL-COMP-RUN`, `PROTECTION-NO`, `TD`, `TDSH`, `THO-R1`, `THI-R2`, `OU-FANSPEED`;
+- written by the publisher only, under `GROUP_OP_PREFIX`: `OUTDOOR`, `CT`, `COMP`, `DEFROST`, `TOTAL-COMP-RUN`, `PROTECTION-NO`, `TD`, `TDSH`, `THO-R1`, `THI-R2`, `OU-FANSPEED` (plus the `-RAW` companions of `TDSH`, `THO-R1` and `THI-R2`, see Note 4 under [Operating data](#operating-data-mhi-ac-ctrl-coreh));
 - written by every unit under its own `MQTT_OP_PREFIX`, as before: `RETURN-AIR`, `THI-R1`, `THI-R3`, `IU-FANSPEED`, `TOTAL-IU-RUN`, `Tsetpoint`, `Mode`, `unknown`, `OU-EEV1` (each indoor circuit has its own valve) and `KWH`;
 - `ErrOpData/` stays per unit, the eleven included: it is the snapshot the unit read from its own indoor unit.
 
@@ -484,6 +484,8 @@ You can find some hints related to the meaning of the operating data [here](http
 Note 2: The MQTT topic names are the `TOPIC_*` defines in [MHI-AC-Ctrl.h](src/MHI-AC-Ctrl.h), not the comment text above: `SET-TEMP` is published as `OpData/Tsetpoint`, `energy-used` as `OpData/KWH`, `OU-EEV` as `OpData/OU-EEV1`, `PROTECTION-No` as `OpData/PROTECTION-NO` and `MODE` as `OpData/Mode`. An opcode the program does not know is published on `OpData/unknown`. `OpData/TD` publishes `30` for values below 41 °C, meaning 30 °C or less (fork #41; upstream publishes the text `<=30`). `SILENT` is published on the status topic `Silent`, not under `OpData/`.
 
 Note 3: The energy-used (`KWH`) is the outdoor unit's energy in kWh counted while this indoor unit is on. It starts from 0 again when this indoor unit is switched on, and it is not the outdoor unit's total when several indoor units share it, see [Several indoor units on one outdoor unit](#several-indoor-units-on-one-outdoor-unit).
+
+Note 4: `THI-R1`, `THI-R2`, `THI-R3`, `THO-R1` and `TDSH` are also published with the AC's byte unconverted, on `OpData/THI-R1-RAW` and so on (`TOPIC_RAW_SUFFIX`), retained and on change, and under `ErrOpData/` for the error snapshot (`TDSH` has none). Their formulas are unconfirmed, and the converted values cannot be turned back into the byte exactly; the raw topics are there to fit better formulas from captures (fork #42). They have no Home Assistant discovery rows.
 
 Hint: The error operating data is usually a sub-set of the operating data above. If user requests error operating data, all available error operating data is provided independent from the list above.
 

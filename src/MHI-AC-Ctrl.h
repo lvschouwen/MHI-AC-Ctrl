@@ -154,6 +154,11 @@
 #ifndef TOPIC_OU_EEV1
 #define TOPIC_OU_EEV1 "OU-EEV1"
 #endif
+// The AC's byte next to a converted value whose formula is unconfirmed, so
+// the formula can be fitted from captures (fork #42).
+#ifndef TOPIC_RAW_SUFFIX
+#define TOPIC_RAW_SUFFIX "-RAW"
+#endif
 
 #ifndef TOPIC_REQUEST_ERROPDATA
 #define TOPIC_REQUEST_ERROPDATA "ErrOpData"
