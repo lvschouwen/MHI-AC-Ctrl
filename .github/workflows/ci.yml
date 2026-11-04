@@ -34,7 +34,7 @@ jobs:
           restore-keys: pio-native-
 
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: pip install platformio==6.2.0
 
       # The tests rewrite every fixture the code still produces, but they never
       # delete one, so the gate below cannot see a committed fixture the code no
@@ -90,7 +90,7 @@ jobs:
           restore-keys: pio-esp8266-
 
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: pip install platformio==6.2.0
 
       - name: Build
         run: pio run -e ${{ matrix.environment }}

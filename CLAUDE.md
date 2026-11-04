@@ -9,6 +9,7 @@ ESP8266 firmware (PlatformIO) that bridges Mitsubishi Heavy air conditioners to 
 - `pio test -e native` (never `pio run -e native`)
 - fixture gate: `rm -f test/fixtures/discovery/*.txt test/fixtures/discovery_all/*.txt`, rerun the tests, then `git diff --exit-code -- test/fixtures/discovery test/fixtures/discovery_all` (commit regenerated fixtures)
 - `pio run -e <env>` for each of the 12 envs in .github/workflows/ci.yml (d1_mini + ci-*); `scripts/check_flash_size.py` enforces the 460000 B OTA budget on each
+- Pins: `platformio==<version>` in both CI install steps and `espressif8266@<version>` in platformio.ini. Bump them together, on purpose, in their own commit; CI is the gate.
 - Pure logic lives in lib/mhi_pure with a Unity test in test/test_mhi_*; firmware glue is verified on the bench.
 
 ## Hardware
