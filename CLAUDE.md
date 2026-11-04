@@ -23,3 +23,4 @@ ESP8266 firmware (PlatformIO) that bridges Mitsubishi Heavy air conditioners to 
 ## Git
 - Issue first, commits straight to master. Public repo: no IPs, hostnames, SSIDs, MACs, room-to-IP maps or tokens anywhere.
 - Standing knowledge lives in memory; open work lives in GitHub issues.
+- Implementers (subagents) stop at a green `pio test -e native` plus the env builds and a LOCAL commit; flashing, OTA and `git push` are main-session steps.
