@@ -5,11 +5,9 @@ ESP8266 firmware (PlatformIO) that bridges Mitsubishi Heavy air conditioners to 
 ## Toolchain
 - `platform = espressif8266@4.2.1`; libs PubSubClient3@3.3.1, OneWire@2.3.8, DallasTemperature@4.0.6 (see platformio.ini). Never use knolleary/PubSubClient.
 
-## Full check (what CI does)
-- `pio test -e native` (never `pio run -e native`)
-- fixture gate: `rm -f test/fixtures/discovery/*.txt test/fixtures/discovery_all/*.txt`, rerun the tests, then `git diff --exit-code -- test/fixtures/discovery test/fixtures/discovery_all` (commit regenerated fixtures)
-- `pio run -e <env>` for each of the 12 envs in .github/workflows/ci.yml (d1_mini + ci-*); `scripts/check_flash_size.py` enforces the 460000 B OTA budget on each
-- Pins: `platformio==<version>` in both CI install steps and `espressif8266@<version>` in platformio.ini. Bump them together, on purpose, in their own commit; CI is the gate.
+## Full check
+- `agent-check` runs `scripts/check.sh`: `pio test -e native` (never `pio run -e native`), the discovery fixture gate (regenerated fixtures must match git), then `pio run -e <env>` for the 12 envs (d1_mini + ci-*), each held to the 460000 B OTA budget by `scripts/check_flash_size.py`. No GitHub Actions; this script is the gate.
+- Pins: `platformio==6.2.0` and `espressif8266@<version>` in platformio.ini. Bump on purpose, in their own commit.
 - Pure logic lives in lib/mhi_pure with a Unity test in test/test_mhi_*; firmware glue is verified on the bench.
 
 ## Hardware
@@ -24,4 +22,5 @@ ESP8266 firmware (PlatformIO) that bridges Mitsubishi Heavy air conditioners to 
 ## Git
 - Issue first, commits straight to master. Public repo: no IPs, hostnames, SSIDs, MACs, room-to-IP maps or tokens anywhere.
 - Standing knowledge lives in memory; open work lives in GitHub issues.
-- Implementers (subagents) stop at a green `pio test -e native` plus the env builds and a LOCAL commit; flashing, OTA and `git push` are main-session steps.
+- Agent runs follow ~/.claude/rules/common/agent-runs.md (slots `.claude/worktrees/wt-N`, settings `.claude/agent-wt.conf`). Opus for anything flash-adjacent or protocol-level.
+- Implementers stop at a green `agent-check` and a LOCAL commit; flashing, OTA and pushing are main-session steps.

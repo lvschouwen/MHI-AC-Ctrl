@@ -8,6 +8,9 @@
 config_defaults.h
 !test/fixtures/config_defaults/config_defaults.h
 
+# Agent worktree slots (agent-wt)
+.claude/worktrees/
+
 # Editors / OS
 .vscode/
 .idea/
