@@ -22,5 +22,5 @@ ESP8266 firmware (PlatformIO) that bridges Mitsubishi Heavy air conditioners to 
 ## Git
 - Issue first, commits straight to master. Public repo: no IPs, hostnames, SSIDs, MACs, room-to-IP maps or tokens anywhere.
 - Standing knowledge lives in memory; open work lives in GitHub issues.
-- Agent runs follow ~/.claude/rules/common/agent-runs.md (slots `.claude/worktrees/wt-N`, settings `.claude/agent-wt.conf`). Opus for anything flash-adjacent or protocol-level.
+- Agent runs follow ~/.claude/rules/common/agent-runs.md (slots `.claude/worktrees/wt-N`, settings `.claude/agent-wt.conf`). Risk areas (always a reviewer pass, or keep the work in main): anything flash-adjacent or protocol-level.
 - Implementers stop at a green `agent-check` and a LOCAL commit; flashing, OTA and pushing are main-session steps.
