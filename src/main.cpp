@@ -675,6 +675,7 @@ void loop() {
 #ifndef CONTINUE_WITHOUT_MQTT 
   if((MQTTStatus==MQTT_RECONNECTED) || (MQTTStatus==MQTT_CONNECT_OK)){
 #endif    
+    note_core_loop_begin();
     int ret = mhi_ac_ctrl_core.loop(80);
     note_frame_result(ret);
     note_cmd_unconfirmed(mhi_ac_ctrl_core.get_cmd_unconfirmed());

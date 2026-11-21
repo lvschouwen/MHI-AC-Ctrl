@@ -7,6 +7,7 @@
 #include "mhi_rescue.h"
 #include "mhi_group.h"
 #include "mhi_link.h"
+#include "mhi_loop_gap.h"
 #include "mhi_phy.h"
 #include "mhi_temp.h"
 #include "mhi_uptime.h"
@@ -256,6 +257,7 @@ static MhiUptime uptime_counter = {0, 0, 0};
 static MhiRetryPacer telemetry_pacer = {0, false};
 static MhiFrameStats frame_stats = {0, 0};
 static MhiFrameStatsPublished frame_stats_published = {{0, 0}, false};
+static MhiLoopGap loop_gap = {0, 0, false};  // the longest start-to-start gap of the core's loop(), see mhi_loop_gap.h (fork #51)
 static uint32_t cmd_unconfirmed = 0;  // from the core, see note_cmd_unconfirmed()
 
 static void publishTelemetryNow(uint32_t uptime_s) {
@@ -266,6 +268,8 @@ static void publishTelemetryNow(uint32_t uptime_s) {
   output_P((ACStatus)type_status, PSTR(TOPIC_UPTIME), strtmp);
   ultoa(ESP.getFreeHeap(), strtmp, 10);
   output_P((ACStatus)type_status, PSTR(TOPIC_FREE_HEAP), strtmp);
+  ultoa(mhi_loop_gap_take_max(&loop_gap), strtmp, 10);  // fork #51: longest gap since the last report
+  output_P((ACStatus)type_status, PSTR(TOPIC_LOOP_MAX_MS), strtmp);
   ultoa(cmd_unconfirmed, strtmp, 10);  // fork #60
   output_P((ACStatus)type_status, PSTR(TOPIC_CMD_UNCONFIRMED), strtmp);
   // Only when they changed since the last publish, and once after every
@@ -286,6 +290,10 @@ static_assert(err_msg_invalid_signature == -1 && err_msg_invalid_checksum == -2 
 
 void note_frame_result(int ret) {
   mhi_frame_stats_count(&frame_stats, ret);
+}
+
+void note_core_loop_begin() {
+  mhi_loop_gap_begin(&loop_gap, millis());
 }
 
 void note_cmd_unconfirmed(uint32_t count) {
@@ -349,6 +357,9 @@ int MQTTreconnect() {
       reconnect_trials=0;
     }
 
+    // Fork #51: this call blocks loop(), so the AC link is unserved for as long as the
+    // connect, the status publishes and the subscribes below take: ConnectBurstMs.
+    const uint32_t burst_start = millis();
     if (MQTTclient.connect(HOSTNAME, MQTT_USER, MQTT_PASSWORD, MQTT_PREFIX TOPIC_CONNECTED, 0, true, PAYLOAD_CONNECTED_FALSE)) {
       Serial.println(F(" connected"));
       Serial.printf_P(PSTR("MQTTclient.connected=%i\n"), MQTTclient.connected());
@@ -411,6 +422,8 @@ int MQTTreconnect() {
         return MQTT_NOT_CONNECTED;
       }
       mhi_subscribe_window_mark(&subscribe_window, millis(), kSubscribeMinMs);  // retained set/reset arrives now (fork #50)
+      ultoa(mhi_elapsed_ms(burst_start, millis()), strtmp, 10);  // published after the burst it measures
+      output_P((ACStatus)type_status, PSTR(TOPIC_CONNECT_BURST_MS), strtmp);
       return MQTT_RECONNECTED;
     }
     else {

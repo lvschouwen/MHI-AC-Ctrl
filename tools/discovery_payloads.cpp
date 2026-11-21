@@ -32,6 +32,7 @@
 //   --name-troom-external; the crash-info row adds --name-crash-info.
 // Fork #41 adds --name-expansion-valve, --name-coil-temp, --name-version and,
 //   for the outdoor rows, --name-ou-discharge-temp and --name-ou-superheat.
+// Forks #60 and #51 add --name-cmd-unconfirmed, --name-loop-max and --name-connect-burst.
 // Every option has the repo default; --modes and --vanes take exactly six
 // comma-separated items and --vanes-lr exactly eight; --lr and --outdoor take
 // exactly 0 or 1; --outdoor-id defaults to the slug of --group-base plus
@@ -54,7 +55,7 @@ static const char* kNameOption[MHI_DISCOVERY_ROWS] = {
   "--name-run-time", "--name-cleaning", "--name-troom-external", "--name-crash-info",
   "--name-remote", "--name-iu-fan-speed", "--name-internal-setpoint",
   "--name-expansion-valve", "--name-coil-temp", "--name-version", "--name-ou-discharge-temp", "--name-ou-superheat",
-  "--name-cmd-unconfirmed"};
+  "--name-cmd-unconfirmed", "--name-loop-max", "--name-connect-burst"};
 
 // A 0/1 option; anything else is malformed. External callers compare live
 // payloads against this output, so "--lr true" has to be an error rather than a
@@ -94,7 +95,7 @@ int main(int argc, char** argv) {
               "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
               "Remote", "Indoor fan speed", "Internal setpoint",
               "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat",
-              "Unconfirmed commands"},
+              "Unconfirmed commands", "Longest AC link gap", "MQTT connect burst"},
     .reset_reason_tpl = NULL,
     .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
     .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -133,6 +134,7 @@ int main(int argc, char** argv) {
     .t_op_ou_eev1 = "OU-EEV1", .t_op_thi_r1 = "THI-R1", .t_version = "Version",
     .t_op_td = "TD", .t_op_tdsh = "TDSH",
     .t_cmd_unconfirmed = "CmdUnconfirmed",
+    .t_loop_max = "LoopMaxMs", .t_connect_burst = "ConnectBurstMs",
   };
   bool outdoor_id_given = false, group_base_given = false;
   // --avty-member <host>=<MQTT_PREFIX>, once per unit of the group, sorted by

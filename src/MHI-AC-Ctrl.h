@@ -44,6 +44,12 @@
 #ifndef TOPIC_CMD_UNCONFIRMED
 #define TOPIC_CMD_UNCONFIRMED "CmdUnconfirmed"   // set/ writes the AC never showed within a few seconds, since boot (fork #60)
 #endif
+#ifndef TOPIC_LOOP_MAX_MS
+#define TOPIC_LOOP_MAX_MS "LoopMaxMs"           // longest time the AC link went unserved since the last report, ms (fork #51)
+#endif
+#ifndef TOPIC_CONNECT_BURST_MS
+#define TOPIC_CONNECT_BURST_MS "ConnectBurstMs"  // how long the last MQTT connect and subscribe blocked the main loop, ms (fork #51)
+#endif
 #ifndef TOPIC_RESET_REASON
 #define TOPIC_RESET_REASON "ResetReason"
 #endif

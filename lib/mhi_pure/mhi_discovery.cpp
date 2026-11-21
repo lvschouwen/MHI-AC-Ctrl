@@ -23,14 +23,15 @@ static const char* const kComponent[MHI_DISCOVERY_ROWS] = {
   "sensor", "sensor", "sensor", "sensor", "binary_sensor", "sensor", "sensor",
   "sensor", "button", "sensor", "binary_sensor", "binary_sensor", "sensor",
   "binary_sensor", "sensor", "sensor",
-  "sensor", "sensor", "sensor", "sensor", "sensor", "sensor"};
+  "sensor", "sensor", "sensor", "sensor", "sensor", "sensor", "sensor", "sensor"};
 static const char* const kSuffix[MHI_DISCOVERY_ROWS] = {
   "", "vanes", "silent", "problem", "wiring", "uptime", "free_heap", "rssi", "reset_reason", "wifi_phy",
   "vanes_lr", "3d_auto", "frame_errors", "frame_timeouts", "error_code",
   "outdoor_temp", "current", "energy", "comp_freq", "defrost", "comp_run", "protection",
   "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info",
   "remote", "iu_fan_speed", "internal_setpoint",
-  "expansion_valve", "coil_temp", "version", "discharge_temp", "discharge_superheat", "cmd_unconfirmed"};
+  "expansion_valve", "coil_temp", "version", "discharge_temp", "discharge_superheat", "cmd_unconfirmed",
+  "loop_max_ms", "connect_burst_ms"};
 static const char* const kHaModes[6] = {"off", "auto", "dry", "cool", "fan_only", "heat"};
 
 struct Out {
@@ -104,8 +105,8 @@ MhiDiscoveryRow mhi_discovery_next_outdoor_row(uint8_t from) {
 // appends a row decides in mhi_discovery_is_outdoor_row() whether it is an
 // outdoor row, then moves this line.
 static_assert(MHI_DISCOVERY_OU_PROTECTION - MHI_DISCOVERY_OU_OUTDOOR == 6, "the outdoor block is OU_OUTDOOR..OU_PROTECTION");
-static_assert(MHI_DISCOVERY_CMD_UNCONFIRMED + 1 == MHI_DISCOVERY_ROWS,
-              "a row appended after MHI_DISCOVERY_CMD_UNCONFIRMED: classify it in mhi_discovery_is_outdoor_row() first");
+static_assert(MHI_DISCOVERY_CONNECT_BURST + 1 == MHI_DISCOVERY_ROWS,
+              "a row appended after MHI_DISCOVERY_CONNECT_BURST: classify it in mhi_discovery_is_outdoor_row() first");
 
 static void head(Out* o, const MhiDiscoveryCtx* c, MhiDiscoveryRow row) {
   // The outdoor rows read the group root (fork #22); it never ends in "/", so
@@ -433,6 +434,16 @@ size_t mhi_discovery_build(MhiDiscoveryRow row, const MhiDiscoveryCtx* c, char* 
       // Writes the AC never showed (fork #60): a counter, so a lost command is visible.
       state_topic(&o, c->t_cmd_unconfirmed);
       put(&o, FMT("\"stat_cla\":\"total_increasing\",\"ic\":\"mdi:alert-circle-outline\","));
+      break;
+    case MHI_DISCOVERY_LOOP_MAX:
+      // The longest time the AC link went unserved since the last report (fork #51).
+      state_topic(&o, c->t_loop_max);
+      put(&o, FMT("\"dev_cla\":\"duration\",\"unit_of_meas\":\"ms\",\"stat_cla\":\"measurement\","));
+      break;
+    case MHI_DISCOVERY_CONNECT_BURST:
+      // How long the last MQTT connect and subscribe blocked the main loop (fork #51).
+      state_topic(&o, c->t_connect_burst);
+      put(&o, FMT("\"dev_cla\":\"duration\",\"unit_of_meas\":\"ms\",\"stat_cla\":\"measurement\","));
       break;
     case MHI_DISCOVERY_OU_KWH:  // retired (fork #22): never built, so never published, and never empty
     case MHI_DISCOVERY_ROWS:    // excluded above; keeps -Wswitch exhaustive

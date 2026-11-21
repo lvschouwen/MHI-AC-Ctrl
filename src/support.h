@@ -86,7 +86,7 @@ static_assert(RESCUE_AP_BACKOFF_MAX_MIN <= 70000, "RESCUE_AP_BACKOFF_MAX_MIN in 
 #define HA_CLIMATE_ID HOSTNAME                      // unique_id of the climate entity
 #endif
 #ifndef HA_ID_PREFIX
-#define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart, _run_time, _cleaning, _external_troom, _crash_info, _remote, _iu_fan_speed, _internal_setpoint, _expansion_valve, _coil_temp, _version, _cmd_unconfirmed
+#define HA_ID_PREFIX HOSTNAME                       // unique_id prefix of the other entities: <prefix>_vanes, _silent, _problem, _wiring, _uptime, _free_heap, _rssi, _reset_reason, _wifi_phy, _vanes_lr, _3d_auto, _frame_errors, _frame_timeouts, _error_code, _group_role, _restart, _run_time, _cleaning, _external_troom, _crash_info, _remote, _iu_fan_speed, _internal_setpoint, _expansion_valve, _coil_temp, _version, _cmd_unconfirmed, _loop_max_ms, _connect_burst_ms
 #endif
 //#define HA_ENTITY_PREFIX "ac_slaapkamer"          // when defined, every entity gets default_entity_id: climate.<prefix>, and <domain>.<prefix>_<slug of its name> for the rest (what HA derives itself); lower case a-z 0-9 _
 #ifndef HA_NAME_VANES
@@ -193,6 +193,12 @@ static_assert(RESCUE_AP_BACKOFF_MAX_MIN <= 70000, "RESCUE_AP_BACKOFF_MAX_MIN in 
 #endif
 #ifndef HA_NAME_CMD_UNCONFIRMED
 #define HA_NAME_CMD_UNCONFIRMED "Unconfirmed commands"  // the CmdUnconfirmed topic (fork #60)
+#endif
+#ifndef HA_NAME_LOOP_MAX
+#define HA_NAME_LOOP_MAX "Longest AC link gap"       // the LoopMaxMs topic (fork #51)
+#endif
+#ifndef HA_NAME_CONNECT_BURST
+#define HA_NAME_CONNECT_BURST "MQTT connect burst"   // the ConnectBurstMs topic (fork #51)
 #endif
 #ifndef HA_NAME_OU_DISCHARGE_TEMP
 #define HA_NAME_OU_DISCHARGE_TEMP "Discharge temperature"  // OpData/TD, the outdoor device (fork #41)
@@ -394,6 +400,7 @@ void publish_cmd_ok();                                        // last MQTT cmd w
 void publish_cmd_unknown();                                   // last MQTT cmd was unknown
 void publish_cmd_invalidparameter();                          // a paramter of the last MQTT was wrong
 void output_P(ACStatus status, PGM_P topic, PGM_P payload);   // publish via MQTT
+void note_core_loop_begin();  // before each mhi_ac_ctrl_core.loop(): the longest start-to-start gap is LoopMaxMs (fork #51)
 void note_cmd_unconfirmed(uint32_t count);  // the core's CmdUnconfirmed counter, published with the telemetry (fork #60)
 void note_frame_result(int ret);  // count mhi_ac_ctrl_core.loop()'s return towards FrameErrors/FrameTimeouts (fork #21)
 const char* outdoor_id();                                     // HA_OUTDOOR_ID, or the one derived from GROUP_ROOT (fork #22)

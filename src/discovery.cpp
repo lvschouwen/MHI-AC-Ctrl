@@ -61,7 +61,7 @@ static MhiDiscoveryCtx ctx = {
             HA_NAME_CLEANING, HA_NAME_TROOM_EXTERNAL, HA_NAME_CRASH_INFO,
             HA_NAME_REMOTE, HA_NAME_IU_FAN_SPEED, HA_NAME_INTERNAL_SETPOINT,
             HA_NAME_EXPANSION_VALVE, HA_NAME_COIL_TEMP, HA_NAME_VERSION, HA_NAME_OU_DISCHARGE_TEMP, HA_NAME_OU_SUPERHEAT,
-            HA_NAME_CMD_UNCONFIRMED},
+            HA_NAME_CMD_UNCONFIRMED, HA_NAME_LOOP_MAX, HA_NAME_CONNECT_BURST},
 #ifdef HA_RESET_REASON_TPL
   .reset_reason_tpl = HA_RESET_REASON_TPL,
 #else
@@ -113,6 +113,7 @@ static MhiDiscoveryCtx ctx = {
   .t_op_ou_eev1 = TOPIC_OU_EEV1, .t_op_thi_r1 = TOPIC_THI_R1, .t_version = TOPIC_VERSION,
   .t_op_td = TOPIC_TD, .t_op_tdsh = TOPIC_TDSH,
   .t_cmd_unconfirmed = TOPIC_CMD_UNCONFIRMED,
+  .t_loop_max = TOPIC_LOOP_MAX_MS, .t_connect_burst = TOPIC_CONNECT_BURST_MS,
 };
 
 static bool modes_ok = false;

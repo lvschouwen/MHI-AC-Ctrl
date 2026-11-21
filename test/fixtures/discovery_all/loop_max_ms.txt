@@ -1,0 +1,2 @@
+homeassistant/sensor/ac_slaapkamer_loop_max_ms/config
+{"~":"airco/slaapkamer","name":"Longest stall","uniq_id":"ac_slaapkamer_loop_max_ms","default_entity_id":"sensor.ac_slaapkamer_longest_stall","stat_t":"~/LoopMaxMs","dev_cla":"duration","unit_of_meas":"ms","stat_cla":"measurement","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["airco-slaapkamer"],"name":"AC Slaapkamer","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"batchc-fixture"}}

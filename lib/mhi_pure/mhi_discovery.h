@@ -59,6 +59,8 @@ enum MhiDiscoveryRow : uint8_t {
   MHI_DISCOVERY_OU_DISCHARGE_TEMP,  // sensor <outdoor_id>_discharge_temp, OpData/TD
   MHI_DISCOVERY_OU_SUPERHEAT,       // sensor <outdoor_id>_discharge_superheat, OpData/TDSH
   MHI_DISCOVERY_CMD_UNCONFIRMED,    // sensor <id_prefix>_cmd_unconfirmed, the CmdUnconfirmed topic (fork #60): a unit row
+  MHI_DISCOVERY_LOOP_MAX,           // sensor <id_prefix>_loop_max_ms, the LoopMaxMs topic (fork #51): a unit row
+  MHI_DISCOVERY_CONNECT_BURST,      // sensor <id_prefix>_connect_burst_ms, the ConnectBurstMs topic (fork #51): a unit row
   MHI_DISCOVERY_ROWS
 };
 
@@ -154,6 +156,7 @@ struct MhiDiscoveryCtx {
   const char* t_version;              // TOPIC_VERSION, relative to base
   const char* t_op_td, *t_op_tdsh;    // TOPIC_TD, TOPIC_TDSH, relative to op_prefix (the group's)
   const char* t_cmd_unconfirmed;      // TOPIC_CMD_UNCONFIRMED, relative to base (fork #60)
+  const char* t_loop_max, *t_connect_burst;  // TOPIC_LOOP_MAX_MS, TOPIC_CONNECT_BURST_MS, relative to base (fork #51)
 };
 
 // Home Assistant's climate accepts only its own mode names: off, auto, dry,
