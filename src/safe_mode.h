@@ -15,4 +15,5 @@ void safe_mode_test_crash();                       // set/reset crash: one delib
 
 // Crash details (fork #25): the crash hook also stores rst_info in RTC.
 void crash_info_boot();                            // in setup() on a normal boot: reads and clears the record
+void crash_info_note_status(int status, int value);  // every AC status: keeps the last power, mode, setpoint and room byte for the crash record (fork #61)
 const char* crash_info_json();                     // the CrashInfo payload, {"exccause":-1} without a crash

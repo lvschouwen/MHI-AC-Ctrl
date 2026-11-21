@@ -157,6 +157,7 @@ void publish_diag_state() {
 class StatusHandler : public CallbackInterface_Status {
   public:
     void cbiStatusFunction(ACStatus status, int value) {
+      crash_info_note_status(status, value);  // fork #61: what the AC was doing, for a crash record
       char strtmp[10];
 #ifdef POWERON_WHEN_CHANGING_MODE
       static MhiModeTopic mode_topic = {MHI_STATUS_UNKNOWN, MHI_STATUS_UNKNOWN};

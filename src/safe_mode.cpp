@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <user_interface.h>  // struct rst_info and the REASON_* values; the header has its own extern "C"
 
+#include "MHI-AC-Ctrl-core.h"  // ACStatus
 #include "mhi_crash_info.h"
 #include "mhi_safe_mode.h"
 
@@ -13,6 +14,27 @@
 // The crash details (fork #25): six words after the safe-mode record.
 #define CRASH_INFO_RTC_BLOCK 36
 static_assert(SAFE_MODE_RTC_BLOCK + 3 <= CRASH_INFO_RTC_BLOCK, "the crash details must not overlap the safe-mode record");
+// What the AC was doing (fork #61): three words after the crash details.
+#define CRASH_SNAPSHOT_RTC_BLOCK 42
+static_assert(CRASH_INFO_RTC_BLOCK + MHI_CRASH_RECORD_WORDS <= CRASH_SNAPSHOT_RTC_BLOCK, "the AC snapshot must not overlap the crash details");
+static_assert(CRASH_SNAPSHOT_RTC_BLOCK + MHI_CRASH_SNAPSHOT_WORDS <= 128, "RTC user memory is 128 words");
+
+// The last AC state seen, kept in plain RAM by crash_info_note_status() and
+// copied to RTC by the crash hook, which may only read and write words.
+static volatile uint8_t ac_power = 0xff;
+static volatile uint8_t ac_mode = 0xff;
+static volatile uint8_t ac_tsetpoint = 0xff;
+static volatile uint8_t ac_troom = 0xff;
+
+void crash_info_note_status(int status, int value) {
+  switch (status) {
+    case status_power: ac_power = (uint8_t)value; break;
+    case status_mode: ac_mode = (uint8_t)value; break;
+    case status_tsetpoint: ac_tsetpoint = (uint8_t)value; break;
+    case status_troom: ac_troom = (uint8_t)value; break;
+    default: break;
+  }
+}
 
 // mhi_safe_mode numbers the reasons itself, because lib/mhi_pure cannot include
 // the SDK's user_interface.h; this is where the two spellings are tied together.
@@ -70,6 +92,9 @@ extern "C" void custom_crash_callback(struct rst_info* info, uint32_t, uint32_t)
     uint32_t crash[MHI_CRASH_RECORD_WORDS];
     mhi_crash_record_make(crash, info->reason, info->exccause, info->epc1, info->excvaddr);
     ESP.rtcUserMemoryWrite(CRASH_INFO_RTC_BLOCK, crash, sizeof(crash));
+    uint32_t snap[MHI_CRASH_SNAPSHOT_WORDS];  // fork #61: what the AC was doing, from RAM
+    mhi_crash_snapshot_make(snap, ac_power, ac_mode, ac_tsetpoint, ac_troom);
+    ESP.rtcUserMemoryWrite(CRASH_SNAPSHOT_RTC_BLOCK, snap, sizeof(snap));
   }
 }
 
@@ -79,12 +104,16 @@ static char crash_json[MHI_CRASH_INFO_JSON_MAX] = "{\"exccause\":-1}";
 // normal boot after it.
 void crash_info_boot() {
   uint32_t crash[MHI_CRASH_RECORD_WORDS] = {0};  // an invalid record if the read is refused
+  uint32_t snap[MHI_CRASH_SNAPSHOT_WORDS] = {0};  // invalid: a crash record from older firmware has none
   ESP.rtcUserMemoryRead(CRASH_INFO_RTC_BLOCK, crash, sizeof(crash));
-  mhi_crash_info_json(crash, crash_json, sizeof(crash_json));
+  ESP.rtcUserMemoryRead(CRASH_SNAPSHOT_RTC_BLOCK, snap, sizeof(snap));
+  mhi_crash_info_json_ex(crash, snap, crash_json, sizeof(crash_json));
   if (mhi_crash_record_valid(crash)) {
     Serial.printf_P(PSTR("Last crash: %s\n"), crash_json);
     const uint32_t cleared[MHI_CRASH_RECORD_WORDS] = {0};
     ESP.rtcUserMemoryWrite(CRASH_INFO_RTC_BLOCK, const_cast<uint32_t*>(cleared), sizeof(cleared));
+    const uint32_t cleared_snap[MHI_CRASH_SNAPSHOT_WORDS] = {0};
+    ESP.rtcUserMemoryWrite(CRASH_SNAPSHOT_RTC_BLOCK, const_cast<uint32_t*>(cleared_snap), sizeof(cleared_snap));
   }
 }
 

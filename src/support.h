@@ -342,6 +342,7 @@ static_assert(sizeof(OTA_PASSWORD) > 1, "OTA_PASSWORD is empty: set it in src/co
 
 // The group's configuration (fork #22 spec §2), checked with the rules the
 // units apply to each other's records.
+#include "mhi_crash_info.h"
 #include "mhi_group.h"
 #include "mhi_subscribe_window.h"
 static_assert(mhi_group_root_valid(GROUP_ROOT),
@@ -358,6 +359,10 @@ static_assert(5 + 2 + 2 + sizeof(GROUP_ROOT "members/+") - 1 + 1 <= MQTT_MAX_PAC
 // others' records, and two publishers would never see each other.
 static_assert(mhi_group_record_packet_max(sizeof(GROUP_ROOT) - 1) <= MQTT_MAX_PACKET_SIZE,
               "the largest group record packet does not fit PubSubClient's receive buffer: shorten GROUP_ROOT");
+// CrashInfo is published retained at every connect (fork #25, #61): header, topic
+// length, topic and the longest payload must fit PubSubClient3's buffer.
+static_assert(5 + 2 + sizeof(MQTT_PREFIX TOPIC_CRASH_INFO) - 1 + MHI_CRASH_INFO_JSON_MAX <= MQTT_MAX_PACKET_SIZE,
+              "MQTT_PREFIX is too long to publish CrashInfo");
 static_assert(!mhi_group_starts_with(GROUP_ROOT "members/", MQTT_SET_PREFIX),
               "<GROUP_ROOT>members/ must not start with MQTT_SET_PREFIX: the records would be read as commands");
 static_assert(mhi_group_host_valid(HOSTNAME), "HOSTNAME must be 1..32 characters without / + # ; \" \\");
