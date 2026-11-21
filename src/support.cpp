@@ -256,6 +256,7 @@ static MhiUptime uptime_counter = {0, 0, 0};
 static MhiRetryPacer telemetry_pacer = {0, false};
 static MhiFrameStats frame_stats = {0, 0};
 static MhiFrameStatsPublished frame_stats_published = {{0, 0}, false};
+static uint32_t cmd_unconfirmed = 0;  // from the core, see note_cmd_unconfirmed()
 
 static void publishTelemetryNow(uint32_t uptime_s) {
   char strtmp[12];
@@ -265,6 +266,8 @@ static void publishTelemetryNow(uint32_t uptime_s) {
   output_P((ACStatus)type_status, PSTR(TOPIC_UPTIME), strtmp);
   ultoa(ESP.getFreeHeap(), strtmp, 10);
   output_P((ACStatus)type_status, PSTR(TOPIC_FREE_HEAP), strtmp);
+  ultoa(cmd_unconfirmed, strtmp, 10);  // fork #60
+  output_P((ACStatus)type_status, PSTR(TOPIC_CMD_UNCONFIRMED), strtmp);
   // Only when they changed since the last publish, and once after every
   // connect (fork #25): both are almost always 0.
   if (!mhi_frame_stats_due(&frame_stats, &frame_stats_published)) return;
@@ -283,6 +286,10 @@ static_assert(err_msg_invalid_signature == -1 && err_msg_invalid_checksum == -2 
 
 void note_frame_result(int ret) {
   mhi_frame_stats_count(&frame_stats, ret);
+}
+
+void note_cmd_unconfirmed(uint32_t count) {
+  cmd_unconfirmed = count;
 }
 
 // Derived once, on first use: every member of a group derives the same ID from

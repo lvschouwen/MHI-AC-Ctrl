@@ -41,6 +41,9 @@
 #ifndef TOPIC_FRAME_TIMEOUTS
 #define TOPIC_FRAME_TIMEOUTS "FrameTimeouts"   // SCK timeouts since boot (fork #21)
 #endif
+#ifndef TOPIC_CMD_UNCONFIRMED
+#define TOPIC_CMD_UNCONFIRMED "CmdUnconfirmed"   // set/ writes the AC never showed within a few seconds, since boot (fork #60)
+#endif
 #ifndef TOPIC_RESET_REASON
 #define TOPIC_RESET_REASON "ResetReason"
 #endif

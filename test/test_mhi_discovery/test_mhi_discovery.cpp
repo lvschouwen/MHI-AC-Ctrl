@@ -31,7 +31,8 @@ static const MhiDiscoveryCtx kDefault = {
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
             "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
             "Remote", "Indoor fan speed", "Internal setpoint",
-            "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat"},
+            "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat",
+            "Unconfirmed commands"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -66,6 +67,7 @@ static const MhiDiscoveryCtx kDefault = {
   .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
   .t_op_ou_eev1 = "OU-EEV1", .t_op_thi_r1 = "THI-R1", .t_version = "Version",
   .t_op_td = "TD", .t_op_tdsh = "TDSH",
+  .t_cmd_unconfirmed = "CmdUnconfirmed",
 };
 
 // Lucas's Uitkijk: custom names throughout, a template, an entity prefix, and a
@@ -88,7 +90,8 @@ static const MhiDiscoveryCtx kUitkijk = {
             "Temperature", "Current", "Energy", "Compressor frequency", "Defrost", "Compressor run time", "Protection state",
             "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
             "Remote", "Indoor fan speed", "Internal setpoint",
-            "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat"},
+            "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat",
+            "Lost writes"},
   .reset_reason_tpl = "{{ {'Power On': 'power applied', 'Software/System restart': 'software restart (update or reset)', 'Hardware Watchdog': 'hardware watchdog', 'Software Watchdog': 'software watchdog', 'Exception': 'crash', 'Deep-Sleep Wake': 'woke from deep sleep', 'External System': 'external reset'}.get(value, value) }}",
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",
@@ -123,6 +126,7 @@ static const MhiDiscoveryCtx kUitkijk = {
   .t_op_iu_fanspeed = "IU-FANSPEED", .t_op_tsetpoint = "Tsetpoint",
   .t_op_ou_eev1 = "OU-EEV1", .t_op_thi_r1 = "THI-R1", .t_version = "Version",
   .t_op_td = "TD", .t_op_tdsh = "TDSH",
+  .t_cmd_unconfirmed = "CmdUnconfirmed",
 };
 
 // Slaapkamer: has_lr and the outdoor device both on (batch C spec §3), as the
@@ -156,7 +160,7 @@ static const char* const kFixtureName[MHI_DISCOVERY_ROWS] = {
   "ou_outdoor", "ou_ct", "ou_kwh", "ou_comp", "ou_defrost", "ou_comp_run", "ou_protection",
   "group_role", "restart", "run_time", "cleaning", "external_troom", "crash_info",
   "remote", "iu_fan_speed", "internal_setpoint",
-  "expansion_valve", "coil_temp", "version", "ou_discharge_temp", "ou_superheat"};
+  "expansion_valve", "coil_temp", "version", "ou_discharge_temp", "ou_superheat", "cmd_unconfirmed"};
 
 // Balanced braces and brackets outside strings, every string closed, no
 // printf conversion left over and no NULL argument printed.
@@ -768,6 +772,21 @@ static void test_the_fan_speed_and_internal_setpoint_rows_read_the_units_op_data
   TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/OpData/Tsetpoint\",\"dev_cla\":\"temperature\",\"unit_of_meas\":\"\xc2\xb0" "C\",\"stat_cla\":\"measurement\",\"ent_cat\":\"diagnostic\","));
 }
 
+// Fork #60: the unit's CmdUnconfirmed counter, appended after the outdoor rows
+// and a unit row.
+static void test_the_cmd_unconfirmed_row(void) {
+  char out[MHI_DISCOVERY_BUF], topic[MHI_DISCOVERY_TOPIC_MAX];
+  TEST_ASSERT_FALSE(mhi_discovery_is_outdoor_row(MHI_DISCOVERY_CMD_UNCONFIRMED));
+  TEST_ASSERT_TRUE(mhi_discovery_topic(MHI_DISCOVERY_CMD_UNCONFIRMED, &kSlaapkamer, topic, sizeof(topic)) > 0);
+  TEST_ASSERT_EQUAL_STRING("homeassistant/sensor/ac_slaapkamer_cmd_unconfirmed/config", topic);
+  TEST_ASSERT_TRUE(mhi_discovery_build(MHI_DISCOVERY_CMD_UNCONFIRMED, &kSlaapkamer, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"uniq_id\":\"ac_slaapkamer_cmd_unconfirmed\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"stat_t\":\"~/CmdUnconfirmed\",\"stat_cla\":\"total_increasing\","));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"ent_cat\":\"diagnostic\","));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_CMD_UNCONFIRMED, &kSlaapkamer));
+  TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_CMD_UNCONFIRMED, &kUitkijk));  // a unit row, not the publisher's
+}
+
 // Fork #41: the unit's valve, coil and version, and the outdoor unit's
 // discharge temperature and superheat.
 static void test_the_fork_41_diagnostic_rows(void) {
@@ -801,15 +820,15 @@ static void test_the_fork_41_diagnostic_rows(void) {
   TEST_ASSERT_TRUE(mhi_discovery_row_enabled(MHI_DISCOVERY_OU_SUPERHEAT, &kSlaapkamer));
 }
 
-static void test_a_unit_has_27_entities_with_the_33_byte_frame(void) {
+static void test_a_unit_has_28_entities_with_the_33_byte_frame(void) {
   int with_lr = 0, without_lr = 0;
   for (int r = 0; r < MHI_DISCOVERY_ROWS; r++) {
     if (mhi_discovery_is_outdoor_row((MhiDiscoveryRow)r)) continue;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kUitkijk)) with_lr++;
     if (mhi_discovery_row_enabled((MhiDiscoveryRow)r, &kDefault)) without_lr++;
   }
-  TEST_ASSERT_EQUAL_INT(27, with_lr);
-  TEST_ASSERT_EQUAL_INT(25, without_lr);
+  TEST_ASSERT_EQUAL_INT(28, with_lr);
+  TEST_ASSERT_EQUAL_INT(26, without_lr);
 }
 
 // --- the committed reference payloads ---------------------------------------
@@ -890,7 +909,8 @@ int main(void) {
   RUN_TEST(test_the_remote_row_is_a_binary_sensor_on_the_remote_topic);
   RUN_TEST(test_the_fan_speed_and_internal_setpoint_rows_read_the_units_op_data);
   RUN_TEST(test_the_fork_41_diagnostic_rows);
-  RUN_TEST(test_a_unit_has_27_entities_with_the_33_byte_frame);
+  RUN_TEST(test_the_cmd_unconfirmed_row);
+  RUN_TEST(test_a_unit_has_28_entities_with_the_33_byte_frame);
   RUN_TEST(test_reference_fixtures_are_written);
   RUN_TEST(test_second_fixture_set_is_written);
   return UNITY_END();

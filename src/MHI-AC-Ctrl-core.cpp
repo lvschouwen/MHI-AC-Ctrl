@@ -310,6 +310,13 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   // on the wire is done with (fork #48). Before the first callback, which may
   // queue a new command (set_fan(7) from the power status).
   mhi_cq_commit(&cq);
+  // CmdUnconfirmed (fork #60): the AC's frame of this exchange predates the write, so it ages the
+  // watches before this frame's own writes start theirs. Passive mode puts nothing on the wire.
+  // The watch compares MISO_frame: what this core put on the wire, after the setpoint guard and
+  // the heat shift (#30) rewrote the MQTT payload, not the payload itself.
+  mhi_cc_observe(&cc, MOSI_frame);
+  if (!passiveMode)
+    mhi_cc_sent(&cc, MISO_frame, MHI_CC_WATCH_FRAMES);
 
   // Every valid frame goes to the discovery tooling; main.cpp decides whether
   // anything in it is worth publishing.
@@ -655,4 +662,8 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
 
 uint MHI_AC_Ctrl_Core::get_call_counter() {
   return call_counter;
+}
+
+uint32_t MHI_AC_Ctrl_Core::get_cmd_unconfirmed() {
+  return cc.unconfirmed + cq.dropped;  // a command the queue gave up on (#48) never had a good frame to be watched in
 }

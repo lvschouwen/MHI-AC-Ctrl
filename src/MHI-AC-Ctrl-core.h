@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include "mhi_cmd_confirm.h"  // CmdUnconfirmed (fork #60)
 #include "mhi_cmd_queue.h"  // queued one-shot commands, retired by a good frame (fork #48)
 #include "mhi_frame.h"  // frame layout + checksums, host-testable
 
@@ -139,6 +140,8 @@ class MHI_AC_Ctrl_Core {
     // vanes, 3D auto, the error-data request and the Silent write): kept until a
     // frame that carried them has passed its checks, see mhi_cmd_queue.h (fork #48).
     MhiCmdQueue cq = {};
+    // Writes the AC never showed, see mhi_cmd_confirm.h (fork #60).
+    MhiCmdConfirm cc = {};
     // One-shot operating-data request from set/OpDataRequest (fork #4). Sent
     // in place of the next code of the normal cycle, once, see loop().
     bool request_opdata_pending = false;
@@ -168,6 +171,7 @@ class MHI_AC_Ctrl_Core {
     void reset_system_values();           // the same for the 11 system values only: each is published at its next reading (fork #22)
     int loop(uint max_time_ms);           // receive / transmit a frame of 20 bytes; returns an ErrMsg
     uint get_call_counter();              // how often loop() has run since boot
+    uint32_t get_cmd_unconfirmed();       // writes whose value the AC never showed within MHI_CC_WATCH_FRAMES valid frames
     void set_power(boolean power);        // power on/off the AC
     void set_mode(ACMode mode);           // change AC mode (e.g. heat, dry, cool etc.)
     void set_tsetpoint(uint tsetpoint);   // set the target temperature of the AC)

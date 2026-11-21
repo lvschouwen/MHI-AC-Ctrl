@@ -1,0 +1,2 @@
+homeassistant/sensor/MHI-AC-Ctrl_cmd_unconfirmed/config
+{"~":"MHI-AC-Ctrl","name":"Unconfirmed commands","uniq_id":"MHI-AC-Ctrl_cmd_unconfirmed","stat_t":"~/CmdUnconfirmed","stat_cla":"total_increasing","ic":"mdi:alert-circle-outline","ent_cat":"diagnostic","avty_t":"~/connected","pl_avail":"1","pl_not_avail":"0","dev":{"ids":["MHI-AC-Ctrl"],"name":"MHI-AC-Ctrl","mf":"Mitsubishi Heavy Industries","mdl":"MHI-AC-Ctrl","sw":"fixture"}}

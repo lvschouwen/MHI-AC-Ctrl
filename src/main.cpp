@@ -677,6 +677,7 @@ void loop() {
 #endif    
     int ret = mhi_ac_ctrl_core.loop(80);
     note_frame_result(ret);
+    note_cmd_unconfirmed(mhi_ac_ctrl_core.get_cmd_unconfirmed());
     if (ret < 0)
       Serial.printf_P(PSTR("mhi_ac_ctrl_core.loop error: %i\n"), ret);
 #ifndef CONTINUE_WITHOUT_MQTT 
