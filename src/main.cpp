@@ -12,6 +12,8 @@
 #include "discovery.h"
 #include "group.h"
 #include "mhi_action.h"
+#include "command_config.h"
+#include "commands.h"
 #include "mhi_diag.h"
 #include "mhi_diag_frame.h"
 #include "mhi_fan.h"
@@ -45,11 +47,11 @@ bool troom_was_set_by_DS18X20 = false;
 MhiTroomFilter troom_filter = {0, false};
 
 // Fork #25 F3: the mode and setpoint the limits go by, see mhi_setpoint.h.
-static MhiSetpointGuard setpoint_guard = {MHI_SETPOINT_MODE_UNKNOWN, MHI_SETPOINT_UNKNOWN};
+MhiSetpointGuard setpoint_guard = {MHI_SETPOINT_MODE_UNKNOWN, MHI_SETPOINT_UNKNOWN};
 // Fork #30: a heat target below 18 °C, reached by a shifted room temperature
 // (mhi_heat_shift.h), and the room sensor's last value as set/Troom sent it.
-static MhiHeatShift heat_shift = {NAN, false, MHI_HEAT_SHIFT_DB2_UNKNOWN};
-static float troom_external_celsius = NAN;
+MhiHeatShift heat_shift = {NAN, false, MHI_HEAT_SHIFT_DB2_UNKNOWN};
+float troom_external_celsius = NAN;
 static uint8_t troom_external_byte_published = 0;  // the room value last published on Troom while shifting; 0: none
 #ifdef ROOM_TEMP_DS18X20
 static byte ds18x20_value_old = 0;  // file scope: a heat shift's start and end re-apply the DS18x20 (fork #30)
@@ -63,29 +65,10 @@ static uint8_t troom_external_published = 0xff;
 // Protocol discovery tooling (#4 batch A). diag/frame compares each valid
 // frame with the last *published* one, at most once a second, while Diag is
 // on; a reconnect starts with a whole frame ("first | ...").
-static MhiDiagFrame diag_frame = {{0}, false};
+MhiDiagFrame diag_frame = {{0}, false};
 static uint8_t diag_mask[MHI_DIAG_FRAME_MAX];
-static MhiRetryPacer diag_pacer = {0, false};
-static bool diag_on = DIAG_DEFAULT;
-
-// The texts on the Vanes topic; set/Vanes accepts these and 1..5 (fork #4 batch B).
-static const MhiVanesNames vanes_names = {{PAYLOAD_VANES_1, PAYLOAD_VANES_2, PAYLOAD_VANES_3, PAYLOAD_VANES_4},
-                                          PAYLOAD_VANES_SWING, PAYLOAD_VANES_UNKNOWN};
-static_assert(MHI_VANES_SWING == vanes_swing && MHI_VANES_UNKNOWN == vanes_unknown, "mhi_vanes numbers the positions as the core's ACVanes does");
-
-#ifdef USE_EXTENDED_FRAME_SIZE
-// The texts on the VanesLR topic; set/VanesLR accepts these and 1..8 (fork #20).
-// Only the 33-byte frame reports or accepts them, so a 20-byte build does not
-// carry the table at all.
-static const MhiVanesLrNames vanes_lr_names = {
-  {PAYLOAD_VANESLR_1, PAYLOAD_VANESLR_2, PAYLOAD_VANESLR_3, PAYLOAD_VANESLR_4, PAYLOAD_VANESLR_5, PAYLOAD_VANESLR_6,
-   PAYLOAD_VANESLR_7},
-  PAYLOAD_VANESLR_SWING};
-static_assert(MHI_VANES_LR_SWING == vanesLR_swing, "mhi_vanes_lr numbers swing as the core's ACVanesLR does");
-#endif
-
-// The texts on the Fan topic; set/Fan accepts these and 1..4 (fork #21 F6).
-static const MhiFanNames fan_names = {{PAYLOAD_FAN_1, PAYLOAD_FAN_2, PAYLOAD_FAN_3, PAYLOAD_FAN_4}, PAYLOAD_FAN_AUTO};
+MhiRetryPacer diag_pacer = {0, false};
+bool diag_on = DIAG_DEFAULT;
 
 static void publish_cleaning() {
   output_P((ACStatus)type_status, PSTR(TOPIC_CLEANING),
@@ -100,7 +83,7 @@ static void publish_troom_external() {
            state ? PSTR(PAYLOAD_TROOM_EXTERNAL_ON) : PSTR(PAYLOAD_TROOM_EXTERNAL_OFF));
 }
 
-static void publish_tsetpoint(float celsius) {
+void publish_tsetpoint(float celsius) {
   char text[8];
   dtostrf(celsius, 0, 1, text);
   output_P((ACStatus)type_status, PSTR(TOPIC_TSETPOINT), text);
@@ -125,12 +108,12 @@ static void send_room_temperature(float room_celsius) {
   }
 }
 
-static void apply_external_troom() {
+void apply_external_troom() {
   send_room_temperature(troom_external_celsius);
 }
 
 // The DS18x20's value is sent again at its next reading, shifted or not.
-static void ds18x20_reapply() {
+void ds18x20_reapply() {
 #ifdef ROOM_TEMP_DS18X20
   ds18x20_value_old = 0;
 #endif
@@ -141,7 +124,7 @@ static void ds18x20_reapply() {
 // Assistant sends it again only when its gate opens. With publish_setpoint the
 // setpoint goes out now, since DB2 stays 18 and the bus reports no change; a
 // set/Tsetpoint that writes another DB2 leaves that to the bus's echo.
-static void heat_shift_ended(bool publish_setpoint = true) {
+void heat_shift_ended(bool publish_setpoint) {
   if (troom_was_set_by_MQTT) {
     mhi_ac_ctrl_core.set_troom(0xff);
     troom_was_set_by_MQTT = false;
@@ -155,7 +138,7 @@ static void heat_shift_ended(bool publish_setpoint = true) {
 
 // set/Mode: the limits of set/Tsetpoint follow the commanded mode at once, and
 // leaving heat with a setpoint below 18 writes 18 in the same frame (fork #25 F3).
-static void set_mode_checked(ACMode mode) {
+void set_mode_checked(ACMode mode) {
   mhi_ac_ctrl_core.set_mode(mode);
   const uint8_t setpoint = mhi_setpoint_guard_mode(&setpoint_guard, mode);
   if (setpoint != 0)
@@ -164,252 +147,11 @@ static void set_mode_checked(ACMode mode) {
     heat_shift_ended();
 }
 
-static void publish_diag_state() {
+void publish_diag_state() {
   if (diag_on)
     output_P((ACStatus)type_status, PSTR(TOPIC_DIAG), PSTR(PAYLOAD_DIAG_ON));
   else
     output_P((ACStatus)type_status, PSTR(TOPIC_DIAG), PSTR(PAYLOAD_DIAG_OFF));
-}
-
-// Longest payload we ever parse is a temperature; anything longer is not a
-// command we understand.
-#define MQTT_PAYLOAD_MAX 32
-
-void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int length) {
-  if (group_handle_message(topic, payload, length))
-    return;  // a record or a peer's connected topic: not a command (fork #22)
-  // Copy out rather than terminating in place. `payload` points into
-  // pubsubclient3's receive buffer, so payload[length] is _buffer[length] -
-  // one byte past the end when a message fills the buffer.
-  char payload_str[MQTT_PAYLOAD_MAX];
-  mhi_copy_payload(payload_str, sizeof(payload_str), payload, length);
-  Serial.printf_P(PSTR("MQTT_subscribe_callback, topic=%s payload=%s payload_length=%i\n"), topic, payload_str, length);
-  // Every set/* message extends the window while it is open (fork #50).
-  const bool in_subscribe_window = mhi_subscribe_window_hit(&subscribe_window, millis(), kSubscribeQuietMs, kSubscribeCapMs);
-#ifndef POWERON_WHEN_CHANGING_MODE
-  if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_POWER)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_POWER_ON)) == 0) {
-      mhi_ac_ctrl_core.set_power(power_on);
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, PSTR(PAYLOAD_POWER_OFF)) == 0) {
-      mhi_ac_ctrl_core.set_power(power_off);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else 
-#endif
-  if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_MODE)) == 0) {
-#ifdef POWERON_WHEN_CHANGING_MODE
-    // The same text the Mode topic publishes for an AC that is off.
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_OFF)) == 0) {
-      mhi_ac_ctrl_core.set_power(power_off);
-      publish_cmd_ok();
-    } else
-#endif
-      if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_AUTO)) == 0) {
-        set_mode_checked(mode_auto);
-#ifdef POWERON_WHEN_CHANGING_MODE
-        mhi_ac_ctrl_core.set_power(power_on);
-#endif
-        publish_cmd_ok();
-      }
-      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_DRY)) == 0) {
-        set_mode_checked(mode_dry);
-#ifdef POWERON_WHEN_CHANGING_MODE
-        mhi_ac_ctrl_core.set_power(power_on);
-#endif
-        publish_cmd_ok();
-      }
-      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_COOL)) == 0) {
-        set_mode_checked(mode_cool);
-#ifdef POWERON_WHEN_CHANGING_MODE
-        mhi_ac_ctrl_core.set_power(power_on);
-#endif
-        publish_cmd_ok();
-      }
-      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_FAN)) == 0) {
-        set_mode_checked(mode_fan);
-#ifdef POWERON_WHEN_CHANGING_MODE
-        mhi_ac_ctrl_core.set_power(power_on);
-#endif
-        publish_cmd_ok();
-      }
-      else if (strcmp_P(payload_str, PSTR(PAYLOAD_MODE_HEAT)) == 0) {
-        set_mode_checked(mode_heat);
-#ifdef POWERON_WHEN_CHANGING_MODE
-        mhi_ac_ctrl_core.set_power(power_on);
-#endif
-        publish_cmd_ok();
-      }
-      else
-        publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TSETPOINT)) == 0) {
-    float f;
-    uint8_t db2;
-    if (mhi_parse_celsius(payload_str, &f) && mhi_setpoint_guard_request(&setpoint_guard, f, &db2)) {  // 10-30 in heat, 18-30 otherwise (fork #25 F3)
-      // Below 18 in heat: DB2 18 and a shifted room temperature (fork #30).
-      if (mhi_heat_shift_request(&heat_shift, f, setpoint_guard.mode == mode_heat, &db2))
-        heat_shift_ended(db2 == heat_shift.bus_db2);
-      else if (mhi_heat_shift_active(&heat_shift)) {
-        if (troom_was_set_by_MQTT) apply_external_troom();
-        ds18x20_reapply();
-        if (heat_shift.bus_db2 == MHI_HEAT_SHIFT_DB2)  // no echo will come: DB2 is already 18
-          publish_tsetpoint(heat_shift.target);
-      }
-      mhi_ac_ctrl_core.set_tsetpoint(db2);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_FAN)) == 0) {
-    static const byte kCoreFan[4] = {0, 1, 2, 6};  // the core's set_fan() values for levels 1..4
-    const int fanlevel = mhi_fan_parse(&fan_names, payload_str);
-    if (fanlevel == MHI_FAN_AUTO) {
-      mhi_ac_ctrl_core.set_fan(7);
-      publish_cmd_ok();
-    }
-    else if (fanlevel >= 1 && fanlevel <= 4) {
-      mhi_ac_ctrl_core.set_fan(kCoreFan[fanlevel - 1]);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_VANES)) == 0) {
-    const int vanes = mhi_vanes_parse(&vanes_names, payload_str);
-    if (vanes != MHI_VANES_UNKNOWN) {
-      mhi_ac_ctrl_core.set_vanes(vanes);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-#ifdef USE_EXTENDED_FRAME_SIZE  
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_VANESLR)) == 0) {
-    const int vaneslr = mhi_vanes_lr_parse(&vanes_lr_names, payload_str);
-    if (vaneslr != MHI_VANES_LR_UNKNOWN) {
-      mhi_ac_ctrl_core.set_vanesLR(vaneslr);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_3DAUTO)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_3DAUTO_ON)) == 0) {
-      mhi_ac_ctrl_core.set_3Dauto(Dauto_on);
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, PSTR(PAYLOAD_3DAUTO_OFF)) == 0) {
-      mhi_ac_ctrl_core.set_3Dauto(Dauto_off);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-#endif
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_TROOM)) == 0) {
-    float f = 0.0f;
-    const bool parsed = mhi_parse_celsius(payload_str, &f);  // junk is refused, not read as 0 °C (sweep #33 F1)
-#ifdef ENHANCED_RESOLUTION
-    f = f + mhi_ac_ctrl_core.get_troom_offset() ;  // increase Troom with current offset to compensate higher setpoint
-#endif
-    if (parsed && mhi_troom_celsius_plausible(f)) {
-      room_temp_set_timeout_Millis = millis();  // reset timeout
-      troom_was_set_by_MQTT=true;
-      troom_external_celsius = f;
-      apply_external_troom();  // shifted while a heat target below 18 is active (fork #30)
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_ERROPDATA)) == 0) {
-    mhi_ac_ctrl_core.request_ErrOpData();
-    publish_cmd_ok();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_RESET)) == 0) {
-    // Fork #50: a retained set/reset is redelivered after every subscribe and
-    // would reboot the unit in a loop. The retain flag is not visible here, so
-    // a reset (or test crash) inside the subscribe window is dropped.
-    // Nothing is published; a live press from Home Assistant comes later.
-    if (in_subscribe_window) {
-      Serial.println(F("set/reset ignored: within the window after subscribe (a retained message?)"));
-    }
-    else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET)) == 0) {
-      publish_cmd_ok();
-      delay(500);
-      ESP.restart();
-    }
-#ifdef RESET_CRASH_COMMAND
-    // Test builds only (fork #25): an MQTT-reachable crash, and a retained one
-    // would cycle the unit through safe mode.
-    else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET_CRASH)) == 0) {
-      // The safe-mode proof (fork #23 spec §1.5): three of these, each within
-      // 120 s of the boot before, start safe mode. Every crash is one we send.
-      publish_cmd_ok();
-      delay(500);
-      safe_mode_test_crash();
-    }
-#endif
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_PASSIVEMODE)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_PASSIVEMODE_ON)) == 0) {
-      mhi_ac_ctrl_core.set_passive_mode(true);
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_PASSIVEMODE_OFF)) == 0) {
-      mhi_ac_ctrl_core.set_passive_mode(false);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_DIAG)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_DIAG_ON)) == 0) {
-      diag_on = true;
-      diag_frame.have_last = false;   // the next diag/frame is a whole frame, as after a connect
-      mhi_retry_reset(&diag_pacer);
-      publish_diag_state();
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, PSTR(PAYLOAD_DIAG_OFF)) == 0) {
-      diag_on = false;
-      publish_diag_state();
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_OPDATA)) == 0) {
-    uint8_t prefix, code;
-    if (mhi_opdata_request_parse(payload_str, &prefix, &code)) {
-      mhi_ac_ctrl_core.request_OpData(prefix, code);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_SILENT)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_SILENT_ON)) == 0) {
-      mhi_ac_ctrl_core.set_silent(true);
-      publish_cmd_ok();
-    }
-    else if (strcmp_P(payload_str, PSTR(PAYLOAD_SILENT_OFF)) == 0) {
-      mhi_ac_ctrl_core.set_silent(false);
-      publish_cmd_ok();
-    }
-    else
-      publish_cmd_invalidparameter();
-  }
-  else
-    publish_cmd_unknown();
 }
 
 class StatusHandler : public CallbackInterface_Status {
