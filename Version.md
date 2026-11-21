@@ -6,7 +6,7 @@ MHI-AC-Ctrl by absalom-muc
 - converted to a PlatformIO project with pinned dependencies; `MHI-AC-Ctrl.ino` is now `src/main.cpp` and the Arduino IDE is no longer supported
 - configuration can be supplied in the gitignored `src/config_defaults.h` instead of editing `support.h`, so credentials stay out of commits
 - frame checksums and the room temperature conversions moved to `lib/mhi_pure`, covered by host tests that run without hardware
-- GitHub Actions builds the whole `#ifdef` matrix on every push, runs the host tests and asserts the firmware still fits its flash budget
+- `scripts/check.sh` (the gate, run before every push; there is no GitHub Actions) builds the whole `#ifdef` matrix, runs the host tests plain and under ASan/UBSan, runs cppcheck and asserts the firmware still fits its flash budget
 - a failed boot-time wiring check no longer halts in `while (1)`. It is published to the new `Wiring` topic and the unit keeps running, so it stays reachable over OTA
 - the SPI read loop now times out waiting for a rising clock edge, as it already did for a falling one
 - MQTT payloads are copied into a bounded buffer instead of being NUL-terminated inside the client's receive buffer
@@ -19,7 +19,7 @@ MHI-AC-Ctrl by absalom-muc
 - bug sweep (#10): Wi-Fi scan gets a timeout instead of hanging forever; `WIFI_LOST`/`MQTT_LOST` counters actually count; `set/Tsetpoint` acks on `cmd_received`; `Troom` resends after an MQTT reconnect; `set/PassiveMode` rejects unknown payloads; `set/Mode` matches the published "off" text; DS18x20 re-applies after a Troom timeout and re-inits a replugged sensor in `Tds1820`-only builds
 - new status topic `Action` (#16): what the AC is doing (`off`/`idle`/`cooling`/`heating`/`drying`/`fan`), decoded from DB13, in Home Assistant's `hvac_action` names
 - MQTT reconnects paced to one per 5 s (#15), so a refusing broker or restart no longer resets Wi-Fi within milliseconds
-- dependencies refreshed 2026-09-15: PubSubClient3 3.3.1, CI actions to current majors
+- dependencies refreshed 2026-09-15: PubSubClient3 3.3.1 (3.3.2 since, for a `handlePacket()` offset truncation fix)
 - WiFi PHY mode fallback (#17): tries 802.11g after 5 min without a link (some routers refuse the default 802.11n, [#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224)), alternates back after another 5 min; new `WIFI_PHY` status topic
 - periodic telemetry (#18): `RSSI`, new `Uptime` and `FreeHeap` published at MQTT connect and every `TELEMETRY_PERIOD` s; new `ResetReason` topic exposes silent watchdog reboots
 - protocol discovery tooling (#4, batch A): `diag/frame` (changed status bytes), `diag/opdata` (undecoded operating data with value), `set/OpDataRequest` (ask for any code) — turns "what does this button do" into a five-minute test

@@ -72,7 +72,17 @@ pio run                 # build the firmware for a Wemos D1 mini
 pio run -t upload       # flash over USB
 pio run -t upload -e d1_mini --upload-port <device>.local   # flash over OTA
 pio test -e native      # run the host tests, no hardware needed
+pio test -e native-san  # the same tests under AddressSanitizer and UBSan
+scripts/check.sh        # the full gate: tests, sanitizers, cppcheck, all 12 builds
 ```
+
+`scripts/check.sh` is what gates a push (there is no GitHub Actions). It needs
+`cppcheck` on the PATH next to PlatformIO 6.2.0.
+
+**OTA password is required.** An empty `OTA_PASSWORD` would let anyone on your
+network flash the unit, so a normal build refuses it at compile time. Set
+`OTA_PASSWORD` in `src/config_defaults.h` (below). Only the `ci-*` environments,
+which are compile-only, define `ALLOW_EMPTY_OTA_PASSWORD` to skip the check.
 
 Your WiFi and MQTT settings go in `src/config_defaults.h`, which is in
 `.gitignore` and so never ends up in a commit. Anything you do not set there
@@ -85,12 +95,13 @@ options are described in [SW-Configuration.md](SW-Configuration.md).
 #define WIFI_PASSWORD "your-password"
 #define MQTT_SERVER   "192.168.1.10"
 #define HOSTNAME      "MHI-AC-Ctrl-livingroom"
+#define OTA_PASSWORD  "choose-a-password"
 ```
 
 The Arduino IDE is no longer supported: it needs the `.ino` sketch layout, and
-that layout is what prevented the project from being built in CI. Every push
-now compiles the whole `#ifdef` matrix and runs the host tests
-(see [.github/workflows/ci.yml](.github/workflows/ci.yml)).
+that layout is what prevented the project from being built automatically.
+`scripts/check.sh` compiles the whole `#ifdef` matrix (the `ci-*` environments
+in [platformio.ini](platformio.ini)) and runs the host tests before a push.
 
 In a previous version (see [here](https://github.com/absalom-muc/MHI-AC-SPY)) I used the Hardware-SPI of the ESP8266. But since the SPI documentation of ESP8266 is poor, I decided to switch to a Software based SPI.
 This Software based SPI is reliable and the performance of the ESP8266 is sufficient for this use case.

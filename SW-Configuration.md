@@ -275,8 +275,9 @@ OTA (Over the Air) update is the process of loading the firmware to ESP module u
 The OTA hostname can be adapted, per default it is the hostname used by WiFi.
 ```cpp
 #define OTA_HOSTNAME HOSTNAME     // default for the OTA_HOSTNAME is the HOSTNAME
-#define OTA_PASSWORD ""           // Enter an OTA password if required
+#define OTA_PASSWORD ""           // Enter an OTA password (required)
 ```
+An empty `OTA_PASSWORD` would let anyone on the LAN flash the unit, so the build refuses it with a `static_assert` in `support.h`. Set it in `src/config_defaults.h`. Only the `ci-*` environments, whose images are never flashed, opt out with `-D ALLOW_EMPTY_OTA_PASSWORD`.
 
 ## Crash-loop safe mode
 
@@ -514,7 +515,7 @@ By default the module stops talking to the AC when MQTT disconnects, and the AC 
 MHI-AC-Ctrl-core implements the core functions (SPI read/write, communication with the wrapper).
 Wifi, MQTT, OTA and DS18x20 stuff is located in `support.h` and `support.cpp`.
 `main.cpp` and `MHI-AC-Ctrl.h` contain the wrapper for `MHI-AC-Ctrl-core.cpp` and `support.cpp`.
-`lib/mhi_pure` holds the logic that needs neither Arduino nor hardware - the frame checksums and the room temperature conversions - so it can be tested on the build machine with `pio test -e native`.
+`lib/mhi_pure` holds the logic that needs neither Arduino nor hardware, about two dozen modules (frame checksums and decoding, temperature conversions, MQTT payload parsing, discovery payloads, group election, link and safe-mode state, rescue access point, and more), each with a host test under `test/`. They run on the build machine with `pio test -e native` (and under AddressSanitizer/UBSan with `pio test -e native-san`).
 
 ### `MHI-AC-Ctrl-core.h` and `MHI-AC-Ctrl-core.cpp`
 Configured via [MHI-AC-Ctrl-core.h](src/MHI-AC-Ctrl-core.h), otherwise left alone. An AC status change triggers the callback `cbiStatusFunction` in [main.cpp](src/main.cpp). Controlled via the functions:
