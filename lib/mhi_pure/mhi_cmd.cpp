@@ -32,8 +32,13 @@ static void parse_reset(const MhiCmdConfig* cfg, const char* payload, MhiCmd* c)
   else c->error = true;
 }
 
-void mhi_cmd_parse(const MhiCmdConfig* cfg, const char* topic, const char* payload, MhiCmd* cmd) {
+void mhi_cmd_parse(const MhiCmdConfig* cfg, const char* topic, const char* payload, bool retained, bool in_window,
+                   MhiCmd* cmd) {
   *cmd = MhiCmd{MHI_CMD_UNKNOWN, false, 0, 0.0f, 0, 0};
+  if (retained) {
+    cmd->kind = MHI_CMD_DROPPED;
+    return;
+  }
   const size_t plen = strlen(cfg->set_prefix);
   if (strncmp(topic, cfg->set_prefix, plen) != 0) return;
   const char* t = topic + plen;
@@ -73,6 +78,10 @@ void mhi_cmd_parse(const MhiCmdConfig* cfg, const char* topic, const char* paylo
     cmd->kind = MHI_CMD_ERROPDATA;
   } else if (eq(t, cfg->t_reset)) {
     cmd->kind = MHI_CMD_RESET;
+    if (in_window) {  // the boot-loop guard (fork #50): whatever the payload
+      cmd->kind = MHI_CMD_DROPPED;
+      return;
+    }
     parse_reset(cfg, payload, cmd);
   } else if (eq(t, cfg->t_passive)) {
     cmd->kind = MHI_CMD_PASSIVE;

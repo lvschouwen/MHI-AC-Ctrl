@@ -8,6 +8,15 @@
 // MhiCmdConfig, built from the macros in main.cpp, so the native tests can
 // run every variant (no #ifdef in here).
 //
+// A retained set/* message is never acted on, whatever it is (fork #67): the
+// broker replays stored messages after every subscribe, so a stale retained
+// Mode/Power/Tsetpoint would override the user's last choice on every
+// reconnect. mhi_mqtt_retain.h reads the flag; here it is an input, and a
+// retained message is kind MHI_CMD_DROPPED, with no reply to publish. Live (and
+// unrecognisable) messages are handled as always. A reset is also dropped
+// inside the subscribe window (mhi_subscribe_window.h, fork #50), so the
+// boot-loop guard never rests on library internals alone.
+//
 // Matching is exact and case-sensitive, in the order of the old if-chain.
 // Strings in the config are plain RAM literals, never PSTR(): the parsers use
 // strcmp. Pure logic, no Arduino.
@@ -21,6 +30,7 @@
 #include "mhi_vanes_lr.h"
 
 enum MhiCmdKind : uint8_t {
+  MHI_CMD_DROPPED,  // retained (or a reset inside the subscribe window): log it, do nothing, publish nothing
   MHI_CMD_UNKNOWN,  // no such topic in this build, or outside the set/ prefix: reply "unknown command"
   MHI_CMD_POWER,    // value 1 on, 0 off
   MHI_CMD_MODE,     // value MHI_CMD_MODE_*
@@ -77,5 +87,8 @@ struct MhiCmdConfig {
   bool allow_crash;         // RESET_CRASH_COMMAND: the reset topic accepts reset_crash
 };
 
-// Fills *cmd. Never fails: unmatched input is kind MHI_CMD_UNKNOWN.
-void mhi_cmd_parse(const MhiCmdConfig* cfg, const char* topic, const char* payload, MhiCmd* cmd);
+// Fills *cmd. Never fails: unmatched input is kind MHI_CMD_UNKNOWN, any input
+// with retained set is MHI_CMD_DROPPED, and so is a reset (whatever its
+// payload) with in_window set.
+void mhi_cmd_parse(const MhiCmdConfig* cfg, const char* topic, const char* payload, bool retained, bool in_window,
+                   MhiCmd* cmd);

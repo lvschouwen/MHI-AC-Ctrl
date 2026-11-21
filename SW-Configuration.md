@@ -267,6 +267,13 @@ Value |meaning
 
 The same rule holds here: the topic carries the number, the table above it is the meaning, and nothing in the firmware turns one into the other.
 
+## Retained `set/` messages are ignored
+A `set/` message that the broker marks as retained is ignored: the serial log notes it, nothing is published, and no `cmd_received` reply is sent. The broker replays a retained message after every subscribe, so without this a stale retained `set/Mode`, `set/Power` or `set/Tsetpoint` would silently override your last choice on every reconnect, and a retained `set/reset` would reboot the unit in a loop. Never publish `set/` topics retained; this is the safety net, not a feature.
+
+The firmware reads the MQTT retain flag of each message (the broker sets it only on a replay after a subscribe and clears it on a live forward), so a live command is accepted at any time, also in the first seconds after a reconnect. The client library does not hand the flag to the firmware; it is read from the packet header the library keeps in its receive buffer (`lib/mhi_pure/mhi_mqtt_retain.h`), and re-verified on every PubSubClient3 bump (#69). If the header does not look like a PUBLISH, the message counts as live.
+
+`set/reset` has a second guard that does not depend on that: a reset that arrives within the first seconds after a subscribe is ignored whatever its flag. The window is at least 3 s, extended to 1 s after each `set/` message that arrives while it is open, at most 30 s after the subscribe, so a live `set/` stream less than 1 s apart right after a connect can keep a reset from taking effect for up to 30 s. Only the reset is affected.
+
 ## OpData/ topics and retention
 
 Every `OpData/` topic, like every other status topic, is published retained (`output_P()`, `src/support.cpp`). A retained topic keeps its last value on the broker across a Home Assistant restart: the entity does not go to "unknown", it shows the value it last had until the AC's next report changes it.

@@ -6,10 +6,14 @@
 #include "command_config.h"
 #include "group.h"
 #include "mhi_mqtt.h"
+#include "mhi_mqtt_retain.h"
 #include "mhi_subscribe_window.h"
 #include "mhi_temp.h"
 #include "safe_mode.h"
 #include "support.h"
+
+// The retain peek (mhi_mqtt_retain.h) assumes a remaining length of at most two bytes.
+static_assert(MQTT_MAX_PACKET_SIZE <= 16383, "mhi_retain_from_topic reads a one or two byte remaining length");
 
 // Longest payload we ever parse is a temperature; anything longer is not a
 // command we understand.
@@ -27,24 +31,21 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   // Every set/* message extends the window while it is open (fork #50).
   const bool in_subscribe_window = mhi_subscribe_window_hit(&subscribe_window, millis(), kSubscribeQuietMs, kSubscribeCapMs);
 
+  // The broker's RETAIN flag, read from the packet header PubSubClient3 leaves before the topic.
+  const bool retained = mhi_retain_from_topic(topic) == MHI_RETAIN_RETAINED;
   MhiCmd cmd;
-  mhi_cmd_parse(&cmd_config, topic, payload_str, &cmd);
-  switch (cmd.kind) {
-    case MHI_CMD_UNKNOWN:
-      publish_cmd_unknown();
-      return;
-    case MHI_CMD_RESET:
-      // Fork #50: a retained set/reset is redelivered after every subscribe and
-      // would reboot the unit in a loop. The retain flag is not visible here, so
-      // a reset (or test crash) inside the subscribe window is dropped, whatever
-      // its payload. Nothing is published; a live press from Home Assistant comes later.
-      if (in_subscribe_window) {
-        Serial.println(F("set/reset ignored: within the window after subscribe (a retained message?)"));
-        return;
-      }
-      break;
-    default:
-      break;
+  mhi_cmd_parse(&cmd_config, topic, payload_str, retained, in_subscribe_window, &cmd);
+  if (cmd.kind == MHI_CMD_DROPPED) {
+    // Fork #67: a retained set/* message is a replay of an old command (the
+    // broker sends it after every subscribe), not what the user wants now;
+    // a retained set/reset would reboot the unit in a loop. Serial log only, no
+    // reply. A reset is also dropped inside the subscribe window (fork #50).
+    Serial.printf_P(PSTR("set/* ignored (%s): %s\n"), retained ? "retained" : "reset right after subscribe", topic);
+    return;
+  }
+  if (cmd.kind == MHI_CMD_UNKNOWN) {
+    publish_cmd_unknown();
+    return;
   }
   if (cmd.error) {
     publish_cmd_invalidparameter();
@@ -52,7 +53,8 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   }
 
   switch (cmd.kind) {
-    case MHI_CMD_UNKNOWN:  // handled above
+    case MHI_CMD_DROPPED:  // handled above
+    case MHI_CMD_UNKNOWN:
       break;
     case MHI_CMD_POWER:
       mhi_ac_ctrl_core.set_power(cmd.value ? power_on : power_off);

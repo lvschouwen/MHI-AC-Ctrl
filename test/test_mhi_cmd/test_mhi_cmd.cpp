@@ -81,7 +81,7 @@ static MhiCmd parse(const MhiCmdConfig* c, const char* suffix, const char* paylo
   char topic[96];
   snprintf(topic, sizeof topic, "%s%s", c->set_prefix, suffix);
   MhiCmd cmd;
-  mhi_cmd_parse(c, topic, payload, &cmd);
+  mhi_cmd_parse(c, topic, payload, false, false, &cmd);
   return cmd;
 }
 
@@ -223,13 +223,13 @@ static void test_opdata_request(void) {
 static void test_a_topic_outside_the_prefix_is_unknown(void) {
   const MhiCmdConfig c = defaults();
   MhiCmd cmd;
-  mhi_cmd_parse(&c, "unit/Mode", "Cool", &cmd);
+  mhi_cmd_parse(&c, "unit/Mode", "Cool", false, false, &cmd);
   TEST_ASSERT_EQUAL(MHI_CMD_UNKNOWN, cmd.kind);
-  mhi_cmd_parse(&c, "other/set/Mode", "Cool", &cmd);
+  mhi_cmd_parse(&c, "other/set/Mode", "Cool", false, false, &cmd);
   TEST_ASSERT_EQUAL(MHI_CMD_UNKNOWN, cmd.kind);
-  mhi_cmd_parse(&c, "unit/set", "Cool", &cmd);
+  mhi_cmd_parse(&c, "unit/set", "Cool", false, false, &cmd);
   TEST_ASSERT_EQUAL(MHI_CMD_UNKNOWN, cmd.kind);
-  mhi_cmd_parse(&c, "", "Cool", &cmd);
+  mhi_cmd_parse(&c, "", "Cool", false, false, &cmd);
   TEST_ASSERT_EQUAL(MHI_CMD_UNKNOWN, cmd.kind);
 }
 
@@ -324,6 +324,68 @@ static void test_custom_topic_names(void) {
   TEST_ASSERT_EQUAL(MHI_CMD_UNKNOWN, parse(&c, "Mode", "Cool").kind);
 }
 
+// Fork #67: a retained set/* message is dropped whatever its topic or payload,
+// with nothing to reply; a live one is parsed as usual.
+static void test_a_retained_message_is_dropped_for_every_topic_kind(void) {
+  const MhiCmdConfig c = extended();
+  static const Row all[] = {
+      {"Mode", "Cool", MHI_CMD_MODE, false, MHI_CMD_MODE_COOL},
+      {"Power", "On", MHI_CMD_POWER, false, 1},
+      {"Tsetpoint", "21", MHI_CMD_TSETPOINT, false, 0},
+      {"Fan", "Auto", MHI_CMD_FAN, false, MHI_FAN_AUTO},
+      {"Vanes", "Swing", MHI_CMD_VANES, false, 5},
+      {"VanesLR", "Left", MHI_CMD_VANESLR, false, 1},
+      {"3Dauto", "On", MHI_CMD_3DAUTO, false, 1},
+      {"Troom", "21.5", MHI_CMD_TROOM, false, 0},
+      {"ErrOpData", "", MHI_CMD_ERROPDATA, false, 0},
+      {"reset", "reset", MHI_CMD_RESET, false, MHI_CMD_RESET_RESTART},
+      {"PassiveMode", "On", MHI_CMD_PASSIVE, false, 1},
+      {"Diag", "On", MHI_CMD_DIAG, false, 1},
+      {"OpDataRequest", "c021", MHI_CMD_OPDATA, false, 0},
+      {"Silent", "On", MHI_CMD_SILENT, false, 1},
+      // invalid payloads and unknown topics get no reply either
+      {"Mode", "Bogus", MHI_CMD_MODE, true, 0},
+      {"reset", "nonsense", MHI_CMD_RESET, true, 0},
+      {"Bogus", "x", MHI_CMD_UNKNOWN, false, 0},
+  };
+  for (size_t i = 0; i < sizeof all / sizeof all[0]; i++) {
+    char topic[96], msg[96];
+    snprintf(topic, sizeof topic, "%s%s", c.set_prefix, all[i].topic);
+    snprintf(msg, sizeof msg, "%s \"%s\"", all[i].topic, all[i].payload);
+    MhiCmd cmd;
+    mhi_cmd_parse(&c, topic, all[i].payload, true, false, &cmd);
+    TEST_ASSERT_EQUAL_MESSAGE(MHI_CMD_DROPPED, cmd.kind, msg);
+    mhi_cmd_parse(&c, topic, all[i].payload, false, false, &cmd);
+    TEST_ASSERT_EQUAL_MESSAGE(all[i].kind, cmd.kind, msg);
+    TEST_ASSERT_EQUAL_MESSAGE(all[i].error, cmd.error, msg);
+  }
+}
+
+// Fork #50: the boot-loop guard for set/reset does not rest on the retain peek
+// alone. Inside the subscribe window a reset is dropped, whatever the payload
+// and whether or not the flag says retained; nothing else is affected.
+static void test_a_reset_inside_the_subscribe_window_is_dropped(void) {
+  MhiCmdConfig c = defaults();
+  c.allow_crash = true;
+  MhiCmd cmd;
+  static const char* payloads[] = {"reset", "crash", "nonsense", ""};
+  for (size_t i = 0; i < sizeof payloads / sizeof payloads[0]; i++) {
+    mhi_cmd_parse(&c, "unit/set/reset", payloads[i], false, true, &cmd);
+    TEST_ASSERT_EQUAL_MESSAGE(MHI_CMD_DROPPED, cmd.kind, payloads[i]);
+  }
+  mhi_cmd_parse(&c, "unit/set/reset", "crash", false, false, &cmd);
+  TEST_ASSERT_EQUAL(MHI_CMD_RESET, cmd.kind);
+  TEST_ASSERT_EQUAL(MHI_CMD_RESET_CRASH, cmd.value);
+  // A live command inside the window (HA's setpoint restore, Troom) goes through.
+  mhi_cmd_parse(&c, "unit/set/Tsetpoint", "15", false, true, &cmd);
+  TEST_ASSERT_EQUAL(MHI_CMD_TSETPOINT, cmd.kind);
+  TEST_ASSERT_FALSE(cmd.error);
+  mhi_cmd_parse(&c, "unit/set/Troom", "21.5", false, true, &cmd);
+  TEST_ASSERT_EQUAL(MHI_CMD_TROOM, cmd.kind);
+  mhi_cmd_parse(&c, "unit/set/Mode", "Cool", false, true, &cmd);
+  TEST_ASSERT_EQUAL(MHI_CMD_MODE, cmd.kind);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_every_topic_and_payload_of_a_default_build);
@@ -335,5 +397,7 @@ int main(int, char**) {
   RUN_TEST(test_reset_crash_build);
   RUN_TEST(test_custom_payload_texts);
   RUN_TEST(test_custom_topic_names);
+  RUN_TEST(test_a_retained_message_is_dropped_for_every_topic_kind);
+  RUN_TEST(test_a_reset_inside_the_subscribe_window_is_dropped);
   return UNITY_END();
 }
