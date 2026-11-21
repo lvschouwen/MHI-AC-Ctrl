@@ -68,32 +68,32 @@ void MHI_AC_Ctrl_Core::init(bool drive_miso) {
 }
 
 void MHI_AC_Ctrl_Core::set_power(boolean power) {
-  new_Power = 0b10 | power;
+  mhi_cq_set(&cq, MHI_CQ_POWER, 0b10 | power);
 }
 
 void MHI_AC_Ctrl_Core::set_mode(ACMode mode) {
-  new_Mode = 0b00100000 | mode;
+  mhi_cq_set(&cq, MHI_CQ_MODE, 0b00100000 | mode);
 }
 
 void MHI_AC_Ctrl_Core::set_tsetpoint(uint tsetpoint) {
-  new_Tsetpoint = 0b10000000 | tsetpoint;
+  mhi_cq_set(&cq, MHI_CQ_TSETPOINT, 0b10000000 | tsetpoint);
 }
 
 void MHI_AC_Ctrl_Core::set_fan(uint fan) {
-  new_Fan = 0b00001000 | fan;
+  mhi_cq_set(&cq, MHI_CQ_FAN, 0b00001000 | fan);
 }
 
 void MHI_AC_Ctrl_Core::set_3Dauto(AC3Dauto Dauto) {
-  new_3Dauto = mhi_3dauto_command(Dauto == Dauto_on);
+  mhi_cq_set(&cq, MHI_CQ_3DAUTO, mhi_3dauto_command(Dauto == Dauto_on));
 }
 
 void MHI_AC_Ctrl_Core::set_vanes(uint vanes) {
   if (vanes == vanes_swing) {
-    new_Vanes0 = 0b11000000; // enable swing
+    mhi_cq_set(&cq, MHI_CQ_VANES0, 0b11000000); // enable swing
   }
   else {
-    new_Vanes0 = 0b10000000; // disable swing
-    new_Vanes1 = 0b10000000 | ((vanes - 1) << 4);
+    mhi_cq_set(&cq, MHI_CQ_VANES0, 0b10000000); // disable swing
+    mhi_cq_set(&cq, MHI_CQ_VANES1, 0b10000000 | ((vanes - 1) << 4));
   }
 }
 
@@ -102,8 +102,8 @@ void MHI_AC_Ctrl_Core::set_vanesLR(uint vanesLR) {
   // A value the command does not know is dropped here: leaving new_VanesLR*
   // alone keeps a valid command that is still queued instead of wiping it.
   if (!mhi_vanes_lr_command((int)vanesLR, &db16, &db17)) return;
-  new_VanesLR1 = db16;  // ORed into MISO_frame[DB16] in loop()
-  new_VanesLR0 = db17;  // ORed into MISO_frame[DB17] in loop()
+  mhi_cq_set(&cq, MHI_CQ_VANESLR1, db16);  // ORed into MISO_frame[DB16] in loop()
+  mhi_cq_set(&cq, MHI_CQ_VANESLR0, db17);  // ORed into MISO_frame[DB17] in loop()
 }
 
 void MHI_AC_Ctrl_Core::set_passive_mode(bool newPassiveMode) {
@@ -111,7 +111,7 @@ void MHI_AC_Ctrl_Core::set_passive_mode(bool newPassiveMode) {
 }
 
 void MHI_AC_Ctrl_Core::request_ErrOpData() {
-  request_erropData = true;
+  mhi_cq_set(&cq, MHI_CQ_ERROPDATA, 1);
 }
 
 void MHI_AC_Ctrl_Core::request_OpData(byte prefix, byte code) {
@@ -121,8 +121,7 @@ void MHI_AC_Ctrl_Core::request_OpData(byte prefix, byte code) {
 }
 
 void MHI_AC_Ctrl_Core::set_silent(bool on) {
-  new_silent = on ? 0x01 : 0x00;
-  request_silent_pending = true;  // a second command before it is sent replaces it
+  mhi_cq_set(&cq, MHI_CQ_SILENT, on ? 2 : 1);  // 1 + the DB10 value, so off is not 0; a second command before it is sent replaces it
 }
 
 void MHI_AC_Ctrl_Core::set_troom(byte troom) {
@@ -169,6 +168,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
       return err_msg_timeout_SCK_low;       // SCK stuck@ low error detection
   }
   // build the next MISO frame
+  mhi_cq_begin(&cq);                      // nothing of the queue is in flight until this build takes it (fork #48)
 
   doubleframe = !doubleframe;             // toggle every frame
   MISO_frame[DB14] = doubleframe << 2;    // MISO_frame[DB14] bit2 toggles with every frame
@@ -184,7 +184,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   if (frame++ <= 2) {                       // use opdata request only for 2 subsequent frames
     if (doubleframe) {                      // start when MISO_frame[DB14] bit2 is set
       if (erropdataCnt == 0) {
-        if (request_opdata_pending && !request_erropData && !request_silent_pending) {
+        if (request_opdata_pending && !mhi_cq_pending(&cq, MHI_CQ_ERROPDATA) && !mhi_cq_pending(&cq, MHI_CQ_SILENT)) {
           // The 0x80 command slot below would overwrite DB6/DB9 in this same
           // pair; the probe waits for the next window instead of being lost.
           // The probe takes this slot instead of the next code; opdataNo is
@@ -221,35 +221,32 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     }
 
     // set Power, Mode, Tsetpoint, Fan, Vanes
-    MISO_frame[DB0] = new_Power;
-    new_Power = 0;
+    // Taken, not cleared: they stay queued until a frame that carried them has
+    // passed its checks (mhi_cq_commit() below), so a failed frame loses nothing.
+    MISO_frame[DB0] = mhi_cq_take(&cq, MHI_CQ_POWER);
 
-    MISO_frame[DB0] |= new_Mode;
-    new_Mode = 0;
+    MISO_frame[DB0] |= mhi_cq_take(&cq, MHI_CQ_MODE);
 
-    MISO_frame[DB2] = new_Tsetpoint;
-    new_Tsetpoint = 0;
+    MISO_frame[DB2] = mhi_cq_take(&cq, MHI_CQ_TSETPOINT);
 
-    MISO_frame[DB1] = new_Fan;
-    new_Fan = 0;
+    MISO_frame[DB1] = mhi_cq_take(&cq, MHI_CQ_FAN);
 
-    MISO_frame[DB0] |= new_Vanes0;
-    MISO_frame[DB1] |= new_Vanes1;
-    new_Vanes0 = 0;
-    new_Vanes1 = 0;
+    MISO_frame[DB0] |= mhi_cq_take(&cq, MHI_CQ_VANES0);
+    MISO_frame[DB1] |= mhi_cq_take(&cq, MHI_CQ_VANES1);
 
-    if (request_erropData) {
+    if (mhi_cq_take(&cq, MHI_CQ_ERROPDATA)) {
       MISO_frame[DB6] = 0x80;
       MISO_frame[DB9] = 0x45;
-      request_erropData = false;
     }
-    else if (request_silent_pending && erropdataCnt == 0) {  // the same 0x80 command slot; waits one pair behind ErrOpData and for an error-data dump to end
-      MISO_frame[DB6] = 0x80;
-      MISO_frame[DB9] = 0x21;
-      MISO_frame[DB10] = new_silent;
-      request_silent_pending = false;
-      if (!request_opdata_pending)      // read it back so the Silent topic confirms the write; a user's probe is not replaced
-        request_OpData(0xc0, 0xdd);
+    else if (mhi_cq_pending(&cq, MHI_CQ_SILENT) && erropdataCnt == 0) {  // the same 0x80 command slot; waits one pair behind ErrOpData and for an error-data dump to end
+      const byte silent = mhi_cq_take(&cq, MHI_CQ_SILENT);              // 0: tried too often, dropped
+      if (silent != 0) {
+        MISO_frame[DB6] = 0x80;
+        MISO_frame[DB9] = 0x21;
+        MISO_frame[DB10] = silent - 1;
+        if (!request_opdata_pending)    // read it back so the Silent topic confirms the write; a user's probe is not replaced
+          request_OpData(0xc0, 0xdd);
+      }
     }
   }
 
@@ -261,13 +258,10 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
 
   if (frameSize == 33) { // Only for framesize 33 (WF-RAC)
     MISO_frame[DB16] = 0;
-    MISO_frame[DB16] |= new_VanesLR1;
+    MISO_frame[DB16] |= mhi_cq_take(&cq, MHI_CQ_VANESLR1);
     MISO_frame[DB17] = 0;
-    MISO_frame[DB17] |= new_VanesLR0;  
-    MISO_frame[DB17] |= new_3Dauto;
-    new_3Dauto = 0;
-    new_VanesLR0 = 0;
-    new_VanesLR1 = 0;
+    MISO_frame[DB17] |= mhi_cq_take(&cq, MHI_CQ_VANESLR0);
+    MISO_frame[DB17] |= mhi_cq_take(&cq, MHI_CQ_3DAUTO);
 
     checksum = mhi_calc_checksum_frame33(MISO_frame);
     MISO_frame[CBL2] = lowByte(checksum);
@@ -311,6 +305,11 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     if (MOSI_frame[CBL2] != lowByte(checksum)) 
       return err_msg_invalid_checksum;
   }
+
+  // The AC has seen a whole frame that passed both checks: what this build put
+  // on the wire is done with (fork #48). Before the first callback, which may
+  // queue a new command (set_fan(7) from the power status).
+  mhi_cq_commit(&cq);
 
   // Every valid frame goes to the discovery tooling; main.cpp decides whether
   // anything in it is worth publishing.

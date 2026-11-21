@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include "mhi_cmd_queue.h"  // queued one-shot commands, retired by a good frame (fork #48)
 #include "mhi_frame.h"  // frame layout + checksums, host-testable
 
 // comment out the data you are not interested, but at least leave one row !
@@ -134,13 +135,10 @@ class MHI_AC_Ctrl_Core {
     uint16_t op_ou_fanspeed_old;
 
     // for writing to AC
-    byte new_Power = 0;
-    byte new_Mode = 0;
-    byte new_Tsetpoint = 0;
-    byte new_Fan = 0;
-    byte new_Vanes0 = 0;
-    byte new_Vanes1 = 0;
-    bool request_erropData = false;
+    // The queued one-shot commands (power, mode, setpoint, fan, vanes, left/right
+    // vanes, 3D auto, the error-data request and the Silent write): kept until a
+    // frame that carried them has passed its checks, see mhi_cmd_queue.h (fork #48).
+    MhiCmdQueue cq = {};
     // One-shot operating-data request from set/OpDataRequest (fork #4). Sent
     // in place of the next code of the normal cycle, once, see loop().
     bool request_opdata_pending = false;
@@ -149,16 +147,11 @@ class MHI_AC_Ctrl_Core {
     // Silent operation write (fork #4 batch B): DB6 0x80, DB9 0x21, DB10 0/1
     // in the next MISO frame pair, the write hberntsen/mhi-ac-ctrl-esp32 PR #42
     // carries (traced from a ProtoArt controller by mreijnde). Shares the 0x80
-    // command slot with request_erropData.
-    bool request_silent_pending = false;
-    byte new_silent = 0;
+    // command slot with the error-data request (both are queue slots).
     bool passiveMode = false;
     byte new_Troom = 0xff;    // writing 0xff to DB3 indicates the usage of the internal room temperature sensor
     float Troom_offset = 0.0;
     
-    byte new_VanesLR0 = 0;
-    byte new_VanesLR1 = 0;
-    byte new_3Dauto = 0;
     byte frameSize = 20;
     uint call_counter = 0;                // counts how often loop() was called
 
