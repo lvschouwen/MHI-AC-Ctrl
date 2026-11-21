@@ -149,6 +149,38 @@ static void test_an_ir_press_inside_the_watch_resolves_without_a_count(void) {
   TEST_ASSERT_EQUAL_UINT32(0, c.unconfirmed);
 }
 
+// The pair's second frame carries the same bytes but is not armed again (the
+// core calls mhi_cc_sent() on the double frame only), so an echo seen between
+// the two is kept and a later IR press still resolves the check.
+static void test_an_echo_seen_between_the_pair_is_kept(void) {
+  MhiCmdConfirm c = fresh();
+  uint8_t miso[33], mosi[33] = {0};
+  miso_set(miso, 0, 0, 0x80 | 44);
+  mhi_cc_sent(&c, miso, kN);  // the double frame D
+  mosi[DB2] = 0x80 | 36;      // the echo flag shows, value not yet
+  mhi_cc_observe(&c, mosi);
+  TEST_ASSERT_TRUE(c.seen_echo[MHI_CC_TSETPOINT]);
+  // the odd frame N: no mhi_cc_sent() call
+  mhi_cc_observe(&c, mosi);
+  TEST_ASSERT_TRUE(c.seen_echo[MHI_CC_TSETPOINT]);
+  mosi[DB2] = 40;             // an IR press: flag gone, another value
+  mhi_cc_observe(&c, mosi);
+  TEST_ASSERT_EQUAL_UINT16(0, c.frames_left[MHI_CC_TSETPOINT]);
+  TEST_ASSERT_EQUAL_UINT32(0, c.unconfirmed);
+}
+
+// Arming again forgets the echo seen so far: why the core must not do it.
+static void test_arming_again_forgets_the_echo(void) {
+  MhiCmdConfirm c = fresh();
+  uint8_t miso[33], mosi[33] = {0};
+  miso_set(miso, 0, 0, 0x80 | 44);
+  mhi_cc_sent(&c, miso, kN);
+  mosi[DB2] = 0x80 | 36;
+  mhi_cc_observe(&c, mosi);
+  mhi_cc_sent(&c, miso, kN);
+  TEST_ASSERT_FALSE(c.seen_echo[MHI_CC_TSETPOINT]);
+}
+
 // A flag that never shows is no press: the AC never took the write.
 static void test_no_flag_and_no_value_is_a_lost_write(void) {
   MhiCmdConfirm c = fresh();
@@ -182,6 +214,8 @@ int main(int, char**) {
   RUN_TEST(test_a_newer_write_replaces_the_watched_one);
   RUN_TEST(test_a_frame_with_no_write_starts_nothing);
   RUN_TEST(test_an_ir_press_inside_the_watch_resolves_without_a_count);
+  RUN_TEST(test_an_echo_seen_between_the_pair_is_kept);
+  RUN_TEST(test_arming_again_forgets_the_echo);
   RUN_TEST(test_no_flag_and_no_value_is_a_lost_write);
   RUN_TEST(test_a_clamped_value_with_the_flag_set_is_counted);
   return UNITY_END();

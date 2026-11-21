@@ -32,7 +32,7 @@ static const MhiDiscoveryCtx kDefault = {
             "Group role", "Restart", "Run time", "Cleaning", "External Troom", "Crash info",
             "Remote", "Indoor fan speed", "Internal setpoint",
             "Expansion valve", "Coil temperature", "Version", "Discharge temperature", "Discharge superheat",
-            "Unconfirmed commands", "AC link gap", "MQTT burst"},
+            "Unconfirmed commands", "Longest AC link gap", "MQTT connect burst"},
   .reset_reason_tpl = NULL,
   .t_mode = "Mode", .t_tsetpoint = "Tsetpoint", .t_fan = "Fan", .t_vanes = "Vanes", .t_troom = "Troom", .t_action = "Action",
   .t_connected = "connected", .t_silent = "Silent", .t_errorcode = "Errorcode", .t_wiring = "Wiring",

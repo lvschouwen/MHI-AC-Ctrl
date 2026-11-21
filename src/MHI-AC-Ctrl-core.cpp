@@ -315,7 +315,9 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   // The watch compares MISO_frame: what this core put on the wire, after the setpoint guard and
   // the heat shift (#30) rewrote the MQTT payload, not the payload itself.
   mhi_cc_observe(&cc, MOSI_frame);
-  if (!passiveMode)
+  // Armed on the double-frame exchange only: the odd frame of the pair carries the same stale
+  // DB0..DB2, and re-arming there would forget an echo already seen between the two.
+  if (!passiveMode && doubleframe)
     mhi_cc_sent(&cc, MISO_frame, MHI_CC_WATCH_FRAMES);
 
   // Every valid frame goes to the discovery tooling; main.cpp decides whether

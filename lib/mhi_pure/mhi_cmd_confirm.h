@@ -54,6 +54,8 @@ void mhi_cc_init(MhiCmdConfirm* c);
 void mhi_cc_observe(MhiCmdConfirm* c, const uint8_t* mosi);
 
 // A valid frame this unit sent (MISO) has just passed its checks: start a watch
-// for every field whose set flag it carries. Call it after mhi_cc_observe() on
+// for every field whose set flag it carries. The core calls it on the double
+// frame of a pair only: the next frame repeats the same stale bytes, and arming
+// again would forget an echo seen in between. Call it after mhi_cc_observe() on
 // the same exchange: the AC's frame of that exchange predates the write.
 void mhi_cc_sent(MhiCmdConfirm* c, const uint8_t* miso, uint16_t watch_frames);

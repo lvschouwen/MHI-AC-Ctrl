@@ -101,7 +101,8 @@ MhiDiscoveryRow mhi_discovery_next_outdoor_row(uint8_t from) {
 }
 
 // The first outdoor block is the seven rows of fork #19, the second the two of
-// fork #41, and the table ends with it. MhiDiscoveryRow is append-only: whoever
+// fork #41; the unit rows of forks #60 and #51 follow, and the table ends with
+// the last of them. MhiDiscoveryRow is append-only: whoever
 // appends a row decides in mhi_discovery_is_outdoor_row() whether it is an
 // outdoor row, then moves this line.
 static_assert(MHI_DISCOVERY_OU_PROTECTION - MHI_DISCOVERY_OU_OUTDOOR == 6, "the outdoor block is OU_OUTDOOR..OU_PROTECTION");
