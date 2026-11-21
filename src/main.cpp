@@ -69,6 +69,10 @@ static MhiRetryPacer diag_pacer = {0, false};
 static bool diag_on = DIAG_DEFAULT;
 
 // The texts on the Vanes topic; set/Vanes accepts these and 1..5 (fork #4 batch B).
+// How long after a subscribe a set/reset is ignored (fork #50). Retained messages arrive within a
+// few hundred ms of the subscribe; a human press in HA takes longer than this.
+static const uint32_t kResetIgnoreMs = 3000;
+
 static const MhiVanesNames vanes_names = {{PAYLOAD_VANES_1, PAYLOAD_VANES_2, PAYLOAD_VANES_3, PAYLOAD_VANES_4},
                                           PAYLOAD_VANES_SWING, PAYLOAD_VANES_UNKNOWN};
 static_assert(MHI_VANES_SWING == vanes_swing && MHI_VANES_UNKNOWN == vanes_unknown, "mhi_vanes numbers the positions as the core's ACVanes does");
@@ -331,7 +335,14 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
     publish_cmd_ok();
   }
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_RESET)) == 0) {
-    if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET)) == 0) {
+    // Fork #50: a retained set/reset is redelivered after every subscribe and
+    // would reboot the unit in a loop. The retain flag is not visible here, so
+    // a reset (or test crash) within kResetIgnoreMs of the subscribe is dropped.
+    // Nothing is published; a live press from Home Assistant comes later.
+    if (mhi_subscribe_window_in(&subscribe_window, millis(), kResetIgnoreMs)) {
+      Serial.println(F("set/reset ignored: within the window after subscribe (a retained message?)"));
+    }
+    else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET)) == 0) {
       publish_cmd_ok();
       delay(500);
       ESP.restart();

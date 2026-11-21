@@ -329,6 +329,7 @@ static_assert(sizeof(OTA_PASSWORD) > 1, "OTA_PASSWORD is empty: set it in src/co
 // The group's configuration (fork #22 spec §2), checked with the rules the
 // units apply to each other's records.
 #include "mhi_group.h"
+#include "mhi_subscribe_window.h"
 static_assert(mhi_group_root_valid(GROUP_ROOT),
               "GROUP_ROOT must be 1..64 characters, end in / and contain no + # ; \" \\, space or control character");
 // PubSubClient3 refuses a SUBSCRIBE that does not fit its buffer (5 bytes of
@@ -359,6 +360,7 @@ static_assert(mhi_group_default_outdoor_id_len(GROUP_ROOT) <= MHI_GROUP_ID_MAX,
 #endif
 
 extern PubSubClient MQTTclient;
+extern MhiSubscribeWindow subscribe_window;                              // marks each completed subscribe; retained set/* messages arrive right after (fork #50)
 
 // Result of the boot-time wiring check: 0 when all three pins looked right,
 // otherwise a bitmask of MhiWiringFault. A fault does not stop the program -

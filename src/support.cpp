@@ -75,6 +75,7 @@ void MeasureFrequency() {  // measure the frequency on the pins
 #ifdef RESCUE_AP_PASSWORD
 static MhiRescue rescue = {false, 0};
 #endif
+MhiSubscribeWindow subscribe_window = {false, 0};
 
 void initWiFi(){
 #ifdef RESCUE_AP_PASSWORD
@@ -402,6 +403,7 @@ int MQTTreconnect() {
         mqtt_drop_connection();
         return MQTT_NOT_CONNECTED;
       }
+      mhi_subscribe_window_mark(&subscribe_window, millis());  // retained set/reset arrives now (fork #50)
       return MQTT_RECONNECTED;
     }
     else {
