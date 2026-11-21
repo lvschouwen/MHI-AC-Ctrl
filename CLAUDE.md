@@ -11,7 +11,7 @@ ESP8266 firmware (PlatformIO) that bridges Mitsubishi Heavy air conditioners to 
 - Pure logic lives in lib/mhi_pure with a Unity test in test/test_mhi_*; firmware glue is verified on the bench.
 
 ## Hardware
-- No spare board; OTA is the only recovery. Never flash or change the live unit's config without a per-step go from Lucas.
+- No spare board; OTA is the only recovery. Main may flash without asking (Lucas, 2026-11-21), Slaapkamer first, verified before the other; config/OTA-password changes still need his go.
 - One flash per build: fold all flash-needing items into one build.
 
 ## HA / MQTT contract
