@@ -12,6 +12,20 @@
 #include "safe_mode.h"
 #include "support.h"
 
+// MHI_CMD_MODE_* (the index) to the core's modes. The parser numbers the modes
+// 0..4 in this order; a drift fails to compile instead of commanding another mode.
+static constexpr ACMode kCmdModes[] = {mode_auto, mode_dry, mode_cool, mode_fan, mode_heat};
+static_assert(kCmdModes[MHI_CMD_MODE_AUTO] == mode_auto && kCmdModes[MHI_CMD_MODE_DRY] == mode_dry &&
+                  kCmdModes[MHI_CMD_MODE_COOL] == mode_cool && kCmdModes[MHI_CMD_MODE_FAN] == mode_fan &&
+                  kCmdModes[MHI_CMD_MODE_HEAT] == mode_heat,
+              "kCmdModes is indexed by MHI_CMD_MODE_*");
+static_assert(MHI_CMD_MODE_HEAT == sizeof(kCmdModes) / sizeof(kCmdModes[0]) - 1, "kCmdModes has one entry per MHI_CMD_MODE_*");
+
+// The core's set_fan() values for fan levels 1..4 (MHI_FAN_AUTO is 7). The
+// parser only returns 1..4 or MHI_FAN_AUTO, which is outside 1..4.
+static constexpr byte kCoreFan[4] = {0, 1, 2, 6};
+static_assert(MHI_FAN_AUTO > 4 && MHI_FAN_NONE == 0, "mhi_fan numbers the levels 1..4, Auto above them");
+
 // The retain peek (mhi_mqtt_retain.h) assumes a remaining length of at most two bytes.
 static_assert(MQTT_MAX_PACKET_SIZE <= 16383, "mhi_retain_from_topic reads a one or two byte remaining length");
 
@@ -93,7 +107,6 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
       break;
     }
     case MHI_CMD_FAN: {
-      static const byte kCoreFan[4] = {0, 1, 2, 6};  // the core's set_fan() values for levels 1..4
       mhi_ac_ctrl_core.set_fan(cmd.value == MHI_FAN_AUTO ? 7 : kCoreFan[cmd.value - 1]);
       publish_cmd_ok();
       break;

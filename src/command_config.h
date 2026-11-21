@@ -60,6 +60,3 @@ inline const MhiCmdConfig cmd_config = {
     NULL,
 #endif
     MHI_CMD_MODE_CARRIES_POWER, MHI_CMD_RESET_CRASH_ON};
-
-// MHI_CMD_MODE_* to the core's modes.
-static const ACMode kCmdModes[] = {mode_auto, mode_dry, mode_cool, mode_fan, mode_heat};
