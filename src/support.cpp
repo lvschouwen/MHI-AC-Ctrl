@@ -11,6 +11,7 @@
 #include "mhi_phy.h"
 #include "mhi_temp.h"
 #include "mhi_uptime.h"
+#include "mhi_wifi_sm.h"
 #include "safe_mode.h"
 
 WiFiClient espClient;
@@ -192,6 +193,40 @@ bool rescue_loop() {
 #endif
 }
 
+// The decisions are mhi_wifi_decide() (fork #64); this does what each one means.
+static void wifi_start_scan() {
+  WiFi.scanDelete();
+  Serial.println(F("setupWiFi: Start async scanNetworks"));
+  WiFi.scanNetworksAsync(handleWiFiScanResult);
+  WiFiStatus = WIFI_CONNECT_SCANNING;
+  WiFiScanStartMillis = millis();
+  Serial.println(F("WIFI_CONNECT_SCANNING"));
+}
+
+// scanNetworksAsync() does not report a scan the SDK refused to start,
+// and then handleWiFiScanResult() never runs. Without this, the state
+// machine sat here forever: no MQTT, no OTA, until a power cycle.
+// Treat it like a connection attempt: the SDK may well be connecting,
+// which is why it refused; if that does not come up, the usual timeout
+// leads to a fresh scan.
+static void wifi_scan_gave_up() {
+  Serial.println(F("setupWiFi: scan did not start or finish, connecting without it"));
+  // A slow scan on a unit that is still connected must not be disturbed;
+  // a unit that is not connected gets the plain connect attempt that
+  // handleWiFiScanResult() also falls back to when no AP was found.
+  if (WiFi.status() != WL_CONNECTED) {
+    applyPhyModeForJoin();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  }
+  WiFiStatus = WIFI_CONNECT_ONGOING;
+  WiFiTimeoutMillis = millis();
+}
+
+static_assert(MHI_WIFI_OK == WIFI_CONNECT_OK && MHI_WIFI_ONGOING == WIFI_CONNECT_ONGOING &&
+                  MHI_WIFI_TIMEOUT == WIFI_CONNECT_TIMEOUT && MHI_WIFI_SCANNING_DONE == WIFI_CONNECT_SCANNING_DONE &&
+                  MHI_WIFI_SCANNING == WIFI_CONNECT_SCANNING,
+              "mhi_wifi_sm numbers the Wi-Fi states as support.h does");
+
 void setupWiFi(int& WiFiStatusParam) {
 
   if (mhi_wifi_link_lost(WiFiStatus == WIFI_CONNECT_OK, WiFi.status() == WL_CONNECTED))
@@ -199,51 +234,31 @@ void setupWiFi(int& WiFiStatusParam) {
   if (WiFi.status() == WL_CONNECTED)
     mhi_phy_link_up(&wifi_phy, WiFi.getPhyMode(), millis());
 
-  if(WiFiStatus != WIFI_CONNECT_ONGOING) {   // WIFI_CONNECT_OK or WIFI_CONNECT_TIMEOUT or WIFI_CONNECT_SCANNING or WIFI_CONNECT_SCANNING_DONE
-    if (WiFiStatus == WIFI_CONNECT_OK || WiFiStatus == WIFI_CONNECT_TIMEOUT){  // Start scanning async if not in already in progress 
-      WiFi.scanDelete();
-      Serial.println(F("setupWiFi: Start async scanNetworks"));
-      WiFi.scanNetworksAsync(handleWiFiScanResult);
-      WiFiStatus = WIFI_CONNECT_SCANNING;
-      WiFiScanStartMillis = millis();
-      Serial.println(F("WIFI_CONNECT_SCANNING"));
-    }
-    else if (WiFiStatus == WIFI_CONNECT_SCANNING) {
-      // scanNetworksAsync() does not report a scan the SDK refused to start,
-      // and then handleWiFiScanResult() never runs. Without this, the state
-      // machine sat here forever: no MQTT, no OTA, until a power cycle.
-      // Treat it like a connection attempt: the SDK may well be connecting,
-      // which is why it refused; if that does not come up, the usual timeout
-      // leads to a fresh scan.
-      if (mhi_scan_gave_up(WiFi.scanComplete(), millis() - WiFiScanStartMillis, kWiFiScanDeadlineMs)) {
-        Serial.println(F("setupWiFi: scan did not start or finish, connecting without it"));
-        // A slow scan on a unit that is still connected must not be disturbed;
-        // a unit that is not connected gets the plain connect attempt that
-        // handleWiFiScanResult() also falls back to when no AP was found.
-        if (WiFi.status() != WL_CONNECTED) {
-          applyPhyModeForJoin();
-          WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-        }
-        WiFiStatus = WIFI_CONNECT_ONGOING;
-        WiFiTimeoutMillis = millis();
-      }
-    }
-
-    if (WiFiStatus == WIFI_CONNECT_SCANNING_DONE){ // after scanning for WiFI_SEARCHStrongestAP. Should be still connected
-        WiFiStatus = WIFI_CONNECT_OK;
-        Serial.println(F("WIFI_CONNECT_OK"));
-    }
-  }
-  else { // WiFiStatus == WIFI_CONNECT_ONGOING
-    if(WiFi.status() == WL_CONNECTED){
+  // The scan state is read only while scanning, as before.
+  const int scan_state = WiFiStatus == WIFI_CONNECT_SCANNING ? WiFi.scanComplete() : 0;
+  switch (mhi_wifi_decide(WiFiStatus, WiFi.status() == WL_CONNECTED, scan_state, millis() - WiFiScanStartMillis,
+                          kWiFiScanDeadlineMs, millis() - WiFiTimeoutMillis)) {
+    case MHI_WIFI_STEP_START_SCAN:
+      wifi_start_scan();  // Start scanning async if not in already in progress
+      break;
+    case MHI_WIFI_STEP_SCAN_GAVE_UP:
+      wifi_scan_gave_up();
+      break;
+    case MHI_WIFI_STEP_SCAN_DONE:  // after scanning for WiFI_SEARCHStrongestAP. Should be still connected
+      WiFiStatus = WIFI_CONNECT_OK;
+      Serial.println(F("WIFI_CONNECT_OK"));
+      break;
+    case MHI_WIFI_STEP_CONNECTED:
       Serial.printf_P(PSTR(" connected to %s, IP address: %s (%ddBm)\n"), WIFI_SSID, WiFi.localIP().toString().c_str(), WiFi.RSSI());
       WiFiStatus = WIFI_CONNECT_OK;
       Serial.println(F("WIFI_CONNECT_OK"));
-    }
-    else if(millis() - WiFiTimeoutMillis > 10*1000) {  // timeout after 10 seconds
+      break;
+    case MHI_WIFI_STEP_TIMED_OUT:  // timeout after 10 seconds
       WiFiStatus = WIFI_CONNECT_TIMEOUT;
       Serial.println(F("WIFI_CONNECT_TIMEOUT"));
-    }
+      break;
+    case MHI_WIFI_STEP_NONE:
+      break;
   }
   WiFiStatusParam = WiFiStatus; // return WiFiStatus to caller
 }
@@ -340,6 +355,65 @@ void mqtt_drop_connection() {
   espClient.stop();
 }
 
+// What a connect publishes, in this order (fork #64 split it out of MQTTreconnect()).
+static void mqtt_publish_state() {
+  char strtmp[50];
+  output_P((ACStatus)type_status, PSTR(TOPIC_CONNECTED), PSTR(PAYLOAD_CONNECTED_TRUE));
+  output_P((ACStatus)type_status, PSTR(TOPIC_VERSION), PSTR(VERSION));
+  output_P((ACStatus)type_status, PSTR(TOPIC_RESET_REASON), ESP.getResetReason().c_str());
+  output_P((ACStatus)type_status, PSTR(TOPIC_CRASH_INFO), crash_info_json());  // fork #25, retained
+  itoa(safe_mode_entries(), strtmp, 10);  // fork #23: 0 on a healthy unit
+  output_P((ACStatus)type_status, PSTR(TOPIC_SAFE_MODE), strtmp);
+  mhi_frame_stats_republish(&frame_stats_published);
+  publishTelemetryNow(mhi_uptime_advance(&uptime_counter, millis()));
+  telemetry_pacer.last_ms = millis();  // the first periodic publish is one period after this one
+  telemetry_pacer.attempted = true;
+  itoa(WIFI_lost, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_LOST), strtmp);
+  itoa(MQTT_lost, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_MQTT_LOST), strtmp);
+  WiFi.BSSIDstr().toCharArray(strtmp, 20);
+  output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_BSSID), strtmp);
+  output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_PHY), mhi_phy_mode_text(WiFi.getPhyMode()));
+}
+
+// for testing publish list of access points with the expected SSID
+static void mqtt_publish_ap_list() {
+  char strtmp[50];
+  Serial.printf_P(PSTR("MQTTreconnect(): %i access points available\n"), networksFound);
+  for (uint i = 0; i < networksFound; i++)
+  {
+    if(strcmp(WiFi.SSID(i).c_str(), WIFI_SSID) == 0){
+      strcpy(strtmp, "BSSID:");
+      strcat(strtmp, WiFi.BSSIDstr(i).c_str());
+      char strtmp2[20];
+      strcat(strtmp, " RSSI:");
+      itoa(WiFi.RSSI(i), strtmp2, 10);
+      strcat(strtmp, strtmp2);
+      MQTTclient.publish(MQTT_PREFIX "APs", strtmp, true);
+    }
+  }
+}
+
+static void mqtt_publish_wiring() {
+  char strtmp[50];
+  itoa(rising_edge_cnt.SCK, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_FSCK), strtmp);
+  itoa(rising_edge_cnt.MOSI, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_FMOSI), strtmp);
+  itoa(rising_edge_cnt.MISO, strtmp, 10);
+  output_P((ACStatus)type_status, PSTR(TOPIC_FMISO), strtmp);
+  mhi_wiring_fault_text(wiring_faults, strtmp, sizeof(strtmp));
+  output_P((ACStatus)type_status, PSTR(TOPIC_WIRING), strtmp);
+}
+
+// True when both subscribes went through.
+static bool mqtt_subscribe_all() {
+  const bool sub_set = MQTTclient.subscribe(MQTT_SET_PREFIX "#");
+  const bool sub_members = MQTTclient.subscribe(GROUP_ROOT "members/+");  // every unit's record, this one's included (fork #22)
+  return sub_set && sub_members;
+}
+
 int MQTTreconnect() {
   char strtmp[50];
   static int reconnect_trials=0;
@@ -351,7 +425,7 @@ int MQTTreconnect() {
     if (!mhi_retry_due(&mqtt_retry, millis(), kMqttRetryIntervalMs))
       return MQTT_NOT_CONNECTED;
     Serial.printf_P(PSTR("MQTTreconnect(): Attempting MQTT connection (MQTTclient.state=%i), WiFi.status()=%i ...\n"), MQTTclient.state(), WiFi.status());  // state(), see https://pubsubclient.knolleary.net/api#state
-    if(reconnect_trials++>9){                                                                                                                       // WiFi.status()=3=connected, see https://realglitch.com/2018/07/arduino-wifi-status-codes/
+    if(mhi_reconnect_trials_exceeded(&reconnect_trials)){                                                                                            // WiFi.status()=3=connected, see https://realglitch.com/2018/07/arduino-wifi-status-codes/
       Serial.printf_P(PSTR("MQTTreconnect(): reconnect_trials=%i\n"), reconnect_trials);
       WiFi.disconnect(); // work around for https://github.com/esp8266/Arduino/issues/7432
       reconnect_trials=0;
@@ -364,52 +438,11 @@ int MQTTreconnect() {
       Serial.println(F(" connected"));
       Serial.printf_P(PSTR("MQTTclient.connected=%i\n"), MQTTclient.connected());
       reconnect_trials=0;
-      output_P((ACStatus)type_status, PSTR(TOPIC_CONNECTED), PSTR(PAYLOAD_CONNECTED_TRUE));
-      output_P((ACStatus)type_status, PSTR(TOPIC_VERSION), PSTR(VERSION));
-      output_P((ACStatus)type_status, PSTR(TOPIC_RESET_REASON), ESP.getResetReason().c_str());
-      output_P((ACStatus)type_status, PSTR(TOPIC_CRASH_INFO), crash_info_json());  // fork #25, retained
-      itoa(safe_mode_entries(), strtmp, 10);  // fork #23: 0 on a healthy unit
-      output_P((ACStatus)type_status, PSTR(TOPIC_SAFE_MODE), strtmp);
-      mhi_frame_stats_republish(&frame_stats_published);
-      publishTelemetryNow(mhi_uptime_advance(&uptime_counter, millis()));
-      telemetry_pacer.last_ms = millis();  // the first periodic publish is one period after this one
-      telemetry_pacer.attempted = true;
-      itoa(WIFI_lost, strtmp, 10);
-      output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_LOST), strtmp);
-      itoa(MQTT_lost, strtmp, 10);
-      output_P((ACStatus)type_status, PSTR(TOPIC_MQTT_LOST), strtmp);
-      WiFi.BSSIDstr().toCharArray(strtmp, 20);
-      output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_BSSID), strtmp);
-      output_P((ACStatus)type_status, PSTR(TOPIC_WIFI_PHY), mhi_phy_mode_text(WiFi.getPhyMode()));
+      mqtt_publish_state();
+      mqtt_publish_ap_list();
+      mqtt_publish_wiring();
 
-      // for testing publish list of access points with the expected SSID 
-      Serial.printf_P(PSTR("MQTTreconnect(): %i access points available\n"), networksFound);         
-      for (uint i = 0; i < networksFound; i++)
-      {
-        if(strcmp(WiFi.SSID(i).c_str(), WIFI_SSID) == 0){
-          strcpy(strtmp, "BSSID:");
-          strcat(strtmp, WiFi.BSSIDstr(i).c_str());
-          char strtmp2[20];
-          strcat(strtmp, " RSSI:");
-          itoa(WiFi.RSSI(i), strtmp2, 10);
-          strcat(strtmp, strtmp2);
-          MQTTclient.publish(MQTT_PREFIX "APs", strtmp, true);
-        }
-      }
-
-      itoa(rising_edge_cnt.SCK, strtmp, 10);
-      output_P((ACStatus)type_status, PSTR(TOPIC_FSCK), strtmp);
-      itoa(rising_edge_cnt.MOSI, strtmp, 10);
-      output_P((ACStatus)type_status, PSTR(TOPIC_FMOSI), strtmp);
-      itoa(rising_edge_cnt.MISO, strtmp, 10);
-      output_P((ACStatus)type_status, PSTR(TOPIC_FMISO), strtmp);
-      mhi_wiring_fault_text(wiring_faults, strtmp, sizeof(strtmp));
-      output_P((ACStatus)type_status, PSTR(TOPIC_WIRING), strtmp);
-
-
-      const bool sub_set = MQTTclient.subscribe(MQTT_SET_PREFIX "#");
-      const bool sub_members = MQTTclient.subscribe(GROUP_ROOT "members/+");  // every unit's record, this one's included (fork #22)
-      if (!sub_set || !sub_members) {
+      if (!mqtt_subscribe_all()) {
         // PubSubClient3 returns false on a short write without dropping the
         // client: left alone, this unit would stay "connected" with some
         // topics never subscribed (e.g. no members/+, so it never sees the
