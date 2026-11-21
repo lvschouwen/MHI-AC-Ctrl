@@ -69,10 +69,6 @@ static MhiRetryPacer diag_pacer = {0, false};
 static bool diag_on = DIAG_DEFAULT;
 
 // The texts on the Vanes topic; set/Vanes accepts these and 1..5 (fork #4 batch B).
-// How long after a subscribe a set/reset is ignored (fork #50). Retained messages arrive within a
-// few hundred ms of the subscribe; a human press in HA takes longer than this.
-static const uint32_t kResetIgnoreMs = 3000;
-
 static const MhiVanesNames vanes_names = {{PAYLOAD_VANES_1, PAYLOAD_VANES_2, PAYLOAD_VANES_3, PAYLOAD_VANES_4},
                                           PAYLOAD_VANES_SWING, PAYLOAD_VANES_UNKNOWN};
 static_assert(MHI_VANES_SWING == vanes_swing && MHI_VANES_UNKNOWN == vanes_unknown, "mhi_vanes numbers the positions as the core's ACVanes does");
@@ -188,6 +184,8 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   char payload_str[MQTT_PAYLOAD_MAX];
   mhi_copy_payload(payload_str, sizeof(payload_str), payload, length);
   Serial.printf_P(PSTR("MQTT_subscribe_callback, topic=%s payload=%s payload_length=%i\n"), topic, payload_str, length);
+  // Every set/* message extends the window while it is open (fork #50).
+  const bool in_subscribe_window = mhi_subscribe_window_hit(&subscribe_window, millis(), kSubscribeQuietMs, kSubscribeCapMs);
 #ifndef POWERON_WHEN_CHANGING_MODE
   if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_POWER)) == 0) {
     if (strcmp_P(payload_str, PSTR(PAYLOAD_POWER_ON)) == 0) {
@@ -337,9 +335,9 @@ void MQTT_subscribe_callback(const char* topic, byte* payload, unsigned int leng
   else if (strcmp_P(topic, PSTR(MQTT_SET_PREFIX TOPIC_REQUEST_RESET)) == 0) {
     // Fork #50: a retained set/reset is redelivered after every subscribe and
     // would reboot the unit in a loop. The retain flag is not visible here, so
-    // a reset (or test crash) within kResetIgnoreMs of the subscribe is dropped.
+    // a reset (or test crash) inside the subscribe window is dropped.
     // Nothing is published; a live press from Home Assistant comes later.
-    if (mhi_subscribe_window_in(&subscribe_window, millis(), kResetIgnoreMs)) {
+    if (in_subscribe_window) {
       Serial.println(F("set/reset ignored: within the window after subscribe (a retained message?)"));
     }
     else if (strcmp_P(payload_str, PSTR(PAYLOAD_REQUEST_RESET)) == 0) {
@@ -769,9 +767,11 @@ void setup() {
   // link is unserved meanwhile. PubSubClient3 waits up to 15 s for a CONNACK
   // and WiFiClient 5 s for a write; a half-answering broker would starve the
   // AC that long on every reconnect attempt (attempts are 5 s apart). 2 s is
-  // far above a LAN broker's answer (milliseconds, including the subscribe
-  // and the retained-message burst, which are read as they arrive) and caps
-  // the stall at about 2 s. WiFiClient's timeout also bounds the TCP connect.
+  // far above a LAN broker's answer (milliseconds). It is not a hard cap of
+  // 2 s: one connect attempt can block about 4 s (up to 2 s for the TCP
+  // connect, which setTimeout also bounds, then up to 2 s for the CONNACK),
+  // more if MQTT_SERVER is a hostname and the DNS lookup is slow. setTimeout
+  // also bounds every write on the socket, so a stalled publish waits 2 s too.
   MQTTclient.setSocketTimeout(2);  // seconds
   espClient.setTimeout(2000);      // milliseconds
   MQTTclient.setCallback(MQTT_subscribe_callback);
@@ -847,6 +847,7 @@ void loop() {
     group_loop();
     discovery_loop();
   }
+  mhi_subscribe_window_tick(&subscribe_window, millis());  // latches the window closed, whatever the uptime (fork #50)
   publishTelemetry();  // every pass, connected or not, so the uptime counter never misses a millis() wrap
   safe_mode_clear_after_boot(millis());  // fork #23: up 120 s, so the crashes before do not count towards a loop
 
@@ -857,10 +858,13 @@ void loop() {
   static bool ds18x20_online = false;
   // Fork #56: a sensor missing or glitching at boot leaves insideThermometer
   // all zeros, and ds18x20_online false, so the offline-transition retry below
-  // never runs. Retry setup every minute while there is no reading. Starting
-  // at {0, true} makes the first retry due 60 s after boot, not at once.
+  // never runs. Retry setup every minute while there is no reading, but not
+  // before the first reading is overdue (TEMP_MEASURE_PERIOD plus a margin), so
+  // a healthy sensor is never re-initialised before its first read. Starting
+  // at {0, true} makes the first retry due after that, not at once.
   static MhiRetryPacer ds18x20_retry = {0, true};
-  const uint32_t kDs18x20RetryMs = 60000UL;
+  const uint32_t kDs18x20RetryMs =
+      (TEMP_MEASURE_PERIOD * 1000UL + 10000UL > 60000UL) ? TEMP_MEASURE_PERIOD * 1000UL + 10000UL : 60000UL;
   if (!troom_was_set_by_MQTT) {  // Only use ds18x20 if MQTT is NOT used for setting Troom
     byte ds18x20_value = getDs18x20Temperature(25);
     if (ds18x20_value == DS18X20_NOT_CONNECTED) {

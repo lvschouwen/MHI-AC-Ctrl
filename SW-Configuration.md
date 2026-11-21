@@ -43,12 +43,13 @@ Configure the time interval for searching a stronger AP.
 The ESP8266 joins in its default 802.11n mode. Some routers with 802.11ax (WiFi 6) enabled on 2.4 GHz refuse that join and the ESP8266 reports a wrong password although the password is right ([#224](https://github.com/absalom-muc/MHI-AC-Ctrl/issues/224)); forcing 802.11g gets in. A unit that is off the network cannot be told to change, so the firmware falls back on its own: after five minutes without a link it tries 11g, after another five minutes 11n again, and so on until a join succeeds. A router reboot is shorter than that, so a normal outage keeps 11n. Once joined, the mode is kept until the link is lost; after a loss the unit tries the mode it last joined with first. A reboot starts in 11n again. The `WIFI_PHY` status topic reports the mode the unit joined with, so a fallback shows in Home Assistant.
 
 ### Rescue access point
-Wi-Fi credentials are compiled in, so a wrong value, a replaced router or a new password would take a unit off the network for good. With `RESCUE_AP_PASSWORD` defined (8..63 characters), a unit that has had no Wi-Fi link for `RESCUE_AP_AFTER_MIN` (15) minutes opens its own WPA2 access point `RESCUE_AP_SSID` (default `<HOSTNAME>-rescue`) for `RESCUE_AP_MIN` (10) minutes, then tries the normal join again, and repeats while there is no link. The access point serves only OTA, at 192.168.4.1 with the usual `OTA_PASSWORD`; while a station is connected to it, it stays up. The station is off while the access point is up. The AC keeps running throughout (MQTT is already down at that point); upload an image with the corrected credentials as described in [Troubleshooting](Troubleshooting.md#fire-unit-stopped-joining-wifi-after-a-router-change). Without `RESCUE_AP_PASSWORD` there is no access point: it is never open.
+Wi-Fi credentials are compiled in, so a wrong value, a replaced router or a new password would take a unit off the network for good. With `RESCUE_AP_PASSWORD` defined (8..63 characters), a unit that has had no Wi-Fi link for `RESCUE_AP_AFTER_MIN` (15) minutes opens its own WPA2 access point `RESCUE_AP_SSID` (default `<HOSTNAME>-rescue`) for `RESCUE_AP_MIN` (10) minutes, then tries the normal join again, and repeats while there is no link. A long outage backs off: every window that ends with no link doubles the wait before the next one (15, 30, 60, 120 minutes), up to `RESCUE_AP_BACKOFF_MAX_MIN` (default 120, at most 70000), and a link resets it. The first window always opens after `RESCUE_AP_AFTER_MIN`; set `RESCUE_AP_BACKOFF_MAX_MIN` equal to it for no back off. The access point serves only OTA, at 192.168.4.1 with the usual `OTA_PASSWORD`; while a station is connected to it, it stays up. The station is off while the access point is up. The AC keeps running throughout (MQTT is already down at that point); upload an image with the corrected credentials as described in [Troubleshooting](Troubleshooting.md#fire-unit-stopped-joining-wifi-after-a-router-change). Without `RESCUE_AP_PASSWORD` there is no access point: it is never open.
 ```cpp
 //#define RESCUE_AP_PASSWORD "..."      // 8..63 characters; defining it turns the rescue access point on
 #define RESCUE_AP_SSID HOSTNAME "-rescue"
 #define RESCUE_AP_AFTER_MIN 15          // long enough for a router reboot and the 11g fallback
 #define RESCUE_AP_MIN 10
+#define RESCUE_AP_BACKOFF_MAX_MIN 120   // longest wait between access point windows, at least RESCUE_AP_AFTER_MIN
 ```
 
 ## MQTT ([support.h](src/support.h))
@@ -505,7 +506,7 @@ The AC's own temperature sensor can report `Troom` changes (±0.25 °C) several 
 `TROOM_FILTER_LIMIT` (above) also dampens this jitter and additionally applies to an external/DS18B20 sensor, at the cost of hiding smaller changes.
 
 ## Not switching off AC when MQTT connections fails ([support.h](src/support.h))
-By default the module stops talking to the AC when MQTT disconnects, and the AC [powers off after 120 s](Troubleshooting.md#fire-ac-switches-power-off-sometimes). This can be unwanted, e.g. with a DS18x20 room sensor or while away from home.
+By default the module stops talking to the AC when MQTT disconnects, and the AC [powers off after 120 s](Troubleshooting.md#fire-ac-switches-power-off-sometimes). This holds for every cause: a broker or Home Assistant outage, and also a Wi-Fi outage or the rescue access point (earlier builds kept serving the AC through those, because the MQTT state was not refreshed). This can be unwanted, e.g. with a DS18x20 room sensor or while away from home.
 ```cpp
 #define CONTINUE_WITHOUT_MQTT true
 ```

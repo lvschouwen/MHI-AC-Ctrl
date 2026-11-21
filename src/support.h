@@ -55,6 +55,8 @@ static_assert(sizeof(RESCUE_AP_PASSWORD) - 1 >= 8 && sizeof(RESCUE_AP_PASSWORD) 
               "RESCUE_AP_PASSWORD must be 8..63 characters (WPA2): the access point is never open");
 static_assert(sizeof(RESCUE_AP_SSID) - 1 >= 1 && sizeof(RESCUE_AP_SSID) - 1 <= 32, "RESCUE_AP_SSID must be 1..32 characters");
 static_assert(RESCUE_AP_AFTER_MIN >= 1 && RESCUE_AP_MIN >= 1, "the rescue access point's times are whole minutes, at least 1");
+static_assert(RESCUE_AP_BACKOFF_MAX_MIN >= RESCUE_AP_AFTER_MIN, "RESCUE_AP_BACKOFF_MAX_MIN must be at least RESCUE_AP_AFTER_MIN (equal means no back off)");
+static_assert(RESCUE_AP_BACKOFF_MAX_MIN <= 70000, "RESCUE_AP_BACKOFF_MAX_MIN in ms must fit 32 bits (at most 70000 minutes)");
 #endif
 
 #ifndef WiFI_SEARCHStrongestAP
@@ -364,6 +366,12 @@ static_assert(mhi_group_default_outdoor_id_len(GROUP_ROOT) <= MHI_GROUP_ID_MAX,
 
 extern WiFiClient espClient;                                    // the MQTT socket; main.cpp sets its timeout (fork #49)
 extern PubSubClient MQTTclient;
+// The window after a subscribe in which set/* messages may be retained redeliveries
+// (fork #50, mhi_subscribe_window.h): at least 3 s, extended to 1 s after each message
+// that arrives in it, never beyond 30 s. A human press in HA comes later than that.
+constexpr uint32_t kSubscribeMinMs = 3000;
+constexpr uint32_t kSubscribeQuietMs = 1000;
+constexpr uint32_t kSubscribeCapMs = 30000;
 extern MhiSubscribeWindow subscribe_window;                              // marks each completed subscribe; retained set/* messages arrive right after (fork #50)
 
 // Result of the boot-time wiring check: 0 when all three pins looked right,
