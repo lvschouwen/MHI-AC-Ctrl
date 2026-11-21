@@ -126,7 +126,6 @@ void MHI_AC_Ctrl_Core::set_silent(bool on) {
 }
 
 void MHI_AC_Ctrl_Core::set_troom(byte troom) {
-  //Serial.printf("MHI_AC_Ctrl_Core::set_troom %i\n", troom);
   new_Troom = troom;
 }
 
@@ -273,11 +272,8 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
     checksum = mhi_calc_checksum_frame33(MISO_frame);
     MISO_frame[CBL2] = lowByte(checksum);
   }
-  //Serial.println();
-  //Serial.print(F("MISO:"));
   // read/write MOSI/MISO frame
   for (uint8_t byte_cnt = 0; byte_cnt < frameSize; byte_cnt++) { // read and write a data packet of 20 bytes
-    //Serial.printf("x%02x ", MISO_frame[byte_cnt]);
     MOSI_byte = 0;
     byte bit_mask = 1;
     for (uint8_t bit_cnt = 0; bit_cnt < 8; bit_cnt++) { // read and write 1 byte

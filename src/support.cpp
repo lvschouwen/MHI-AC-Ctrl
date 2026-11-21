@@ -329,7 +329,6 @@ int MQTTreconnect() {
   static int reconnect_trials=0;
   static bool mqtt_was_up = false;
   static MhiRetryPacer mqtt_retry = {0, false};
-  //Serial.printf("MQTTreconnect(): (MQTTclient.state=%i), WiFi.status()=%i networksFound=%i ...\n", MQTTclient.state(), WiFi.status(), networksFound);
   if (mhi_link_dropped(&mqtt_was_up, MQTTclient.connected()))
     MQTT_lost++;
   if(!MQTTclient.connected()) {
@@ -544,12 +543,10 @@ byte getDs18x20Temperature(int temp_hysterese) {
       have_reading = true;
       char strtmp[10];
       dtostrf(sensors.rawToCelsius(tempR), 0, 2, strtmp);
-      //Serial.printf_P(PSTR("new DS18x20 temperature=%s°C\n"), strtmp);
       output_P((ACStatus)type_status, PSTR(TOPIC_TDS1820), strtmp);
     }
     sensors.requestTemperatures();
   }
-  //Serial.printf_P(PSTR("temp DS18x20 tempR_old=%i %i\n"), tempR_old, mhi_troom_from_ds18x20_raw(tempR_old));
   if (!have_reading) return DS18X20_NOT_CONNECTED;
   return mhi_troom_from_ds18x20_raw(tempR_old);
 }

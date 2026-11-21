@@ -103,6 +103,24 @@ that layout is what prevented the project from being built automatically.
 `scripts/check.sh` compiles the whole `#ifdef` matrix (the `ci-*` environments
 in [platformio.ini](platformio.ini)) and runs the host tests before a push.
 
+### Bench tools (`testprog/`)
+
+`testprog/` holds two single-file Arduino sketches for looking at the AC's SPI
+signals. They are not part of the firmware build (`pio run` ignores them) and
+nothing tests them; use them on a bench board, not on a unit in service.
+
+- `SPI_logger.ino` logs the SCK, MOSI and MISO edges on D5/D7/D6 as a `.vcd`
+  waveform that PulseView and similar viewers open. Serial 115200 baud, no
+  timestamps.
+- `frequency_measurement.ino` times the SCK falling edges on D5 for about a
+  minute to check the clock frequency. Serial 115200 baud, timestamps on.
+
+To build one with PlatformIO, copy it to `src/main.cpp` of a scratch project
+with `platform = espressif8266`, `board = d1_mini`, `framework = arduino`
+(add `#include <Arduino.h>` at the top, as a `.ino` gets it implicitly), then
+`pio run -t upload` and `pio device monitor -b 115200`. In the Arduino IDE,
+open the `.ino` directly (ESP8266 board package, Wemos D1 mini).
+
 In a previous version (see [here](https://github.com/absalom-muc/MHI-AC-SPY)) I used the Hardware-SPI of the ESP8266. But since the SPI documentation of ESP8266 is poor, I decided to switch to a Software based SPI.
 This Software based SPI is reliable and the performance of the ESP8266 is sufficient for this use case.
 In case of problems please check the [Troubleshooting guide](Troubleshooting.md).
