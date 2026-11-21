@@ -103,5 +103,6 @@ const char* crash_info_json() {
 // with a trap instruction.
 void safe_mode_test_crash() {
   static volatile uint32_t* volatile target = nullptr;
+  // cppcheck-suppress nullPointer ; the null store is the point: it raises StoreProhibited on purpose
   *target = 0;
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The full check (replaces the CI workflow; no GitHub Actions). Run via `agent-check`.
-# Host tests, the discovery fixture gate, then every build env; the flash-size
+# Host tests (plain and ASan/UBSan), cppcheck, the discovery fixture gate, then
+# every build env; the flash-size
 # budget (scripts/check_flash_size.py) is enforced by each `pio run`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -28,6 +29,16 @@ rm -f test/fixtures/discovery/*.txt test/fixtures/discovery_all/*.txt
 
 step "pio test -e native"
 pio test -e native
+
+step "pio test -e native-san (AddressSanitizer + UBSan)"
+pio test -e native-san
+
+step "cppcheck over lib/mhi_pure and src"
+# PROGMEM is an Arduino macro cppcheck cannot see. --inline-suppr honours the
+# reasoned suppressions in the source; any other finding fails the check.
+cppcheck --enable=warning,performance,portability --inline-suppr \
+  --error-exitcode=1 -q --std=c++17 -DPROGMEM= -I lib/mhi_pure -I src \
+  lib/mhi_pure src
 
 step "discovery fixtures match the code"
 git diff --exit-code -- "${FIXTURES[@]}"
