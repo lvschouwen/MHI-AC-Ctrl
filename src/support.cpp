@@ -73,7 +73,7 @@ void MeasureFrequency() {  // measure the frequency on the pins
 }
 
 #ifdef RESCUE_AP_PASSWORD
-static MhiRescue rescue = {false, 0};
+static MhiRescue rescue = {false, 0, 0};
 #endif
 MhiSubscribeWindow subscribe_window = {false, 0};
 
@@ -167,7 +167,7 @@ bool rescue_loop() {
   if (!rescue.ap_up && WiFi.scanComplete() == WIFI_SCAN_RUNNING) return false;
   const MhiRescueAction action =
       mhi_rescue_tick(&rescue, WiFi.status() == WL_CONNECTED, WiFi.softAPgetStationNum() > 0, millis(),
-                      RESCUE_AP_AFTER_MIN * 60000UL, RESCUE_AP_MIN * 60000UL);
+                      RESCUE_AP_AFTER_MIN * 60000UL, RESCUE_AP_MIN * 60000UL, RESCUE_AP_BACKOFF_MAX_MIN * 60000UL);
   if (action == MHI_RESCUE_START_AP) {
     Serial.printf_P(PSTR("RESCUE: no Wi-Fi link for %u min, opening access point %s for OTA\n"),
                     (unsigned)RESCUE_AP_AFTER_MIN, RESCUE_AP_SSID);

@@ -44,6 +44,9 @@
 #ifndef RESCUE_AP_AFTER_MIN
 #define RESCUE_AP_AFTER_MIN 15                      // long enough for a router reboot and the 11g fallback (#17, 5 min)
 #endif
+#ifndef RESCUE_AP_BACKOFF_MAX_MIN
+#define RESCUE_AP_BACKOFF_MAX_MIN 120               // fork #58: each window with no link doubles the wait before the next, up to this; the first is always after RESCUE_AP_AFTER_MIN
+#endif
 #ifndef RESCUE_AP_MIN
 #define RESCUE_AP_MIN 10                            // a station connected to the access point keeps it up
 #endif
