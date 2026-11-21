@@ -808,12 +808,23 @@ void loop() {
     return;
   }
 
+  // Serving policy (fork #57, consistent with #15): without CONTINUE_WITHOUT_MQTT
+  // the AC is served only while MQTT is connected, whatever caused the outage.
+  // MQTTStatus is refreshed only by MQTTreconnect() in the last branch, so a
+  // Wi-Fi outage or the rescue AP used to leave the last (connected) value in
+  // place and the AC kept being served, unlike in an MQTT-only outage. Both
+  // branches below now mark MQTT as not connected when it cannot be. A
+  // stronger-AP scan while the link is still up does not: MQTT is still there.
+  // CONTINUE_WITHOUT_MQTT builds (the live units, #15 C2) never read it.
   if (rescue_loop()) {  // fork #28: the rescue access point is up, OTA only; with CONTINUE_WITHOUT_MQTT the AC keeps being served
+    MQTTStatus = MQTT_NOT_CONNECTED;  // station is off while the access point is up
     ArduinoOTA.handle();
   }
   else if (((WiFi.status() != WL_CONNECTED)  || 
        (WiFiStatus != WIFI_CONNECT_OK)) || 
        (WiFI_SEARCHStrongestAP && (millis() - previousMillis >= WiFI_SEARCH_FOR_STRONGER_AP_INTERVALL*60*1000))) {
+    if (WiFi.status() != WL_CONNECTED)
+      MQTTStatus = MQTT_NOT_CONNECTED;  // no link, so no MQTT; the broker connection is gone with it
     setupWiFi(WiFiStatus);
     previousMillis = millis();
   }
