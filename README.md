@@ -77,7 +77,8 @@ scripts/check.sh        # the full gate: tests, sanitizers, cppcheck, all 12 bui
 ```
 
 `scripts/check.sh` is what gates a push (there is no GitHub Actions). It needs
-`cppcheck` on the PATH next to PlatformIO 6.2.0.
+`cppcheck` on the PATH next to PlatformIO 6.2.0. Its findings were triaged with
+cppcheck 2.19.0; another version may report different ones.
 
 **OTA password is required.** An empty `OTA_PASSWORD` would let anyone on your
 network flash the unit, so a normal build refuses it at compile time. Set
@@ -112,8 +113,8 @@ nothing tests them; use them on a bench board, not on a unit in service.
 - `SPI_logger.ino` logs the SCK, MOSI and MISO edges on D5/D7/D6 as a `.vcd`
   waveform that PulseView and similar viewers open. Serial 115200 baud, no
   timestamps.
-- `frequency_measurement.ino` times the SCK falling edges on D5 for about a
-  minute to check the clock frequency. Serial 115200 baud, timestamps on.
+- `frequency_measurement.ino` counts the SCK falling edges on D5 for 1 s per
+  pass, repeatedly, to check the clock frequency. Serial 115200 baud, timestamps on.
 
 To build one with PlatformIO, copy it to `src/main.cpp` of a scratch project
 with `platform = espressif8266`, `board = d1_mini`, `framework = arduino`
