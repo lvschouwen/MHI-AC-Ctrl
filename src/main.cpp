@@ -844,6 +844,12 @@ void loop() {
   // whether a fault re-enumerates the bus, independent of whether the sensor
   // drives Troom: a build that only publishes Tds1820 needs that too.
   static bool ds18x20_online = false;
+  // Fork #56: a sensor missing or glitching at boot leaves insideThermometer
+  // all zeros, and ds18x20_online false, so the offline-transition retry below
+  // never runs. Retry setup every minute while there is no reading. Starting
+  // at {0, true} makes the first retry due 60 s after boot, not at once.
+  static MhiRetryPacer ds18x20_retry = {0, true};
+  const uint32_t kDs18x20RetryMs = 60000UL;
   if (!troom_was_set_by_MQTT) {  // Only use ds18x20 if MQTT is NOT used for setting Troom
     byte ds18x20_value = getDs18x20Temperature(25);
     if (ds18x20_value == DS18X20_NOT_CONNECTED) {
@@ -860,6 +866,11 @@ void loop() {
         }
         Serial.println(F("Try setup DS18X20 again"));
         setup_ds18x20();  // try setup again
+        mhi_retry_due(&ds18x20_retry, millis(), kDs18x20RetryMs);  // stamp: the next retry is a minute away
+      }
+      else if (mhi_retry_due(&ds18x20_retry, millis(), kDs18x20RetryMs)) {
+        Serial.println(F("No DS18X20 found, try setup again"));
+        setup_ds18x20();  // between AC frames, like the call above: OneWire never runs inside a frame
       }
     }
     else {
