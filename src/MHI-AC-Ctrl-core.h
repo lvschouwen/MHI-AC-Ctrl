@@ -3,7 +3,9 @@
 #include <Arduino.h>
 
 #include "mhi_cmd_confirm.h"  // CmdUnconfirmed (fork #60)
+#include "mhi_ac_status.h"  // ACType, ACStatus (fork #64)
 #include "mhi_cmd_queue.h"  // queued one-shot commands, retired by a good frame (fork #48)
+#include "mhi_decode.h"  // what a valid frame says, and what was reported before (fork #64)
 #include "mhi_frame.h"  // frame layout + checksums, host-testable
 
 // comment out the data you are not interested, but at least leave one row !
@@ -47,23 +49,6 @@ enum ErrMsg {   // Error message enum
   err_msg_valid_frame = 0, err_msg_invalid_signature = -1, err_msg_invalid_checksum = -2, err_msg_timeout_SCK_low = -3, err_msg_timeout_SCK_high = -4
 };
 
-enum ACType {   // Type enum
-  type_status = 0x40, type_opdata = 0x80, type_erropdata = 0xc0
-};
-
-enum ACStatus { // Status enum
-  status_power = type_status, status_mode, status_fan, status_vanes, status_vanesLR, status_3Dauto, status_troom, status_tsetpoint, status_errorcode, status_action, status_silent, status_remote,
-  raw_frame, raw_opdata,  // cbiRawFunction only: the whole MOSI frame, and DB9..DB12 of unknown operating data. Never published through output_P
-  opdata_mode = type_opdata, opdata_kwh, opdata_tsetpoint, opdata_return_air, opdata_outdoor, opdata_tho_r1, opdata_iu_fanspeed, opdata_thi_r1, opdata_thi_r2, opdata_thi_r3,
-  opdata_ou_fanspeed, opdata_total_iu_run, opdata_total_comp_run, opdata_comp, opdata_ct, opdata_td,
-  opdata_tdsh, opdata_protection_no, opdata_defrost, opdata_ou_eev1, opdata_unknown,
-  erropdata_mode = type_erropdata, erropdata_tsetpoint, erropdata_return_air, erropdata_thi_r1, erropdata_thi_r2, erropdata_thi_r3,
-  erropdata_iu_fanspeed, erropdata_total_iu_run, erropdata_outdoor, erropdata_tho_r1, erropdata_comp, erropdata_td, erropdata_ct, erropdata_ou_fanspeed,
-  erropdata_total_comp_run, erropdata_ou_eev1, erropdata_errorcode
-};
-
-
-
 enum ACPower {  // Power enum
   power_off = 0, power_on = 1
 };
@@ -96,44 +81,8 @@ class CallbackInterface_Status {
 
 class MHI_AC_Ctrl_Core {
   private:
-    // old status
-    byte status_power_old;
-    byte status_mode_old;
-    byte status_fan_old;
-    byte status_vanes_old;
-    byte status_troom_old;
-    byte status_tsetpoint_old;
-    byte status_errorcode_old;
-    byte status_action_old;
-    byte status_silent_old;
-    byte status_remote_old;
-
-    byte status_vanesLR_old;
-    byte status_3Dauto_old;
-
-    // old operating data
-    uint16_t op_kwh_old;
-    byte op_mode_old;
-    byte op_settemp_old;
-    byte op_return_air_old;
-    byte op_iu_fanspeed_old;
-    byte op_thi_r1_old;
-    byte op_thi_r3_old;
-    byte op_total_iu_run_old;
-    uint16_t op_ou_eev1_old;
-    // The 11 system values (fork #22 spec §4.1): 16 bits wide, so the
-    // sentinel 0xFFFF equals no one-byte reading (reset_system_values()).
-    uint16_t op_outdoor_old;
-    uint16_t op_ct_old;
-    uint16_t op_comp_old;
-    uint16_t op_defrost_old;
-    uint16_t op_total_comp_run_old;
-    uint16_t op_protection_no_old;
-    uint16_t op_td_old;
-    uint16_t op_tdsh_old;
-    uint16_t op_tho_r1_old;
-    uint16_t op_thi_r2_old;
-    uint16_t op_ou_fanspeed_old;
+    // What was reported before, to publish only what changed: see mhi_decode.h (fork #64).
+    MhiDecodeState dec;
 
     // for writing to AC
     // The queued one-shot commands (power, mode, setpoint, fan, vanes, left/right

@@ -12,31 +12,7 @@
 // tested on the build machine.
 
 void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection to broker is lost, to re-output data
-  // old status
-  status_power_old = 0xff;
-  status_mode_old = 0xff;
-  status_fan_old = 0xff;
-  status_vanes_old = 0xff;
-  status_troom_old = 0xfe;
-  status_tsetpoint_old = 0x00;
-  status_errorcode_old = 0xff;
-  status_action_old = 0xff;
-  status_silent_old = 0xff;
-  status_remote_old = 0xff;
-  status_vanesLR_old = 0xff;
-  status_3Dauto_old = 0xff;
-
-  // old operating data
-  op_kwh_old = 0xffff;
-  op_mode_old = 0xff;
-  op_settemp_old = 0xff;
-  op_return_air_old = 0xff;
-  op_iu_fanspeed_old = 0xff;
-  op_thi_r1_old = 0x00;
-  op_thi_r3_old = 0x00;
-  op_total_iu_run_old = 0xff;  // a counter of 0 is published once too (sweep #33 F3)
-  op_ou_eev1_old = 0xffff;
-  reset_system_values();
+  mhi_decode_reset_old(&dec);
 }
 
 // The group root starts empty and a new publisher must fill it in its first
@@ -44,17 +20,7 @@ void MHI_AC_Ctrl_Core::reset_old_values() {  // used e.g. when MQTT connection t
 // readings for several of these (DEFROST "Off" was 0x00, OUTDOOR 0xff is
 // 40.25 degC), so those values were never republished after a connect.
 void MHI_AC_Ctrl_Core::reset_system_values() {
-  op_outdoor_old = 0xffff;
-  op_ct_old = 0xffff;
-  op_comp_old = 0xffff;
-  op_defrost_old = 0xffff;
-  op_total_comp_run_old = 0xffff;
-  op_protection_no_old = 0xffff;
-  op_td_old = 0xffff;
-  op_tdsh_old = 0xffff;
-  op_tho_r1_old = 0xffff;
-  op_thi_r2_old = 0xffff;
-  op_ou_fanspeed_old = 0xffff;
+  mhi_decode_reset_system(&dec);
 }
 
 void MHI_AC_Ctrl_Core::init(bool drive_miso) {
@@ -141,6 +107,24 @@ void MHI_AC_Ctrl_Core::set_frame_size(byte framesize) {
     frameSize = framesize;
 }
 
+// The decoder's sink: the callbacks, the clock and the serial line (fork #64).
+static void sink_status(void* ctx, ACStatus status, int value) {
+  static_cast<CallbackInterface_Status*>(ctx)->cbiStatusFunction(status, value);
+}
+static void sink_raw(void* ctx, ACStatus status, const uint8_t* bytes, size_t len) {
+  static_cast<CallbackInterface_Status*>(ctx)->cbiRawFunction(status, bytes, len);
+}
+static uint32_t sink_now_ms(void*) {
+  return millis();
+}
+static void sink_unknown_opdata(void*, int db9, int db10) {
+  Serial.printf_P(PSTR("Unknown operating data, MOSI_frame[DB9]=%i MOSI_frame[D10]=%i\n"), db9, db10);
+}
+
+// mhi_decode spells these numbers itself, because lib/mhi_pure cannot include this header.
+static_assert(MHI_DECODE_DAUTO_ON == Dauto_on && MHI_DECODE_DAUTO_OFF == Dauto_off, "mhi_decode's 3D auto numbers are the core's AC3Dauto");
+static_assert(MHI_DECODE_TROOM_JITTER_MS == minTimeInternalTroom, "mhi_decode's Troom jitter limit is minTimeInternalTroom");
+
 int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   const byte opdataCnt = sizeof(opdata) / sizeof(byte) / 2;
   static byte opdataNo = 0;               //
@@ -154,7 +138,7 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   //                            sb0   sb1   sb2   db0   db1   db2   db3   db4   db5   db6   db7   db8   db9  db10  db11  db12  db13  db14  chkH  chkL  db15  db16  db17  db18  db19  db20  db21  db22  db23  db24  db25  db26  chk2L
   static byte MISO_frame[] = { 0xA9, 0x00, 0x07, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x22 };
 
-  static unsigned long lastTroomInternalMillis = 0; // remember when Troom internal has changed
+  static uint32_t lastTroomInternalMillis = 0; // remember when Troom internal has changed
   
   if (frameSize == 33)
     MISO_frame[0] = 0xAA;
@@ -325,335 +309,11 @@ int MHI_AC_Ctrl_Core::loop(uint max_time_ms) {
   m_cbiStatus->cbiRawFunction(raw_frame, MOSI_frame, frameSize);
 
   if (new_datapacket_received) {
-
-    if (frameSize == 33 ) { // Only for framesize 33 (WF-RAC)
-      const byte vanesLRtmp = (byte)mhi_vanes_lr_decode(MOSI_frame[DB16], MOSI_frame[DB17]);
-      if (vanesLRtmp != status_vanesLR_old) {
-        status_vanesLR_old = vanesLRtmp;
-        m_cbiStatus->cbiStatusFunction(status_vanesLR, vanesLRtmp);  // 1..7, or MHI_VANES_LR_SWING == vanesLR_swing
-      }
-
-      const byte dauto_tmp = mhi_3dauto_decode(MOSI_frame[DB17]) ? Dauto_on : Dauto_off;
-      if (dauto_tmp != status_3Dauto_old) {
-        status_3Dauto_old = dauto_tmp;
-        m_cbiStatus->cbiStatusFunction(status_3Dauto, dauto_tmp);
-      }
-    }
-    // evaluate status. Power and Mode go out in the order mhi_status.h explains.
-    MhiDb0Change db0_changes[2];
-    const size_t db0_change_count = mhi_db0_changes(MOSI_frame[DB0], &status_power_old, &status_mode_old, db0_changes);
-    for (size_t i = 0; i < db0_change_count; i++)
-      m_cbiStatus->cbiStatusFunction(db0_changes[i].field == MHI_DB0_POWER ? status_power : status_mode, db0_changes[i].value);
-
-    uint fantmp = MOSI_frame[DB1] & 0x07;
-    if (fantmp != status_fan_old) {
-      status_fan_old = fantmp;
-      m_cbiStatus->cbiStatusFunction(status_fan, status_fan_old);
-    }
-
-    // The IR remote leaves the echo flags clear but still reports the setting (fork #38).
-    const byte vanestmp = (byte)mhi_vanes_decode(MOSI_frame[DB0], MOSI_frame[DB1]);
-    if (vanestmp != status_vanes_old) {
-      status_vanes_old = vanestmp;
-      m_cbiStatus->cbiStatusFunction(status_vanes, vanestmp);
-    }
-
-    const byte remotetmp = mhi_remote_last(MOSI_frame, frameSize) ? 1 : 0;
-    if (remotetmp != status_remote_old) {
-      status_remote_old = remotetmp;
-      m_cbiStatus->cbiStatusFunction(status_remote, remotetmp);
-    }
-
-    
-    if(MOSI_frame[DB3] != status_troom_old) {
-      // To avoid jitter with the fast changing AC internal temperature sensor
-      if (MISO_frame[DB3] != 0xff) {                                      // not internal sensor used, just publish
-        status_troom_old = MOSI_frame[DB3];
-        m_cbiStatus->cbiStatusFunction(status_troom, status_troom_old);
-        lastTroomInternalMillis = 0;
-      }
-      else                                                               //  internal sensor used
-        if ((unsigned long)(millis() - lastTroomInternalMillis) > minTimeInternalTroom) { // Only publish when last change was more then minTimeInternalTroom ago
-          lastTroomInternalMillis = millis();
-          status_troom_old = MOSI_frame[DB3];
-          m_cbiStatus->cbiStatusFunction(status_troom, status_troom_old);
-        }
-    }
-    
-    if (MOSI_frame[DB2] != status_tsetpoint_old) { // Temperature setpoint
-      status_tsetpoint_old = MOSI_frame[DB2];
-      m_cbiStatus->cbiStatusFunction(status_tsetpoint, status_tsetpoint_old);
-    }
-
-    if (MOSI_frame[DB4] != status_errorcode_old) { // error code
-      status_errorcode_old = MOSI_frame[DB4];
-      m_cbiStatus->cbiStatusFunction(status_errorcode, status_errorcode_old);
-    }
-
-    const byte actiontmp = mhi_hvac_action(MOSI_frame[DB0], MOSI_frame[DB13]);
-    if (actiontmp != status_action_old) { // what the AC is doing: off, idle, cooling etc.
-      status_action_old = actiontmp;
-      m_cbiStatus->cbiStatusFunction(status_action, status_action_old);
-    }
-
-    // Evaluate Operating Data and Error Operating Data
-    bool MOSI_type_opdata = (MOSI_frame[DB10] & 0x30) == 0x10;
-
-    switch (MOSI_frame[DB9]) {
-      case 0x94:                              // 0 energy-kwh n * 0.25 kWh used since power on
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 
-          if (MOSI_type_opdata) {
-            if (((MOSI_frame[DB12]<<8)+(MOSI_frame[DB11])) != op_kwh_old) {
-              op_kwh_old = (MOSI_frame[DB12]<<8)+(MOSI_frame[DB11]);
-              m_cbiStatus->cbiStatusFunction(opdata_kwh, op_kwh_old);
-            }
-          }
-          //else
-          //  m_cbiStatus->cbiStatusFunction(erropdata_unknown, op_unknown_old);  // noch nie gesehen, dass es auftaucht
-        }
-        break;
-      case 0x02:
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 1 MODE
-          if (MOSI_type_opdata) {
-            if ((MOSI_frame[DB10] != op_mode_old)) {
-              op_mode_old = MOSI_frame[DB10];
-              m_cbiStatus->cbiStatusFunction(opdata_mode, (op_mode_old & 0x0f) << 2);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_mode, (MOSI_frame[DB10] & 0x0f) << 2);
-        }
-        break;
-      case 0x05:
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 2 SET-TEMP
-          if (MOSI_frame[DB10] == 0x13) {
-            if (MOSI_frame[DB11] != op_settemp_old) {
-              op_settemp_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_tsetpoint, op_settemp_old);
-            }
-          }
-          else if (MOSI_frame[DB10] == 0x33)
-            m_cbiStatus->cbiStatusFunction(erropdata_tsetpoint, MOSI_frame[DB11]);
-        }
-        break;
-      case 0x81:                              // 5 THI-R1 or 6 THI-R2
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 5 THI-R1
-          if ((MOSI_frame[DB10] & 0x30) == 0x20) {
-            if (MOSI_frame[DB11] != op_thi_r1_old) {
-              op_thi_r1_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_thi_r1, op_thi_r1_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_thi_r1, MOSI_frame[DB11]);
-        }
-        else {                                // 6 THI-R2
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_thi_r2_old) {
-              op_thi_r2_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_thi_r2, op_thi_r2_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_thi_r2, MOSI_frame[DB11]);
-        }
-        break;
-      case 0x87:
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 7 THI-R3
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_thi_r3_old) {
-              op_thi_r3_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_thi_r3, op_thi_r3_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_thi_r3, MOSI_frame[DB11]);
-        }
-        break;
-      case 0x80:                              // 3 RETURN-AIR or 21 OUTDOOR
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 3 RETURN-AIR
-          if ((MOSI_frame[DB10] & 0x30) == 0x20) {           // operating Data
-            if (MOSI_frame[DB11] != op_return_air_old) {
-              op_return_air_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_return_air, op_return_air_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_return_air, MOSI_frame[DB11]);
-        }
-        else {                                // 21 OUTDOOR
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_outdoor_old) {
-              op_outdoor_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_outdoor, op_outdoor_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_outdoor, MOSI_frame[DB11]);
-        }
-        break;
-      case 0x1f:                              // 8 IU-FANSPEED or 34 OU-FANSPEED
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 8 IU-FANSPEED
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB10] != op_iu_fanspeed_old) {
-              op_iu_fanspeed_old = MOSI_frame[DB10];
-              m_cbiStatus->cbiStatusFunction(opdata_iu_fanspeed, op_iu_fanspeed_old & 0x0f);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_iu_fanspeed, MOSI_frame[DB10] & 0x0f);
-        }
-        else {                                // 34 OU-FANSPEED
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB10] != op_ou_fanspeed_old) {
-              op_ou_fanspeed_old = MOSI_frame[DB10];
-              m_cbiStatus->cbiStatusFunction(opdata_ou_fanspeed, op_ou_fanspeed_old & 0x0f);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_ou_fanspeed, MOSI_frame[DB10] & 0x0f);
-        }
-        break;
-      case 0x1e:                              // 12 TOTAL-IU-RUN or 37 TOTAL-COMP-RUN
-        if ((MOSI_frame[DB6] & 0x80) != 0) {  // 12 TOTAL-IU-RUN
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_total_iu_run_old) {
-              op_total_iu_run_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_total_iu_run, op_total_iu_run_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_total_iu_run, MOSI_frame[DB11]);
-        }
-        else {                                // 37 TOTAL-COMP-RUN
-          if (MOSI_frame[DB10] == 0x11) {
-            if (MOSI_frame[DB11] != op_total_comp_run_old) {
-              op_total_comp_run_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_total_comp_run, op_total_comp_run_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_total_comp_run, MOSI_frame[DB11]);
-        }
-        break;
-      case 0x82:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 22 ThO-R1
-          if (MOSI_type_opdata) {    // operating data
-            if (MOSI_frame[DB11] != op_tho_r1_old) {
-              op_tho_r1_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_tho_r1, op_tho_r1_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_tho_r1, MOSI_frame[DB11]);
-        }
-        break;
-      case 0x11:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 24 COMP
-          if (MOSI_type_opdata) {
-            if ((MOSI_frame[DB10] << 8 | MOSI_frame[DB11]) != op_comp_old) {
-              op_comp_old = MOSI_frame[DB10] << 8 | MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_comp, op_comp_old & 0x0fff);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_comp, (MOSI_frame[DB10] << 8 | MOSI_frame[DB11]) & 0x0fff);
-        }
-        break;
-      case 0x85:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 27 Td
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_td_old) {
-              op_td_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_td, op_td_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_td, MOSI_frame[DB11]);
-        }
-        break;
-      case 0x90:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 29 CT
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_ct_old) {
-              op_ct_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_ct, op_ct_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_ct, MOSI_frame[DB11]);
-        }
-        break;
-      case 0xb1:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 32 TDSH
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_tdsh_old) {
-              op_tdsh_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_tdsh, op_tdsh_old);  // main.cpp halves it (fork #42)
-            }
-          }
-        }
-        break;
-      case 0x7c:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 33 PROTECTION-No
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB11] != op_protection_no_old) {
-              op_protection_no_old = MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_protection_no, op_protection_no_old);
-            }
-          }
-        }
-        break;
-      case 0x0c:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 36 DEFROST
-          if (MOSI_type_opdata) {
-            if (MOSI_frame[DB10] != op_defrost_old) {
-              op_defrost_old = MOSI_frame[DB10];
-              m_cbiStatus->cbiStatusFunction(opdata_defrost, op_defrost_old & 0b1);
-            }
-          }
-        }
-        break;
-      case 0x13:
-        if ((MOSI_frame[DB6] & 0x80) == 0) {  // 38 OU-EEV
-          if (MOSI_type_opdata) {
-            if ((MOSI_frame[DB12] << 8 | MOSI_frame[DB11]) != op_ou_eev1_old) {
-              op_ou_eev1_old = MOSI_frame[DB12] << 8 | MOSI_frame[DB11];
-              m_cbiStatus->cbiStatusFunction(opdata_ou_eev1, op_ou_eev1_old);
-            }
-          }
-          else
-            m_cbiStatus->cbiStatusFunction(erropdata_ou_eev1, MOSI_frame[DB12] << 8 | MOSI_frame[DB11]);
-        }
-        break;
-      case 0x45: // last error number or count of following error operating data
-        if ((MOSI_frame[DB6] & 0x80) != 0) {
-          if (MOSI_frame[DB10] == 0x11) {     // last error number
-            m_cbiStatus->cbiStatusFunction(erropdata_errorcode, MOSI_frame[DB11]);
-          }
-          else if (MOSI_frame[DB10] == 0x12) { // count of following error operating data
-            erropdataCnt = MOSI_frame[DB11] + 4;
-          }
-        }
-        break;
-      case 0xdd:                              // Silent operation (fork #4): reported unasked after a remote press, and on request
-        if (MOSI_frame[DB10] == 0x80) {       // the answer's type byte; 'dd 80 20 00' on, 'dd 80 00 00' off (Uitkijk, 16 Sep 2026)
-          const byte silenttmp = (MOSI_frame[DB11] & 0x20) != 0;
-          if (silenttmp != status_silent_old) {
-            status_silent_old = silenttmp;
-            m_cbiStatus->cbiStatusFunction(status_silent, silenttmp);
-          }
-        }
-        break;
-      case 0x00:  // dummy
-        break;
-      case 0xff:  // default
-        break;
-      default:    // unknown operating data
-        m_cbiStatus->cbiRawFunction(raw_opdata, &MOSI_frame[DB9], 4);  // the value bytes, which the number below drops
-        m_cbiStatus->cbiStatusFunction(opdata_unknown, MOSI_frame[DB10] << 8 | MOSI_frame[DB9]);
-        Serial.printf_P(PSTR("Unknown operating data, MOSI_frame[DB9]=%i MOSI_frame[D10]=%i\n"), MOSI_frame[DB9], MOSI_frame[DB10]);
-    }
+    // The decode half lives in lib/mhi_pure/mhi_decode.cpp and reports through
+    // the sink at the points the old inline code called its callbacks (fork #64).
+    const MhiDecodeSink sink = {m_cbiStatus, sink_status, sink_raw, sink_now_ms, sink_unknown_opdata};
+    const MhiDecodeFrame decoded = {MOSI_frame, MISO_frame, frameSize, &erropdataCnt, &lastTroomInternalMillis};
+    mhi_decode_frame(&dec, &decoded, &sink);
   }
   // Used to return call_counter, which at ~20 frames/sec goes negative after
   // about 3.4 years and then makes the caller's `ret < 0` test log a phantom
