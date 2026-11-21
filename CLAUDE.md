@@ -3,7 +3,7 @@
 ESP8266 firmware (PlatformIO) that bridges Mitsubishi Heavy air conditioners to MQTT and Home Assistant. Fork of absalom-muc/MHI-AC-Ctrl (upstream dormant since 2025-12); origin is lvschouwen/MHI-AC-Ctrl. Plain `gh` resolves to upstream: ALWAYS use `gh -R lvschouwen/MHI-AC-Ctrl`.
 
 ## Toolchain
-- `platform = espressif8266@4.2.1`; libs PubSubClient3@3.3.1, OneWire@2.3.8, DallasTemperature@4.0.6 (see platformio.ini). Never use knolleary/PubSubClient.
+- `platform = espressif8266@4.2.1`; libs PubSubClient3@3.3.2, OneWire@2.3.8, DallasTemperature@4.0.6 (see platformio.ini). The check also needs cppcheck (triaged with 2.19.0). Never use knolleary/PubSubClient.
 
 ## Full check
 - `agent-check` runs `scripts/check.sh`: `pio test -e native` (never `pio run -e native`), the discovery fixture gate (regenerated fixtures must match git), then `pio run -e <env>` for the 12 envs (d1_mini + ci-*), each held to the 460000 B OTA budget by `scripts/check_flash_size.py`. No GitHub Actions; this script is the gate.
