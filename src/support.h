@@ -252,7 +252,13 @@ static_assert(RESCUE_AP_AFTER_MIN >= 1 && RESCUE_AP_MIN >= 1, "the rescue access
 #define OTA_HOSTNAME HOSTNAME                       // default for the OTA_HOSTNAME is the HOSTNAME
 #endif
 #ifndef OTA_PASSWORD
-#define OTA_PASSWORD ""                             // Enter an OTA password if required
+#define OTA_PASSWORD ""                             // Enter an OTA password (required, see below)
+#endif
+// An empty OTA_PASSWORD leaves OTA open to anyone on the LAN (setupOTA() then
+// skips setPassword), so a build without one is refused. Only the ci-* envs,
+// whose images are never flashed, define ALLOW_EMPTY_OTA_PASSWORD to opt out.
+#ifndef ALLOW_EMPTY_OTA_PASSWORD
+static_assert(sizeof(OTA_PASSWORD) > 1, "OTA_PASSWORD is empty: set it in src/config_defaults.h (see SW-Configuration.md, OTA Settings)");
 #endif
 
 #ifndef TEMP_MEASURE_PERIOD

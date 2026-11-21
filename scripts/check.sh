@@ -22,6 +22,9 @@ ENVS=(
 )
 FIXTURES=(test/fixtures/discovery test/fixtures/discovery_all)
 
+NEG_LOG="$(mktemp)"
+trap 'rm -f "$NEG_LOG"' EXIT
+
 step() { printf '\n==== %s ====\n' "$*"; }
 
 step "drop committed discovery fixtures (so a stale one shows as a deletion)"
@@ -44,9 +47,33 @@ step "discovery fixtures match the code"
 git diff --exit-code -- "${FIXTURES[@]}"
 test -z "$(git status --porcelain -- "${FIXTURES[@]}")"
 
+# A checkout without the gitignored src/config_defaults.h has no OTA password,
+# which src/support.h now refuses; opt out for the check's d1_mini build only.
+D1_FLAGS=""
+if [ ! -f src/config_defaults.h ]; then
+  D1_FLAGS="-D ALLOW_EMPTY_OTA_PASSWORD"
+fi
+
 for e in "${ENVS[@]}"; do
   step "pio run -e $e"
-  pio run -e "$e"
+  if [ "$e" = d1_mini ]; then
+    PLATFORMIO_BUILD_FLAGS="$D1_FLAGS" pio run -e "$e"
+  else
+    pio run -e "$e"
+  fi
 done
 
-printf '\nCHECK OK: native tests, fixture gate, %d env builds\n' "${#ENVS[@]}"
+step "an empty OTA_PASSWORD must not build (neg-empty-ota-password)"
+if pio run -e neg-empty-ota-password >"$NEG_LOG" 2>&1; then
+  cat "$NEG_LOG"
+  echo "FAIL: a build with an empty OTA_PASSWORD succeeded; the guard in src/support.h is gone" >&2
+  exit 1
+fi
+grep -q "OTA_PASSWORD is empty" "$NEG_LOG" || {
+  cat "$NEG_LOG"
+  echo "FAIL: neg-empty-ota-password failed, but not on the OTA_PASSWORD guard" >&2
+  exit 1
+}
+echo "refused as expected"
+
+printf '\nCHECK OK: native tests, fixture gate, %d env builds, OTA guard\n' "${#ENVS[@]}"
