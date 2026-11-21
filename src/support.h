@@ -359,6 +359,7 @@ static_assert(mhi_group_default_outdoor_id_len(GROUP_ROOT) <= MHI_GROUP_ID_MAX,
               "the outdoor ID derived from GROUP_ROOT is longer than 40 characters: define HA_OUTDOOR_ID");
 #endif
 
+extern WiFiClient espClient;                                    // the MQTT socket; main.cpp sets its timeout (fork #49)
 extern PubSubClient MQTTclient;
 extern MhiSubscribeWindow subscribe_window;                              // marks each completed subscribe; retained set/* messages arrive right after (fork #50)
 

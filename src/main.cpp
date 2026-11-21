@@ -765,6 +765,15 @@ void setup() {
   MeasureFrequency();
   setupOTA();
   MQTTclient.setServer(MQTT_SERVER, MQTT_PORT);
+  // Fork #49: MQTTclient.connect() and every reply wait block loop(), so the AC
+  // link is unserved meanwhile. PubSubClient3 waits up to 15 s for a CONNACK
+  // and WiFiClient 5 s for a write; a half-answering broker would starve the
+  // AC that long on every reconnect attempt (attempts are 5 s apart). 2 s is
+  // far above a LAN broker's answer (milliseconds, including the subscribe
+  // and the retained-message burst, which are read as they arrive) and caps
+  // the stall at about 2 s. WiFiClient's timeout also bounds the TCP connect.
+  MQTTclient.setSocketTimeout(2);  // seconds
+  espClient.setTimeout(2000);      // milliseconds
   MQTTclient.setCallback(MQTT_subscribe_callback);
   mhi_ac_ctrl_core.MHIAcCtrlStatus(&mhiStatusHandler);
   discovery_setup();
