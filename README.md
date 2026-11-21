@@ -80,6 +80,11 @@ scripts/check.sh        # the full gate: tests, sanitizers, cppcheck, all 12 bui
 `cppcheck` on the PATH next to PlatformIO 6.2.0. Its findings were triaged with
 cppcheck 2.19.0; another version may report different ones.
 
+The `esp8266` section takes esptool 5.6.0 from `<core_dir>/tools/tool-esptoolpy`
+(`platform_packages` in platformio.ini). That directory exists once any pioarduino
+55.03.313 project on the machine has run `pio pkg install`. Without it, remove that
+line to build with the platform's default esptool (only serial upload uses it).
+
 **OTA password is required.** An empty `OTA_PASSWORD` would let anyone on your
 network flash the unit, so a normal build refuses it at compile time. Set
 `OTA_PASSWORD` in `src/config_defaults.h` (below). Only the `ci-*` environments,

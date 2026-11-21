@@ -27,6 +27,12 @@ trap 'rm -f "$NEG_LOG"' EXIT
 
 step() { printf '\n==== %s ====\n' "$*"; }
 
+TC="$HOME/.claude/bin/tc"
+if [ -x "$TC" ]; then
+  step "shared toolchain spec (maintainer host only)"
+  "$TC" check .
+fi
+
 step "drop committed discovery fixtures (so a stale one shows as a deletion)"
 rm -f test/fixtures/discovery/*.txt test/fixtures/discovery_all/*.txt
 
