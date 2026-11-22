@@ -58,9 +58,9 @@ on one outdoor unit"; this section is the internal rules that back it.
   publisher computes the same list, so a takeover changes nothing in the
   payload HA sees, and reconfigs are only re-sent when the list itself
   changes (after a `MHI_GROUP_AVTY_SETTLE_MS` (10 s) debounce).
-- **KWH stays per unit, not a system value**: it is the outdoor unit's energy
-  counted only while *that* indoor unit is on, reset when that unit powers on
-  — it is not comparable across units, so it is never written to the group
+- **KWH stays per unit, not a system value**: it is the whole outdoor unit's
+  energy counted only while *that* indoor unit is on, reset when that unit
+  powers on — it is not comparable across units, so it is never written to the group
   root and the outdoor device has no energy entity.
   Measured with both units on (26 Sep 2026, 20:42-21:59 UTC): **each** unit's
   KWH counts the **whole** outdoor energy, not its share (ticks at 0.89 and
